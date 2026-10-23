@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 import zlib
@@ -1376,6 +1377,57 @@ def api_realty():
     }
 
 
+# ---------------------------------------------------------------- ai (YandexGPT)
+YANDEX_GPT_URL = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+YANDEX_GPT_SYSTEM = (
+    "Ты — AI-аналитик сервиса «Монетка». Отвечай по-русски, кратко и по делу, "
+    "опирайся только на переданные данные. Не выдумывай цены, активы и доходность. "
+    "Не давай персональных инвестиционных рекомендаций: формулируй наблюдения и варианты. "
+    "В конце добавь отдельной строкой: «Это не инвестиционная рекомендация.»"
+)
+
+
+def api_ai(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректный запрос")
+    question = str(payload.get("question") or "").strip()[:1200]
+    if not question:
+        raise ValueError("Введите вопрос")
+    context = str(payload.get("context") or "").strip()[:8000]
+    key = (os.environ.get("YANDEX_GPT_API_KEY") or "").strip()
+    folder = (os.environ.get("YANDEX_GPT_FOLDER_ID") or "").strip()
+    if not key or not folder:
+        raise RuntimeError("AI не настроен: добавьте YANDEX_GPT_API_KEY и YANDEX_GPT_FOLDER_ID")
+    model = (os.environ.get("YANDEX_GPT_MODEL") or "yandexgpt-lite/latest").strip()
+    model_uri = model if model.startswith("gpt://") else f"gpt://{folder}/{model}"
+    body = json.dumps({
+        "modelUri": model_uri,
+        "completionOptions": {"stream": False, "temperature": 0.3, "maxTokens": 700},
+        "messages": [
+            {"role": "system", "text": YANDEX_GPT_SYSTEM},
+            {"role": "user", "text": f"Данные:\n{context or 'Нет данных'}\n\nВопрос: {question}"},
+        ],
+    }, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(YANDEX_GPT_URL, data=body, method="POST", headers={
+        "Authorization": f"Api-Key {key}",
+        "Content-Type": "application/json",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:400]
+        raise RuntimeError(f"YandexGPT: HTTP {exc.code} {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"YandexGPT недоступен: {exc.reason}") from exc
+    result = data.get("result") or {}
+    alternatives = result.get("alternatives") or []
+    answer = ((alternatives[0].get("message") or {}).get("text") or "").strip() if alternatives else ""
+    if not answer:
+        raise RuntimeError("YandexGPT вернул пустой ответ")
+    return {"answer": answer, "model": model, "usage": result.get("usage")}
+
+
 # ---------------------------------------------------------------- http server
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -1402,6 +1454,22 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/":
             self.path = "/index.html"
         super().do_GET()
+
+    def do_POST(self):  # noqa: N802
+        path = self.path.split("?")[0]
+        if path != "/api/ai":
+            self.send_json({"error": "unknown route"}, status=404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > 32_000:
+                raise ValueError("Слишком большой запрос")
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            self.send_json(api_ai(payload))
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, status=400)
+        except Exception as exc:  # noqa: BLE001
+            self.send_json({"error": str(exc)}, status=502)
 
     def send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

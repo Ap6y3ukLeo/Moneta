@@ -544,9 +544,20 @@ function homePage() {
 
     <aside class="rail">
       <div class="card">
-        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI <span class="badge" style="font-size:9.5px">live</span></div></div>
+        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI <span class="badge" style="font-size:9.5px">YandexGPT</span></div></div>
         <p class="ai-greet">Коротко о рынке на основе живых данных:</p>
         <div class="ai-list">${insights.map((t) => `<div class="ai-item">${icon('shield')}<span>${t}</span></div>`).join('')}</div>
+        <div class="ai-ask">
+          <input id="ai-question" class="ai-input" placeholder="Спросить про портфель" autocomplete="off">
+          <button class="btn btn--sm" type="button" data-action="ai-ask">${icon('spark')} Спросить</button>
+        </div>
+        <div class="ai-presets">
+          <button class="chip" type="button" data-ai="Что в портфеле самое рискованное?">Риски</button>
+          <button class="chip" type="button" data-ai="Где самая большая концентрация?">Концентрация</button>
+          <button class="chip" type="button" data-ai="Что стоит изменить в портфеле?">Что изменить</button>
+        </div>
+        <div id="ai-answer" class="ai-answer" role="status">YandexGPT ответит по вашим данным.</div>
+        <p class="ai-disclaimer">AI может ошибаться. Это не инвестиционная рекомендация.</p>
         <div class="ai-chips"><a href="#/deposits">Вклады</a><a href="#/crypto">Крипта</a><a href="#/metals">Металлы</a><a href="#/fx">Валюты</a></div>
       </div>
 
@@ -1064,7 +1075,7 @@ function portfolioPage() {
       </div>
     </div>
   </div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">Налог по вкладам считается по текущей ключевой ставке${keyRateValue() ? ` (${num(keyRateValue(), 2)}%)` : ''} на весь срок; фактические суммы могут отличаться. Портфель хранится в localStorage браузера и никуда не отправляется.</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">Налог по вкладам считается по текущей ключевой ставке${keyRateValue() ? ` (${num(keyRateValue(), 2)}%)` : ''} на весь срок; фактические суммы могут отличаться. Портфель хранится в localStorage браузера; при запросе к AI отправляется только сводка по позициям и рыночным данным.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: search */
@@ -1368,6 +1379,74 @@ function addDemo() {
   toast('Демо-портфель загружен');
 }
 
+function aiContext() {
+  const v = valuation();
+  const positions = v.rows.map((r) => ({
+    name: r.name,
+    type: r.kindLabel,
+    value: Math.round(r.cur),
+    cost: Math.round(r.cost),
+    pnl: Math.round(r.pnl),
+    sharePct: +(r.cur / (v.value || 1) * 100).toFixed(1),
+  }));
+  const btc = findCrypto('bitcoin');
+  const gold = findMetal('XAU');
+  const usd = findFx('USD');
+  const russia = S.realty?.stats?.russia;
+  const deposit = bestDeposit();
+  return JSON.stringify({
+    portfolio: {
+      value: Math.round(v.value),
+      invested: Math.round(v.invested),
+      pnl: Math.round(v.pnl),
+      pnlPct: Number.isFinite(v.pnlPct) ? +v.pnlPct.toFixed(1) : 0,
+      positions,
+    },
+    market: {
+      btcUsd: btc?.price,
+      goldRubG: gold?.price,
+      usdRub: usd?.value,
+      keyRate: keyRateValue(),
+      bestDeposit: deposit ? { bank: deposit.bank, rate: deposit.rate } : null,
+    },
+    realty: russia ? { median: russia.median, avgM2: russia.avgM2, count: russia.count, cities: russia.cities } : null,
+  });
+}
+
+async function askAi() {
+  const box = $('#ai-answer');
+  const input = $('#ai-question');
+  if (!box || !input) return;
+  const question = input.value.trim();
+  if (!question) {
+    box.className = 'ai-answer is-error';
+    box.textContent = 'Введите вопрос.';
+    return;
+  }
+  const button = $('[data-action="ai-ask"]');
+  box.className = 'ai-answer is-loading';
+  box.textContent = 'YandexGPT думает…';
+  if (button) button.disabled = true;
+  try {
+    const res = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, context: aiContext() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `AI вернул ошибку ${res.status}`);
+    if (!box.isConnected) return;
+    box.className = 'ai-answer';
+    box.textContent = data.answer;
+  } catch (err) {
+    if (!box.isConnected) return;
+    box.className = 'ai-answer is-error';
+    box.textContent = err.message || 'Не удалось получить ответ.';
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 /* ------------------------------------------------------------------ events */
 function onRoute() {
   render();
@@ -1406,6 +1485,13 @@ document.addEventListener('click', (e) => {
     $('#form-error').textContent = '';
     return;
   }
+  const aiPreset = e.target.closest('[data-ai]');
+  if (aiPreset) {
+    const input = $('#ai-question');
+    if (input) input.value = aiPreset.dataset.ai;
+    askAi();
+    return;
+  }
 
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
@@ -1415,6 +1501,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();
+  else if (action === 'ai-ask') askAi();
   else if (action === 'bell') toast('Уведомлений пока нет — всё под контролем');
   else if (action === 'open-add') openAdd('crypto');
   else if (action === 'close-dialog') $('#add-dialog').close();
@@ -1491,6 +1578,10 @@ $('#profile-form').addEventListener('submit', saveProfileName);
 $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent = ''; });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') document.body.classList.remove('menu-open');
+  if (e.key === 'Enter' && e.target.id === 'ai-question') {
+    e.preventDefault();
+    askAi();
+  }
 });
 window.addEventListener('hashchange', onRoute);
 

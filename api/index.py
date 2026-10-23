@@ -1,4 +1,4 @@
-"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/health."""
+"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/health, /api/ai."""
 import json
 import os
 import sys
@@ -26,6 +26,22 @@ class handler(BaseHTTPRequestHandler):
                 self._send(payload, 404)
                 return
             self._send(payload)
+        except Exception as exc:  # noqa: BLE001
+            self._send({"error": str(exc)}, 502)
+
+    def do_POST(self):  # noqa: N802
+        route = parse_qs(urlparse(self.path).query).get("route", [""])[0]
+        try:
+            if route != "ai":
+                self._send({"error": "unknown route"}, 404)
+                return
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > 32_000:
+                raise ValueError("Слишком большой запрос")
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+            self._send(server.api_ai(payload))
+        except ValueError as exc:
+            self._send({"error": str(exc)}, 400)
         except Exception as exc:  # noqa: BLE001
             self._send({"error": str(exc)}, 502)
 
