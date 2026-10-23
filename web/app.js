@@ -179,29 +179,53 @@ const findFx = (code) => fxList().find((f) => f.code === code);
 const keyRateValue = () => S.market?.keyRate?.value ?? S.deposits?.keyRate?.value ?? 0;
 
 /* ------------------------------------------------------------------ data */
-async function fetchJson(url) {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+async function fetchJson(url, timeout = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 async function refresh({ silent = false } = {}) {
   if (S.refreshing) return;
   S.refreshing = true;
   document.body.classList.add('is-refreshing');
-  const [market, deposits, realty] = await Promise.allSettled([fetchJson('/api/market'), fetchJson('/api/deposits'), fetchJson('/api/realty')]);
-  if (market.status === 'fulfilled') { S.market = market.value; delete S.errors.market; }
-  else { S.errors.market = 'рыночные котировки'; }
-  if (deposits.status === 'fulfilled') { S.deposits = deposits.value; delete S.errors.deposits; }
-  else { S.errors.deposits = 'витрина вкладов'; }
-  if (realty.status === 'fulfilled') { S.realty = realty.value; delete S.errors.realty; }
-  else { S.errors.realty = 'недвижимость'; }
+  const jobs = [
+    ['market', '/api/market', 'рыночные котировки', 25000],
+    ['deposits', '/api/deposits', 'витрина вкладов', 35000],
+    ['realty', '/api/realty', 'недвижимость', 45000],
+  ];
+  const results = await Promise.all(jobs.map(async ([key, url, label, timeout]) => {
+    try {
+      S[key] = await fetchJson(url, timeout);
+      delete S.errors[key];
+      if (key === 'market') S.loading = false;
+      const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
+        && document.activeElement.closest('#view');
+      if (!typing) render();
+      updateSideStatus();
+      return true;
+    } catch (err) {
+      S.errors[key] = label;
+      if (key === 'market') S.loading = false;
+      const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
+        && document.activeElement.closest('#view');
+      if (!typing) render();
+      updateSideStatus();
+      return false;
+    }
+  }));
   S.loading = false;
   S.refreshing = false;
   document.body.classList.remove('is-refreshing');
   render();
   updateSideStatus();
   if (!silent) {
-    if (S.errors.market && S.errors.deposits && S.errors.realty) toast('Нет связи с источниками данных', true);
+    if (results.every((ok) => !ok)) toast('Нет связи с источниками данных', true);
     else toast(`Данные обновлены в ${new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`);
   }
 }
@@ -544,20 +568,10 @@ function homePage() {
 
     <aside class="rail">
       <div class="card">
-        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI <span class="badge" style="font-size:9.5px">YandexGPT</span></div></div>
+        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI <span class="badge" style="font-size:9.5px">AI</span></div></div>
         <p class="ai-greet">Коротко о рынке на основе живых данных:</p>
         <div class="ai-list">${insights.map((t) => `<div class="ai-item">${icon('shield')}<span>${t}</span></div>`).join('')}</div>
-        <div class="ai-ask">
-          <input id="ai-question" class="ai-input" placeholder="Спросить про портфель" autocomplete="off">
-          <button class="btn btn--sm" type="button" data-action="ai-ask">${icon('spark')} Спросить</button>
-        </div>
-        <div class="ai-presets">
-          <button class="chip" type="button" data-ai="Что в портфеле самое рискованное?">Риски</button>
-          <button class="chip" type="button" data-ai="Где самая большая концентрация?">Концентрация</button>
-          <button class="chip" type="button" data-ai="Что стоит изменить в портфеле?">Что изменить</button>
-        </div>
-        <div id="ai-answer" class="ai-answer" role="status">YandexGPT ответит по вашим данным.</div>
-        <p class="ai-disclaimer">AI может ошибаться. Это не инвестиционная рекомендация.</p>
+        <button class="btn btn--sm ai-open-btn" type="button" data-action="ai-open">${icon('spark')} Открыть чат</button>
         <div class="ai-chips"><a href="#/deposits">Вклады</a><a href="#/crypto">Крипта</a><a href="#/metals">Металлы</a><a href="#/fx">Валюты</a></div>
       </div>
 
@@ -1413,37 +1427,77 @@ function aiContext() {
   });
 }
 
+const aiLog = [];
+let aiBusy = false;
+
+function renderAiLog() {
+  const log = $('#ai-log');
+  if (!log) return;
+  log.innerHTML = aiLog.length
+    ? aiLog.map((m) => `<div class="ai-msg ai-msg--${m.role === 'user' ? 'user' : m.error ? 'error' : 'bot'}${m.typing ? ' ai-msg--typing' : ''}">${esc(m.text)}</div>`).join('')
+    : '<div class="ai-msg ai-msg--bot">Привет! Спросите о рисках, концентрации или доходности портфеля — отвечу по текущим данным.</div>';
+  log.scrollTop = log.scrollHeight;
+}
+
+function openAi(show = true) {
+  const panel = $('#ai-panel');
+  const fab = $('#ai-fab');
+  if (!panel || !fab) return;
+  panel.hidden = !show;
+  fab.setAttribute('aria-expanded', show ? 'true' : 'false');
+  if (show) {
+    renderAiLog();
+    setTimeout(() => $('#ai-question')?.focus(), 30);
+  }
+}
+
+function toggleAi() {
+  const panel = $('#ai-panel');
+  openAi(panel ? panel.hidden : true);
+}
+
 async function askAi() {
-  const box = $('#ai-answer');
   const input = $('#ai-question');
-  if (!box || !input) return;
+  if (!input || aiBusy) return;
   const question = input.value.trim();
   if (!question) {
-    box.className = 'ai-answer is-error';
-    box.textContent = 'Введите вопрос.';
+    input.focus();
     return;
   }
-  const button = $('[data-action="ai-ask"]');
-  box.className = 'ai-answer is-loading';
-  box.textContent = 'YandexGPT думает…';
-  if (button) button.disabled = true;
+  openAi(true);
+  const history = aiLog.filter((m) => !m.typing && !m.error).slice(-6).map(({ role, text }) => ({ role, text }));
+  input.value = '';
+  aiLog.push({ role: 'user', text: question });
+  aiLog.push({ role: 'assistant', text: 'Нейросеть думает…', typing: true });
+  aiBusy = true;
+  const send = $('#ai-send');
+  if (send) send.disabled = true;
+  renderAiLog();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
   try {
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, context: aiContext() }),
+      signal: controller.signal,
+      body: JSON.stringify({ question, context: aiContext(), history }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `AI вернул ошибку ${res.status}`);
-    if (!box.isConnected) return;
-    box.className = 'ai-answer';
-    box.textContent = data.answer;
+    if (!res.ok) throw new Error(data.error || `Нейросеть вернула ошибку ${res.status}`);
+    aiLog.pop();
+    aiLog.push({ role: 'assistant', text: data.answer });
   } catch (err) {
-    if (!box.isConnected) return;
-    box.className = 'ai-answer is-error';
-    box.textContent = err.message || 'Не удалось получить ответ.';
+    aiLog.pop();
+    const text = err.name === 'AbortError'
+      ? 'Нейросеть не ответила вовремя. Попробуйте ещё раз.'
+      : (err.message || 'Не удалось получить ответ.');
+    aiLog.push({ role: 'assistant', text, error: true });
   } finally {
-    if (button) button.disabled = false;
+    clearTimeout(timer);
+    aiBusy = false;
+    if (send) send.disabled = false;
+    renderAiLog();
+    input.focus();
   }
 }
 
@@ -1501,7 +1555,9 @@ document.addEventListener('click', (e) => {
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();
-  else if (action === 'ai-ask') askAi();
+  else if (action === 'ai-open') openAi(true);
+  else if (action === 'ai-toggle') toggleAi();
+  else if (action === 'ai-close') openAi(false);
   else if (action === 'bell') toast('Уведомлений пока нет — всё под контролем');
   else if (action === 'open-add') openAdd('crypto');
   else if (action === 'close-dialog') $('#add-dialog').close();
@@ -1575,12 +1631,12 @@ $('#search-form').addEventListener('submit', (e) => {
 
 $('#add-form').addEventListener('submit', handleSubmit);
 $('#profile-form').addEventListener('submit', saveProfileName);
+$('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); askAi(); });
 $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent = ''; });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') document.body.classList.remove('menu-open');
-  if (e.key === 'Enter' && e.target.id === 'ai-question') {
-    e.preventDefault();
-    askAi();
+  if (e.key === 'Escape') {
+    document.body.classList.remove('menu-open');
+    openAi(false);
   }
 });
 window.addEventListener('hashchange', onRoute);
@@ -1588,6 +1644,7 @@ window.addEventListener('hashchange', onRoute);
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
   render();
+  renderAiLog();
   await refresh({ silent: true });
   setInterval(() => {
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)

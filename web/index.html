@@ -6,7 +6,7 @@
 <title>Монетка — аналитика рынка и портфель</title>
 <meta name="description" content="Криптовалюта, драгметаллы, вклады банков, валюта и недвижимость в одном сервисе. Живые курсы ЦБ РФ, котировки Bybit, витрины банков и объявления Яндекса и Авито по всей России, БН.ру и Циана.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261023b">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
@@ -150,8 +150,34 @@
   </form>
 </dialog>
 
+<div class="ai-widget" id="ai-widget">
+  <section class="ai-panel" id="ai-panel" aria-label="Чат с нейросетью" hidden>
+    <header class="ai-panel-head">
+      <div class="ai-panel-title">
+        <span class="ai-panel-mark"><svg class="ic"><use href="#i-spark"/></svg></span>
+        <div><b>Нейросеть</b><small>анализ портфеля и рынка</small></div>
+      </div>
+      <button class="icon-btn" type="button" data-action="ai-close" aria-label="Закрыть чат"><svg class="ic"><use href="#i-close"/></svg></button>
+    </header>
+    <div class="ai-log" id="ai-log" role="log" aria-live="polite"></div>
+    <div class="ai-panel-presets">
+      <button class="chip" type="button" data-ai="Что в портфеле самое рискованное?">Риски</button>
+      <button class="chip" type="button" data-ai="Где самая большая концентрация?">Концентрация</button>
+      <button class="chip" type="button" data-ai="Что стоит изменить в портфеле?">Что изменить</button>
+    </div>
+    <form class="ai-form" id="ai-form">
+      <input id="ai-question" type="text" maxlength="1200" placeholder="Спросите о портфеле или рынке" autocomplete="off">
+      <button class="ai-send" id="ai-send" type="submit" aria-label="Отправить"><svg class="ic"><use href="#i-arrow"/></svg></button>
+    </form>
+    <p class="ai-disclaimer">Нейросеть может ошибаться. Это не инвестиционная рекомендация.</p>
+  </section>
+  <button class="ai-fab" id="ai-fab" type="button" data-action="ai-toggle" aria-label="Открыть чат с нейросетью" aria-expanded="false" aria-controls="ai-panel">
+    <svg class="ic"><use href="#i-spark"/></svg>
+  </button>
+</div>
+
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js"></script>
+<script src="app.js?v=20261023b"></script>
 </body>
 </html>

@@ -33,7 +33,8 @@ class YandexGptTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(RuntimeError) as ctx:
                 server.api_ai({"question": "Что в портфеле?"})
-        self.assertIn("YANDEX_GPT_API_KEY", str(ctx.exception))
+        self.assertIn("не настроена", str(ctx.exception))
+        self.assertNotIn("YANDEX", str(ctx.exception))
 
     def test_answer(self):
         payload = {"result": {"alternatives": [{"message": {"text": "Короткий ответ"}}]}}
@@ -56,7 +57,24 @@ class YandexGptTest(unittest.TestCase):
         ):
             with self.assertRaises(RuntimeError) as ctx:
                 server.api_ai({"question": "Что в портфеле?"})
-        self.assertIn("отклонил ключ", str(ctx.exception))
+        self.assertIn("отклонила ключ", str(ctx.exception))
+
+    def test_history(self):
+        payload = {"result": {"alternatives": [{"message": {"text": "Ответ"}}]}}
+        env = {"YANDEX_GPT_API_KEY": "test-key", "YANDEX_GPT_FOLDER_ID": "test-folder"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "server.urllib.request.urlopen", return_value=FakeResponse(payload)
+        ) as open_mock:
+            server.api_ai({
+                "question": "А если подробнее?",
+                "history": [
+                    {"role": "user", "text": "Что в портфеле?"},
+                    {"role": "assistant", "text": "Bitcoin 23%."},
+                ],
+            })
+        request = open_mock.call_args.args[0]
+        body = json.loads(request.data.decode("utf-8"))
+        self.assertEqual([m["role"] for m in body["messages"]], ["system", "user", "assistant", "user"])
 
 
 if __name__ == "__main__":

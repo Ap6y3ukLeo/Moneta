@@ -291,8 +291,29 @@ def now_msk() -> str:
     return datetime.now(MSK).isoformat(timespec="seconds")
 
 
+def _snapshot(name: str):
+    path = os.path.join(BUNDLED_CACHE_DIR, name + ".json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            cached = json.load(f)
+        if cached.get("value") is not None:
+            meta = dict(cached.get("meta") or {})
+            meta["stale"] = True
+            return cached["value"], meta
+    except Exception:
+        pass
+    return None
+
+
 def source(name: str, ttl: int, builder):
     """Fetch with TTL cache and last-known-good fallback on disk."""
+    # shortcut: на Vercel холодный live-сбор медленных источников не влезает в лимит функции,
+    # поэтому отдаём снапшот из data/. Для live-сбора задайте MONETKA_LIVE=1.
+    if os.environ.get("VERCEL") and not os.environ.get("MONETKA_LIVE"):
+        snap = _snapshot(name)
+        if snap:
+            return snap
+
     hit = MEM.get(name)
     if hit and hit["exp"] > time.time():
         return hit["value"], hit["meta"]
@@ -1400,16 +1421,24 @@ def api_ai(payload):
     key = (os.environ.get("YANDEX_GPT_API_KEY") or "").strip()
     folder = (os.environ.get("YANDEX_GPT_FOLDER_ID") or "").strip()
     if not key or not folder:
-        raise RuntimeError("AI не настроен: добавьте YANDEX_GPT_API_KEY и YANDEX_GPT_FOLDER_ID")
+        raise RuntimeError("Нейросеть не настроена: администратору нужно добавить ключ API")
     model = (os.environ.get("YANDEX_GPT_MODEL") or "yandexgpt-lite/latest").strip()
     model_uri = model if model.startswith("gpt://") else f"gpt://{folder}/{model}"
+    messages = [{"role": "system", "text": YANDEX_GPT_SYSTEM}]
+    history = payload.get("history") or []
+    if isinstance(history, list):
+        for item in history[-6:]:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            text = str(item.get("text") or "").strip()[:1500]
+            if role in ("user", "assistant") and text:
+                messages.append({"role": role, "text": text})
+    messages.append({"role": "user", "text": f"Данные:\n{context or 'Нет данных'}\n\nВопрос: {question}"})
     body = json.dumps({
         "modelUri": model_uri,
         "completionOptions": {"stream": False, "temperature": 0.3, "maxTokens": 700},
-        "messages": [
-            {"role": "system", "text": YANDEX_GPT_SYSTEM},
-            {"role": "user", "text": f"Данные:\n{context or 'Нет данных'}\n\nВопрос: {question}"},
-        ],
+        "messages": messages,
     }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(YANDEX_GPT_URL, data=body, method="POST", headers={
         "Authorization": f"Api-Key {key}",
@@ -1422,17 +1451,17 @@ def api_ai(payload):
         detail = exc.read().decode("utf-8", "replace")[:400]
         if exc.code in (401, 403):
             raise RuntimeError(
-                "YandexGPT отклонил ключ: проверьте YANDEX_GPT_API_KEY, "
+                "Нейросеть отклонила ключ: администратору нужно проверить ключ API, "
                 "права сервисного аккаунта и scope yc.ai.languageModels.execute"
             ) from exc
-        raise RuntimeError(f"YandexGPT: HTTP {exc.code} {detail}") from exc
+        raise RuntimeError(f"Нейросеть: HTTP {exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError(f"YandexGPT недоступен: {exc.reason}") from exc
+        raise RuntimeError(f"Нейросеть недоступна: {exc.reason}") from exc
     result = data.get("result") or {}
     alternatives = result.get("alternatives") or []
     answer = ((alternatives[0].get("message") or {}).get("text") or "").strip() if alternatives else ""
     if not answer:
-        raise RuntimeError("YandexGPT вернул пустой ответ")
+        raise RuntimeError("Нейросеть вернула пустой ответ")
     return {"answer": answer, "model": model, "usage": result.get("usage")}
 
 
