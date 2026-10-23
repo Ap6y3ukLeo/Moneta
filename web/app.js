@@ -89,6 +89,10 @@ function sparkline(values, color, w = 120, h = 44) {
   </svg>`;
 }
 const coin = (txt, cls = '') => `<span class="coin ${cls}">${esc(String(txt).slice(0, 4))}</span>`;
+const cryptoIcon = (c) => {
+  const symbol = String(c?.symbol || '').toLowerCase();
+  return `<span class="coin coin--logo">${esc(String(c?.symbol || '?').slice(0, 4))}${symbol ? `<img src="https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/32/color/${encodeURIComponent(symbol)}.png" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+};
 const metalIcon = (code) => coin(code === 'XAU' ? 'Au' : code === 'XAG' ? 'Ag' : code === 'XPT' ? 'Pt' : 'Pd',
   code === 'XAU' ? 'coin--gold' : code === 'XAG' ? 'coin--silver' : 'coin--platinum');
 const ext = (url, label = '', cls = 'icon-btn') => url
@@ -403,7 +407,7 @@ function sourcePill(label, meta) {
 function trendList() {
   const items = [];
   cryptoList().slice(0, 8).forEach((c) => items.push({
-    name: c.name, icon: coin(c.symbol), chg: c.change24h, value: money(rub(c.price)), href: '#/crypto',
+    name: c.name, icon: cryptoIcon(c), chg: c.change24h, value: money(rub(c.price)), href: '#/crypto',
   }));
   metalList().forEach((m) => items.push({
     name: m.name, icon: metalIcon(m.code), chg: m.change24h, value: money(m.price) + '/г', href: '#/metals',
@@ -665,15 +669,15 @@ function cryptoPage() {
           const rubPrice = rub(c.price);
           return `<tr>
             <td class="muted">${i + 1}</td>
-            <td><div class="asset-cell">${coin(c.symbol)}<span class="txt"><b>${esc(c.name)}</b><small>${esc(c.symbol)} · $${price(c.price)}</small></span></div></td>
+            <td><div class="asset-cell">${cryptoIcon(c)}<span class="txt"><b>${esc(c.name)}</b><small>${esc(c.symbol)} · $${price(c.price)}</small></span></div></td>
             <td class="num"><b>${money(rubPrice)}</b></td>
             <td class="num">${chg(c.change24h)}</td>
-            <td style="width:120px">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</td>
+            <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button></td>
             <td class="num muted">${money(c.volume ? rub(c.volume) : null, 0)}</td>
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
               <button class="icon-btn" data-add-crypto="${esc(c.id)}" title="В портфель" aria-label="Добавить ${esc(c.name)} в портфель">${icon('plus')}</button>
-              <button class="icon-btn" data-forecast="crypto:${esc(c.id)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(c.name)}">${icon('spark')}</button>
+              <button class="icon-btn" data-chart="crypto:${esc(c.id)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(c.name)}">${icon('chart')}</button>
             </div></td>
           </tr>`;
         }).join('')}
@@ -701,8 +705,8 @@ function metalsPage() {
       <div class="price">${money(m.price)}<small> /г</small></div>
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
       <div class="chg">${chg(m.change24h)} <span class="muted">за день</span></div>
-      ${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}
-      <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-forecast="metal:${esc(m.id)}" style="border:0;background:none;padding:0">AI-прогноз ${icon('spark')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
+      <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}</button>
+      <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-chart="metal:${esc(m.id)}" style="border:0;background:none;padding:0">График ${icon('chart')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
     </article>`).join('')}
   </div>
   <div class="card table-card">
@@ -717,7 +721,7 @@ function metalsPage() {
           <td class="num">$${num(m.ozUsd, 2)}</td>
           <td class="num">${chg(m.change24h)}</td>
           <td class="muted">ЦБ РФ, ${esc(m.date)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-forecast="metal:${esc(m.id)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(m.name)}">${icon('spark')}</button></div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-chart="metal:${esc(m.id)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(m.name)}">${icon('chart')}</button></div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -747,7 +751,7 @@ function fxPage() {
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-forecast="fx:${esc(f.code)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(f.code)}">${icon('spark')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -1578,59 +1582,156 @@ function fmtForecast(value, unit) {
   return `${money(number)}/г`;
 }
 
-function forecastChart(history, points, bandPct, unit, direction) {
-  const width = 700, height = 300, padL = 74, padR = 20, padT = 24, padB = 34;
-  const hist = (history || []).filter((v) => Number.isFinite(Number(v))).map(Number);
-  const fc = (points || []).filter((v) => Number.isFinite(Number(v))).map(Number);
-  if (hist.length < 2 || !fc.length) return '<div class="empty-state" style="padding:30px 12px">Недостаточно истории для графика.</div>';
-  const band = Math.max(0.5, Number(bandPct) || 5) / 100;
-  const all = [...hist, ...fc, ...fc.map((v) => v * (1 + band)), ...fc.map((v) => v * (1 - band))];
-  let min = Math.min(...all), max = Math.max(...all);
-  const pad = (max - min) * 0.08 || max * 0.02 || 1;
-  min -= pad; max += pad;
-  const total = hist.length + fc.length;
-  const x = (i) => padL + (i / (total - 1)) * (width - padL - padR);
-  const y = (v) => padT + (1 - (v - min) / (max - min)) * (height - padT - padB);
-  const historyPath = hist.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-  const historyArea = `${historyPath} L ${x(hist.length - 1).toFixed(1)} ${(height - padB).toFixed(1)} L ${padL} ${(height - padB).toFixed(1)} Z`;
-  const forecastPath = [hist[hist.length - 1], ...fc]
-    .map((v, i) => `${i ? 'L' : 'M'}${x(hist.length - 1 + i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
-  const bandPoints = [
-    [x(hist.length - 1), y(hist[hist.length - 1])],
-    ...fc.map((v, i) => [x(hist.length + i), y(v * (1 + band))]),
-    ...fc.map((v, i) => [x(hist.length + fc.length - 1 - i), y(fc[fc.length - 1 - i] * (1 - band))]),
-  ].map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
-  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
-  const last = fc[fc.length - 1];
-  const grid = [0.25, 0.5, 0.75].map((p) => {
-    const gy = padT + p * (height - padT - padB);
-    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
-  }).join('');
-  return `<svg class="forecast-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="История и AI-прогноз">
-    ${grid}
-    <path d="${historyArea}" fill="${fill}" opacity=".7"/>
-    <path d="${historyPath}" fill="none" stroke="#40536a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
-    <polygon points="${bandPoints}" fill="${color}" opacity=".14"/>
-    <path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>
-    <line x1="${x(hist.length - 1)}" y1="${padT}" x2="${x(hist.length - 1)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>
-    <circle cx="${x(total - 1)}" cy="${y(last)}" r="4" fill="${color}"/>
-    <text x="${padL - 8}" y="${padT}" text-anchor="end" class="chart-label">${fmtForecast(max, unit)}</text>
-    <text x="${padL - 8}" y="${height - padB}" text-anchor="end" class="chart-label">${fmtForecast(min, unit)}</text>
-    <text x="${padL}" y="${height - 12}" class="chart-label">прошлое</text>
-    <text x="${x(hist.length - 1)}" y="${height - 12}" text-anchor="middle" class="chart-label">сегодня</text>
-    <text x="${width - padR}" y="${height - 12}" text-anchor="end" class="chart-label">+${fc.length} дн.</text>
-    <text x="${x(total - 1) - 8}" y="${y(last) - 10}" text-anchor="end" class="chart-end">${fmtForecast(last, unit)}</text>
-  </svg>`;
+/* ------------------------------------------------------------------ interactive chart */
+const chartState = {
+  seq: 0, kind: '', id: '', name: '', symbol: '', unit: '',
+  range: '1m', horizon: 30, points: [], forecast: null,
+  view: { start: 0, end: 0 }, hover: null, dragging: false, drag: null,
+  historyLoading: false, historyError: '', forecastLoading: false, forecastError: '',
+};
+const chartHistoryCache = new Map();
+const CHART_RANGE_LABELS = { '1d': '1Д', '7d': '7Д', '1m': '1М', '3m': '3М', '1y': '1Г', all: 'Всё' };
+const CHART_HORIZONS = [7, 30, 90];
+
+function preferredHorizon(range) {
+  if (range === '1d' || range === '7d') return 7;
+  if (range === '1m' || range === '3m') return 30;
+  return 90;
 }
 
-function renderForecast(data) {
-  const body = $('#forecast-body');
-  const title = $('#forecast-title');
-  const sub = $('#forecast-sub');
-  if (!body || !data) return;
+function chartLongDate(iso) {
+  const date = new Date(iso);
+  return isFinite(date) ? date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+}
+
+function chartLabelDate(iso, range) {
+  const date = new Date(iso);
+  if (!isFinite(date)) return '—';
+  if (range === '1y' || range === 'all') {
+    return date.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
+  }
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+function chartAllPoints() {
+  const history = chartState.points || [];
+  if (!history.length) return [];
+  const forecast = chartState.forecast?.points || [];
+  if (!forecast.length) return history;
+  const last = new Date(history[history.length - 1].t).getTime();
+  const base = isFinite(last) ? last : Date.now();
+  return history.concat(forecast.map((price, index) => ({
+    t: new Date(base + (index + 1) * 86400000).toISOString(),
+    c: Number(price),
+    forecast: true,
+  })));
+}
+
+function chartToolbarHtml() {
+  const ranges = chartState.kind === 'crypto' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
+  return `<div class="chart-toolbar">
+    <div class="chart-ranges">${ranges.map((range) => `<button class="chart-tab${chartState.range === range ? ' is-active' : ''}" type="button" data-chart-range="${range}">${CHART_RANGE_LABELS[range]}</button>`).join('')}</div>
+    <div class="chart-horizons"><span>AI:</span>${CHART_HORIZONS.map((horizon) => `<button class="chart-tab${chartState.horizon === horizon ? ' is-active' : ''}" type="button" data-forecast-horizon="${horizon}">${horizon}Д</button>`).join('')}</div>
+  </div>`;
+}
+
+function renderChartToolbar() {
+  const bar = $('#chart-toolbar');
+  if (bar) bar.innerHTML = chartToolbarHtml();
+}
+
+function chartSvg(all) {
+  const width = 920, height = 380, padL = 78, padR = 22, padT = 26, padB = 44;
+  if (all.length < 2) return '<div class="chart-empty">Мало данных для графика</div>';
+  const start = Math.max(0, Math.min(chartState.view.start, all.length - 2));
+  const end = Math.max(start + 1, Math.min(chartState.view.end, all.length - 1));
+  const visible = all.slice(start, end + 1);
+  const band = chartState.forecast ? Math.max(0, Number(chartState.forecast.bandPct) || 0) / 100 : 0;
+  const values = visible.map((point) => Number(point.c)).filter(Number.isFinite);
+  if (band) {
+    for (const point of visible) {
+      if (point.forecast) values.push(Number(point.c) * (1 + band), Number(point.c) * (1 - band));
+    }
+  }
+  if (!values.length) return '<div class="chart-empty">Нет данных</div>';
+  let min = Math.min(...values), max = Math.max(...values);
+  const pad = (max - min) * 0.08 || Math.abs(max) * 0.02 || 1;
+  min -= pad; max += pad;
+  const x = (index) => padL + ((index - start) / (end - start)) * (width - padL - padR);
+  const y = (value) => padT + (1 - (value - min) / (max - min)) * (height - padT - padB);
+  const indexed = visible.map((point, offset) => ({ point, index: start + offset }));
+  const hist = indexed.filter((item) => !item.point.forecast && Number.isFinite(Number(item.point.c)));
+  const fc = indexed.filter((item) => item.point.forecast && Number.isFinite(Number(item.point.c)));
+  const boundary = chartState.points.length - 1;
+  const boundaryVisible = boundary >= start && boundary <= end;
+  const histPath = hist.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(Number(item.point.c)).toFixed(1)}`).join(' ');
+  const histArea = hist.length
+    ? `${histPath} L ${x(hist[hist.length - 1].index).toFixed(1)} ${(height - padB).toFixed(1)} L ${x(hist[0].index).toFixed(1)} ${(height - padB).toFixed(1)} Z`
+    : '';
+  const forecastPoints = [];
+  if (boundaryVisible && chartState.points[boundary]) {
+    forecastPoints.push({ index: boundary, c: Number(chartState.points[boundary].c) });
+  }
+  for (const item of fc) forecastPoints.push({ index: item.index, c: Number(item.point.c) });
+  let forecastPath = '', bandPoly = '';
+  if (forecastPoints.length >= 2) {
+    forecastPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c).toFixed(1)}`).join(' ');
+    if (band) {
+      const top = forecastPoints.map((item) => [x(item.index), y(item.c * (1 + band))]);
+      const bottom = [...forecastPoints].reverse().map((item) => [x(item.index), y(item.c * (1 - band))]);
+      bandPoly = [...top, ...bottom].map((point) => `${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ');
+    }
+  }
+  const direction = chartState.forecast?.direction;
+  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
+  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
+  const grid = [0.25, 0.5, 0.75].map((part) => {
+    const gy = padT + part * (height - padT - padB);
+    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
+  }).join('');
+  let cross = '', tip = '';
+  if (chartState.hover != null && chartState.hover >= start && chartState.hover <= end && all[chartState.hover]) {
+    const hover = all[chartState.hover];
+    const hx = x(chartState.hover);
+    const hy = y(Number(hover.c));
+    cross = `<line x1="${hx.toFixed(1)}" y1="${padT}" x2="${hx.toFixed(1)}" y2="${height - padB}" stroke="#9fb0c3" stroke-dasharray="3 4"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" fill="${hover.forecast ? color : '#40536a'}"/>`;
+    tip = `<div class="chart-tip" style="left:${(hx / width * 100).toFixed(2)}%;top:8px">${esc(chartLongDate(hover.t))}<br>${esc(fmtForecast(hover.c, chartState.unit))} · ${hover.forecast ? 'прогноз' : 'история'}</div>`;
+  }
+  return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Интерактивный график ${esc(chartState.name)}">
+    ${grid}
+    ${histArea ? `<path d="${histArea}" fill="${fill}" opacity=".65"/>` : ''}
+    ${histPath ? `<path d="${histPath}" fill="none" stroke="#40536a" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+    ${bandPoly ? `<polygon points="${bandPoly}" fill="${color}" opacity=".14"/>` : ''}
+    ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+    ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>` : ''}
+    ${cross}
+    <text x="${padL - 8}" y="${padT}" text-anchor="end" class="chart-label">${esc(fmtForecast(max, chartState.unit))}</text>
+    <text x="${padL - 8}" y="${height - padB}" text-anchor="end" class="chart-label">${esc(fmtForecast(min, chartState.unit))}</text>
+    <text x="${padL}" y="${height - 12}" class="chart-label">${esc(chartLabelDate(all[start].t, chartState.range))}</text>
+    <text x="${(padL + width - padR) / 2}" y="${height - 12}" text-anchor="middle" class="chart-label">${esc(chartLabelDate(all[Math.floor((start + end) / 2)].t, chartState.range))}</text>
+    <text x="${width - padR}" y="${height - 12}" text-anchor="end" class="chart-label">${esc(chartLabelDate(all[end].t, chartState.range))}</text>
+    ${chartState.forecast ? `<text x="${width - padR}" y="${padT - 8}" text-anchor="end" class="chart-end">AI-прогноз ${chartState.forecast.horizonDays} дн.</text>` : ''}
+  </svg>${tip}`;
+}
+
+function renderChartStage() {
+  const stage = $('#chart-stage');
+  if (!stage) return;
+  if (chartState.historyLoading) {
+    stage.innerHTML = '<div class="chart-loading"><span class="loader"></span>Загружаем историю…</div>';
+    return;
+  }
+  if (chartState.historyError) {
+    stage.innerHTML = `<div class="chart-error">${icon('shield')}<span>${esc(chartState.historyError)}</span></div>`;
+    return;
+  }
+  const points = chartAllPoints();
+  stage.innerHTML = points.length ? chartSvg(points) : '<div class="chart-empty">Нет данных для графика</div>';
+}
+
+function forecastPanelHtml(data) {
   const asset = data.asset || {};
-  const unit = asset.unit || 'RUB/g';
+  const unit = asset.unit || chartState.unit;
   const direction = data.direction === 'up' ? 'up' : data.direction === 'down' ? 'down' : 'flat';
   const directionLabel = direction === 'up' ? 'рост' : direction === 'down' ? 'снижение' : 'боковик';
   const change = `${data.changePct > 0 ? '+' : ''}${num(data.changePct, 1)}%`;
@@ -1641,16 +1742,13 @@ function renderForecast(data) {
   const modelWeights = bt.weights
     ? Object.entries(bt.weights).map(([key, value]) => `${key === 'random' ? 'RW' : key === 'momentum' ? 'MOM' : 'MR'} ${Math.round(value * 100)}%`).join(' · ')
     : '';
-  if (title) title.textContent = `AI-прогноз · ${asset.name || ''}`;
-  if (sub) sub.textContent = `${data.horizonDays} дн. · сейчас ${fmtForecast(asset.price, unit)}`;
-  body.innerHTML = `
+  return `<div class="chart-ai-title">AI-анализ на ${data.horizonDays} дн.</div>
     <div class="forecast-summary">
       <div class="forecast-pill forecast-pill--${direction}">${directionLabel}</div>
       <div><b>${change}</b><span>за ${data.horizonDays} дн.</span></div>
       <div><b>${Math.round((data.confidence || 0) * 100)}%</b><span>оценка модели</span></div>
       <div><b>±${num(data.bandPct, 1)}%</b><span>диапазон</span></div>
     </div>
-    <div class="forecast-chart-wrap">${forecastChart(data.history, data.points, data.bandPct, unit, direction)}</div>
     <div class="forecast-levels">
       <span>${btText}</span>
       <span>Волатильность: <b>${num(data.volatilityPct, 1)}%</b></span>
@@ -1658,30 +1756,164 @@ function renderForecast(data) {
       <span>Сопротивление: <b>${fmtForecast(data.resistance, unit)}</b></span>
       ${modelWeights ? `<span>Веса: ${modelWeights}</span>` : ''}
       <span>Модель: <b>${esc(data.model || 'ensemble')}</b>${data.aiModel ? ' + AI' : ''}</span>
-      <span>Данные: ${esc(timeOf(data.generatedAt))}</span>
     </div>
     ${data.factorsText ? `<div class="forecast-factors"><b>Что учтено:</b> числовая модель — история цены; факторы для AI-комментария: ${esc(data.factorsText)}.</div>` : ''}
     <div class="forecast-text">${formatAi(data.summary)}</div>
     ${data.aiError ? `<div class="forecast-note">AI-комментарий недоступен: ${esc(data.aiError)}. Показан статистический прогноз.</div>` : ''}
     ${data.commentary ? `<div class="forecast-commentary forecast-text"><b>Комментарий AI</b>${formatAi(data.commentary)}</div>` : ''}
+    <div class="forecast-bias">Сценарий для покупки или удержания. Мы не рассматриваем шорт.</div>
     <p class="forecast-disclaimer">${esc(data.disclaimer || 'Это не инвестиционная рекомендация.')}</p>`;
 }
 
-let forecastSeq = 0;
+function renderChartAi() {
+  const box = $('#chart-ai');
+  if (!box) return;
+  if (chartState.forecastLoading && !chartState.forecast) {
+    box.innerHTML = '<div class="chart-ai-loading">Нейросеть анализирует историю…</div>';
+    return;
+  }
+  if (chartState.forecastError && !chartState.forecast) {
+    box.innerHTML = `<div class="forecast-error">${icon('shield')}<div><b>AI-анализ недоступен</b><p>${esc(chartState.forecastError)}</p><button class="btn btn--sm" type="button" data-chart-retry="${esc(chartState.kind)}:${esc(chartState.id)}">Повторить</button></div></div>`;
+    return;
+  }
+  box.innerHTML = chartState.forecast
+    ? forecastPanelHtml(chartState.forecast)
+    : '<div class="chart-ai-loading">AI-анализ появится после загрузки прогноза.</div>';
+}
 
-async function openForecast(kind, id) {
-  const seq = ++forecastSeq;
-  const dialog = $('#forecast-dialog');
-  const body = $('#forecast-body');
-  const title = $('#forecast-title');
+function updateChartSub() {
   const sub = $('#forecast-sub');
-  if (!dialog || !body) return;
-  const asset = kind === 'crypto' ? findCrypto(id) : kind === 'metal' ? findMetal(id) : findFx(id);
-  if (!asset) { toast('Актив не найден', true); return; }
-  if (title) title.textContent = `AI-прогноз · ${asset.name}`;
-  if (sub) sub.textContent = 'Строим сценарий по истории цены…';
-  body.innerHTML = '<div class="forecast-loading"><span class="loader"></span><span>Нейросеть анализирует историю…</span></div>';
-  if (!dialog.open) dialog.showModal();
+  if (!sub) return;
+  const last = chartState.points[chartState.points.length - 1];
+  const label = CHART_RANGE_LABELS[chartState.range] || chartState.range;
+  sub.textContent = last
+    ? `${label} · ${fmtForecast(last.c, chartState.unit)} · ${chartState.points.length} точек · AI ${chartState.horizon} дн.`
+    : 'Загружаем историю…';
+}
+
+function bindChartEvents() {
+  const stage = $('#chart-stage');
+  if (!stage) return;
+  stage.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    const all = chartAllPoints();
+    if (all.length < 3) return;
+    const rect = stage.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const start = Math.max(0, Math.min(chartState.view.start, all.length - 2));
+    const end = Math.max(start + 1, Math.min(chartState.view.end, all.length - 1));
+    const span = end - start;
+    const minSpan = Math.min(10, all.length - 1);
+    const nextSpan = Math.max(minSpan, Math.min(all.length - 1, Math.round(span * (event.deltaY > 0 ? 1.2 : 0.8))));
+    const anchor = start + ratio * span;
+    let nextStart = Math.round(anchor - ratio * nextSpan);
+    nextStart = Math.max(0, Math.min(all.length - 1 - nextSpan, nextStart));
+    chartState.view = { start: nextStart, end: nextStart + nextSpan };
+    renderChartStage();
+  }, { passive: false });
+  stage.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    const all = chartAllPoints();
+    if (all.length < 2) return;
+    chartState.dragging = true;
+    chartState.drag = { x: event.clientX, start: chartState.view.start, end: chartState.view.end };
+    stage.style.cursor = 'grabbing';
+    const onMove = (moveEvent) => {
+      if (!chartState.dragging || !chartState.drag) return;
+      const rect = stage.getBoundingClientRect();
+      const span = chartState.drag.end - chartState.drag.start;
+      const shift = Math.round(-(moveEvent.clientX - chartState.drag.x) / rect.width * span);
+      const maxStart = Math.max(0, all.length - 1 - span);
+      const nextStart = Math.max(0, Math.min(maxStart, chartState.drag.start + shift));
+      chartState.view = { start: nextStart, end: nextStart + span };
+      renderChartStage();
+    };
+    const onUp = () => {
+      chartState.dragging = false;
+      chartState.drag = null;
+      stage.style.cursor = 'crosshair';
+      window.removeEventListener('mousemove', onMove);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp, { once: true });
+  });
+  stage.addEventListener('mousemove', (event) => {
+    if (chartState.dragging) return;
+    const all = chartAllPoints();
+    const rect = stage.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    const start = Math.max(0, Math.min(chartState.view.start, all.length - 2));
+    const end = Math.max(start + 1, Math.min(chartState.view.end, all.length - 1));
+    const index = Math.round(start + ratio * (end - start));
+    if (index !== chartState.hover) {
+      chartState.hover = index;
+      renderChartStage();
+    }
+  });
+  stage.addEventListener('mouseleave', () => {
+    if (chartState.dragging) return;
+    if (chartState.hover != null) {
+      chartState.hover = null;
+      renderChartStage();
+    }
+  });
+}
+
+async function loadChartHistory() {
+  const seq = chartState.seq;
+  chartState.historyLoading = true;
+  chartState.historyError = '';
+  renderChartToolbar();
+  renderChartStage();
+  renderChartAi();
+  updateChartSub();
+  const key = `${chartState.kind}:${chartState.id}:${chartState.range}`;
+  try {
+    let data = chartHistoryCache.get(key);
+    if (!data) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30000);
+      try {
+        const res = await fetch(`/api/history?kind=${encodeURIComponent(chartState.kind)}&id=${encodeURIComponent(chartState.id)}&range=${encodeURIComponent(chartState.range)}`, { signal: controller.signal });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(payload.error || `Ошибка ${res.status}`);
+        data = payload;
+      } finally {
+        clearTimeout(timer);
+      }
+      chartHistoryCache.set(key, data);
+    }
+    if (seq !== chartState.seq) return;
+    if (!data.points || !data.points.length) throw new Error('Нет данных по истории');
+    chartState.points = data.points;
+    chartState.unit = data.unit || chartState.unit;
+    chartState.name = data.name || chartState.name;
+    chartState.symbol = data.symbol || chartState.symbol;
+    chartState.view = { start: 0, end: Math.max(1, chartState.points.length - 1) };
+    chartState.historyLoading = false;
+    if (chartState.forecast) chartState.view = { start: 0, end: chartAllPoints().length - 1 };
+    renderChartToolbar();
+    renderChartStage();
+    renderChartAi();
+    updateChartSub();
+  } catch (err) {
+    if (seq !== chartState.seq) return;
+    chartState.historyLoading = false;
+    chartState.historyError = err.name === 'AbortError' ? 'История не загрузилась вовремя.' : (err.message || 'Не удалось загрузить историю.');
+    renderChartStage();
+    renderChartAi();
+    updateChartSub();
+  }
+}
+
+async function loadChartForecast() {
+  const seq = chartState.seq;
+  chartState.forecastLoading = true;
+  chartState.forecastError = '';
+  chartState.forecast = null;
+  renderChartToolbar();
+  renderChartStage();
+  renderChartAi();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
@@ -1689,21 +1921,61 @@ async function openForecast(kind, id) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
-      body: JSON.stringify({ kind, id }),
+      body: JSON.stringify({ kind: chartState.kind, id: chartState.id, horizon: chartState.horizon }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
-    if (seq === forecastSeq) renderForecast(data);
+    if (seq !== chartState.seq) return;
+    const atEnd = !chartState.points.length || chartState.view.end >= chartState.points.length - 1;
+    chartState.forecast = data;
+    chartState.forecastLoading = false;
+    if (atEnd) chartState.view = { start: 0, end: chartAllPoints().length - 1 };
+    renderChartToolbar();
+    renderChartStage();
+    renderChartAi();
+    updateChartSub();
   } catch (err) {
-    if (seq !== forecastSeq) return;
-    const message = err.name === 'AbortError'
-      ? 'Нейросеть не ответила вовремя.'
-      : (err.message || 'Не удалось получить прогноз.');
-    body.innerHTML = `<div class="forecast-error">${icon('shield')}<div><b>Прогноз недоступен</b><p>${esc(message)}</p><button class="btn btn--sm" data-forecast-retry="${esc(kind)}:${esc(id)}">Повторить</button></div></div>`;
-    if (sub) sub.textContent = 'Проверьте настройки AI и попробуйте снова';
+    if (seq !== chartState.seq) return;
+    chartState.forecastLoading = false;
+    chartState.forecastError = err.name === 'AbortError' ? 'AI-анализ не ответил вовремя.' : (err.message || 'Не удалось получить AI-анализ.');
+    renderChartStage();
+    renderChartAi();
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function openChart(kind, id) {
+  const dialog = $('#forecast-dialog');
+  const body = $('#forecast-body');
+  const title = $('#forecast-title');
+  const sub = $('#forecast-sub');
+  if (!dialog || !body) return;
+  const asset = kind === 'crypto' ? findCrypto(id) : kind === 'metal' ? findMetal(id) : findFx(id);
+  if (!asset) { toast('Актив не найден', true); return; }
+  chartState.seq += 1;
+  chartState.kind = kind;
+  chartState.id = id;
+  chartState.name = asset.name || id;
+  chartState.symbol = asset.symbol || asset.code || id;
+  chartState.unit = kind === 'crypto' ? 'USD' : kind === 'metal' ? 'RUB/g' : 'RUB';
+  chartState.range = '1m';
+  chartState.horizon = preferredHorizon('1m');
+  chartState.points = [];
+  chartState.forecast = null;
+  chartState.view = { start: 0, end: 0 };
+  chartState.hover = null;
+  chartState.historyLoading = true;
+  chartState.historyError = '';
+  chartState.forecastLoading = true;
+  chartState.forecastError = '';
+  if (title) title.textContent = `График · ${asset.name}`;
+  if (sub) sub.textContent = 'Загружаем историю…';
+  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · наведите на точку</div><div id="chart-ai" class="chart-ai"></div>';
+  if (!dialog.open) dialog.showModal();
+  bindChartEvents();
+  renderChartToolbar();
+  await Promise.allSettled([loadChartHistory(), loadChartForecast()]);
 }
 
 /* ------------------------------------------------------------------ events */
@@ -1728,16 +2000,34 @@ document.addEventListener('click', (e) => {
     openAdd('deposit', offer ? { offerId: offer.id, rate: offer.rate, name: offer.name, amount: S.calc?.amount || 300000, months: S.calc?.months || 12 } : {});
     return;
   }
-  const forecast = e.target.closest('[data-forecast]');
-  if (forecast) {
-    const [kind, id] = (forecast.dataset.forecast || '').split(':');
-    if (kind && id) openForecast(kind, id);
+  const chartTrigger = e.target.closest('[data-chart], [data-forecast]');
+  if (chartTrigger) {
+    const [kind, id] = (chartTrigger.dataset.chart || chartTrigger.dataset.forecast || '').split(':');
+    if (kind && id) openChart(kind, id);
     return;
   }
-  const forecastRetry = e.target.closest('[data-forecast-retry]');
-  if (forecastRetry) {
-    const [kind, id] = (forecastRetry.dataset.forecastRetry || '').split(':');
-    if (kind && id) openForecast(kind, id);
+  const rangeTrigger = e.target.closest('[data-chart-range]');
+  if (rangeTrigger) {
+    const nextHorizon = preferredHorizon(rangeTrigger.dataset.chartRange);
+    const needsForecast = nextHorizon !== chartState.horizon || !chartState.forecast;
+    chartState.range = rangeTrigger.dataset.chartRange;
+    chartState.horizon = nextHorizon;
+    if (needsForecast) {
+      chartState.forecast = null;
+      loadChartForecast();
+    }
+    loadChartHistory();
+    return;
+  }
+  const horizonTrigger = e.target.closest('[data-forecast-horizon]');
+  if (horizonTrigger) {
+    chartState.horizon = Number(horizonTrigger.dataset.forecastHorizon) || 30;
+    loadChartForecast();
+    return;
+  }
+  const chartRetry = e.target.closest('[data-chart-retry]');
+  if (chartRetry) {
+    loadChartForecast();
     return;
   }
   const del = e.target.closest('[data-del]');

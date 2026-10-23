@@ -1,4 +1,4 @@
-"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/health, /api/ai, /api/forecast."""
+"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/history, /api/health, /api/ai, /api/forecast."""
 import json
 import os
 import sys
@@ -11,7 +11,8 @@ import server  # noqa: E402
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
-        route = parse_qs(urlparse(self.path).query).get("route", [""])[0]
+        params = parse_qs(urlparse(self.path).query)
+        route = params.get("route", [""])[0]
         try:
             if route == "market":
                 payload = server.api_market()
@@ -19,6 +20,8 @@ class handler(BaseHTTPRequestHandler):
                 payload = server.api_deposits()
             elif route == "realty":
                 payload = server.api_realty()
+            elif route == "history":
+                payload = server.api_history({key: values[0] for key, values in params.items()})
             elif route == "health":
                 payload = {"ok": True, "time": server.now_msk()}
             else:

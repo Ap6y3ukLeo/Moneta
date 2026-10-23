@@ -26,6 +26,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(ROOT, "web")
@@ -546,12 +547,12 @@ def build_fx():
     return {"items": items, "date": d, "provider": "ЦБ РФ"}
 
 
-def _fx_history(code):
+def _fx_history_points(code, days=365):
     cbr_id = FX_HISTORY_IDS.get(code)
     if not cbr_id:
         return []
     today = datetime.now(MSK).date()
-    start = today - timedelta(days=45)
+    start = today - timedelta(days=days)
     url = (
         "https://www.cbr.ru/scripts/XML_dynamic.asp"
         f"?date_req1={start:%d/%m/%Y}&date_req2={today:%d/%m/%Y}&VAL_NM_RQ={cbr_id}"
@@ -564,15 +565,128 @@ def _fx_history(code):
         r'<Record Date="([\d.]+)"[^>]*>\s*<Nominal>([\d.]+)</Nominal>\s*<Value>([\d,]+)</Value>',
         xml,
     )
-    values = []
-    for _, nominal, value in records:
+    points = []
+    for date_text, nominal, value in records:
         try:
             number = float(value.replace(",", ".")) / float(nominal)
+            stamp = datetime.strptime(date_text, "%d.%m.%Y").date().isoformat()
         except (TypeError, ValueError):
             continue
         if number > 0:
-            values.append(round(number, 4))
-    return values[-30:]
+            points.append({"t": stamp, "c": round(number, 4)})
+    points.sort(key=lambda point: point["t"])
+    return points
+
+
+def _fx_history(code):
+    return [point["c"] for point in _fx_history_points(code, 45)][-30:]
+
+
+HISTORY_DAYS = {"1d": 1, "7d": 7, "1m": 30, "3m": 90, "1y": 365, "all": 730}
+
+
+def _range_days(range_name):
+    return HISTORY_DAYS.get(range_name, 30)
+
+
+def _bybit_history(symbol, range_name):
+    pair = BYBIT_SPOT_PAIR.get(symbol, symbol + "USDT")
+    inverse = symbol == "USDT"
+    if range_name in ("1d", "7d"):
+        interval = "60"
+        limit = 24 if range_name == "1d" else 168
+    else:
+        interval = "D"
+        limit = {"1m": 30, "3m": 90, "1y": 365, "all": 1000}.get(range_name, 30)
+    data = http_json(
+        f"{BYBIT}/v5/market/kline?category=spot&symbol={pair}&interval={interval}&limit={limit}",
+        timeout=20,
+    )
+    rows = list(reversed(data["result"]["list"]))
+    points = []
+    for row in rows:
+        try:
+            stamp = datetime.fromtimestamp(int(row[0]) / 1000, MSK).isoformat(timespec="seconds")
+            close = float(row[4])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if inverse and close:
+            close = 1 / close
+        points.append({"t": stamp, "c": round(close, 8)})
+    return points
+
+
+def _metal_history(asset_id, range_name):
+    cbr_code = next((code for code, (ticker, _) in METALS.items() if ticker == asset_id), None)
+    if not cbr_code:
+        return []
+    window = _range_days(range_name)
+    fetch_days = max(window, 30)
+    today = datetime.now(MSK).date()
+    start = today - timedelta(days=fetch_days)
+    url = (
+        "https://www.cbr.ru/scripts/xml_metall.asp"
+        f"?date_req1={start:%d/%m/%Y}&date_req2={today:%d/%m/%Y}"
+    )
+    xml = http_text(url, "cp1251", timeout=30)
+    records = re.findall(
+        r'<Record Date="([\d.]+)" Code="(\d)">\s*<Buy>([\d.,]+)</Buy>',
+        xml,
+    )
+    points = []
+    for date_text, code, value in records:
+        if code != cbr_code:
+            continue
+        try:
+            stamp = datetime.strptime(date_text, "%d.%m.%Y").date().isoformat()
+            price = float(value.replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        points.append({"t": stamp, "c": round(price, 2)})
+    points.sort(key=lambda point: point["t"])
+    return points[-max(window, 2):] if window < 30 else points[-window:]
+
+
+def api_history(params):
+    kind = str((params or {}).get("kind") or "").strip()
+    asset_id = str((params or {}).get("id") or "").strip()
+    range_name = str((params or {}).get("range") or "1m").strip()
+    if range_name not in HISTORY_DAYS:
+        raise ValueError("Неизвестный диапазон")
+    if kind == "crypto":
+        coin = next((item for item in COINS if item[0] == asset_id), None)
+        if not coin:
+            raise ValueError("Актив не найден")
+        _, _, symbol, name = coin
+        points = _bybit_history(symbol, range_name)
+        unit, source = "USD", "Bybit"
+    elif kind == "metal":
+        metal = next(((ticker, title) for code, (ticker, title) in METALS.items() if ticker == asset_id), None)
+        if not metal:
+            raise ValueError("Актив не найден")
+        symbol, name = metal
+        points = _metal_history(asset_id, range_name)
+        unit, source = "RUB/g", "ЦБ РФ"
+    elif kind == "fx":
+        if asset_id not in FX_HISTORY_IDS:
+            raise ValueError("История доступна для USD, EUR, CNY и GBP")
+        points = _fx_history_points(asset_id, _range_days(range_name))
+        symbol = name = asset_id
+        unit, source = "RUB", "ЦБ РФ"
+    else:
+        raise ValueError("Неизвестный тип актива")
+    if not points:
+        raise RuntimeError("Не удалось загрузить историю")
+    return {
+        "kind": kind,
+        "id": asset_id,
+        "name": name,
+        "symbol": symbol,
+        "unit": unit,
+        "range": range_name,
+        "source": source,
+        "points": points,
+    }
 
 
 # ---------------------------------------------------------------- key rate
@@ -1546,14 +1660,13 @@ def _log_returns(prices):
     ]
 
 
-def _model_path(history, horizon, kind, model):
+def _model_path(history, horizon, steps_per_day, model):
     last = history[-1]
     returns = _log_returns(history)
     window = min(len(returns), 20)
     drift = _mean(returns[-window:]) if window else 0.0
     ma_window = min(len(history), 20)
     ma = _mean(history[-ma_window:])
-    steps_per_day = 8 if kind == "crypto" else 1
     path = []
     for day in range(1, horizon + 1):
         step = day * steps_per_day
@@ -1567,11 +1680,10 @@ def _model_path(history, horizon, kind, model):
     return path
 
 
-def _backtest(history, kind, horizon):
-    steps_per_day = 8 if kind == "crypto" else 1
-    backtest_days = 2 if kind == "crypto" else max(1, horizon)
+def _backtest(history, horizon, steps_per_day):
+    backtest_days = 2 if steps_per_day > 1 else max(1, horizon)
     step_points = backtest_days * steps_per_day
-    start = max(1, len(history) - 30)
+    start = max(1, len(history) - 180)
     end = len(history) - step_points
     models = ("random", "momentum", "reversion")
     errors = {model: [] for model in models}
@@ -1582,7 +1694,7 @@ def _backtest(history, kind, horizon):
         actual = history[i + step_points]
         actuals.append((current, actual))
         for model in models:
-            pred = _model_path(history[:i + 1], backtest_days, kind, model)[-1]
+            pred = _model_path(history[:i + 1], backtest_days, steps_per_day, model)[-1]
             preds[model].append(pred)
             errors[model].append(abs(pred / actual - 1))
     samples = len(actuals)
@@ -1619,12 +1731,11 @@ def _backtest(history, kind, horizon):
     }
 
 
-def _stat_forecast(history, kind, horizon, price):
-    steps_per_day = 8 if kind == "crypto" else 1
+def _stat_forecast(history, horizon, price, steps_per_day):
     models = ("random", "momentum", "reversion")
-    backtest = _backtest(history, kind, horizon)
+    backtest = _backtest(history, horizon, steps_per_day)
     weights = backtest["weights"]
-    paths = {model: _model_path(history, horizon, kind, model) for model in models}
+    paths = {model: _model_path(history, horizon, steps_per_day, model) for model in models}
     points = [
         sum(weights[model] * paths[model][day] for model in models)
         for day in range(horizon)
@@ -1743,43 +1854,61 @@ def api_forecast(payload):
         unit = "USD"
         name = item.get("name") if item else None
         symbol = item.get("symbol") if item else None
-        default_horizon = 7
-        limit = 60
+        default_horizon = 30
     elif kind == "metal":
         item = next((x for x in market["metals"]["items"]
                      if str(x.get("id")) == asset_id or str(x.get("code")) == asset_id), None)
         unit = "RUB/g"
         name = item.get("name") if item else None
         symbol = item.get("code") if item else None
-        default_horizon = 14
-        limit = 30
+        default_horizon = 30
     else:
         item = next((x for x in market["fx"]["items"] if str(x.get("code")) == asset_id), None)
         unit = "RUB"
         name = item.get("name") if item else None
         symbol = item.get("code") if item else None
-        default_horizon = 14
-        limit = 30
+        default_horizon = 30
     if not item:
         raise ValueError("Актив не найден")
-    if kind == "fx":
-        history = _fx_history(asset_id)
-    else:
-        history = []
-        for value in item.get("spark") or []:
-            number = _num_or_none(value)
-            if number and number > 0:
-                history.append(number)
-    if len(history) < 5:
-        raise ValueError("Недостаточно истории для прогноза" if kind != "fx" else "Не удалось загрузить историю валюты")
-    history = [round(value, 4 if kind in ("crypto", "fx") else 2) for value in history[-limit:]]
-    price = _num_or_none(item.get("price")) or _num_or_none(item.get("value")) or history[-1]
     try:
         horizon = int(payload.get("horizon") or default_horizon)
     except (TypeError, ValueError):
         horizon = default_horizon
-    horizon = max(5, min(30, horizon))
-    forecast = _stat_forecast(history, kind, horizon, price)
+    horizon = max(5, min(180, horizon))
+    steps_per_day = 1
+    history = []
+    try:
+        if kind == "crypto" and horizon <= 7 and item.get("spark"):
+            for value in item.get("spark") or []:
+                number = _num_or_none(value)
+                if number and number > 0:
+                    history.append(number)
+            steps_per_day = 8
+        elif kind == "crypto":
+            history = [point["c"] for point in _bybit_history(symbol, "1y")]
+        elif kind == "metal":
+            history = [point["c"] for point in _metal_history(asset_id, "1y")]
+        else:
+            history = [point["c"] for point in _fx_history_points(asset_id, 365)]
+    except Exception:
+        history = []
+    if len(history) < 5:
+        fallback = []
+        if kind == "fx":
+            fallback = _fx_history(asset_id)
+        else:
+            for value in item.get("spark") or []:
+                number = _num_or_none(value)
+                if number and number > 0:
+                    fallback.append(number)
+            if kind == "crypto":
+                steps_per_day = 8
+        history = fallback
+    if len(history) < 5:
+        raise ValueError("Недостаточно истории для прогноза" if kind != "fx" else "Не удалось загрузить историю валюты")
+    history = [round(value, 4 if kind in ("crypto", "fx") else 2) for value in history]
+    price = _num_or_none(item.get("price")) or _num_or_none(item.get("value")) or history[-1]
+    forecast = _stat_forecast(history, horizon, price, steps_per_day)
     factors = _forecast_factors(market, kind, item)
     commentary = None
     ai_error = None
@@ -1853,6 +1982,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if path == "/api/realty":
                 self.send_json(api_realty())
+                return
+            if path == "/api/history":
+                query = parse_qs(self.path.partition("?")[2])
+                self.send_json(api_history({key: values[0] for key, values in query.items()}))
                 return
             if path == "/api/health":
                 self.send_json({"ok": True, "time": now_msk()})

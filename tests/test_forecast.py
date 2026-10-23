@@ -36,7 +36,7 @@ class ForecastTest(unittest.TestCase):
             server, "_yandex_completion",
             return_value={"answer": "Комментарий AI", "model": "test", "usage": {}},
         ):
-            result = server.api_forecast({"kind": "crypto", "id": "bitcoin"})
+            result = server.api_forecast({"kind": "crypto", "id": "bitcoin", "horizon": 7})
         self.assertEqual(len(result["points"]), 7)
         self.assertEqual(result["model"], "ensemble")
         self.assertEqual(result["commentary"], "Комментарий AI")
@@ -51,29 +51,35 @@ class ForecastTest(unittest.TestCase):
         with patch.object(server, "api_market", return_value=MARKET), patch.object(
             server, "_yandex_completion", side_effect=RuntimeError("ключ не задан"),
         ):
-            result = server.api_forecast({"kind": "crypto", "id": "bitcoin"})
+            result = server.api_forecast({"kind": "crypto", "id": "bitcoin", "horizon": 7})
         self.assertEqual(len(result["points"]), 7)
         self.assertIsNone(result["commentary"])
         self.assertIn("ключ", result["aiError"])
 
     def test_metal_forecast_horizon(self):
         with patch.object(server, "api_market", return_value=MARKET), patch.object(
+            server, "_metal_history", return_value=[
+                {"t": f"2026-01-{i + 1:02d}", "c": 190 + i} for i in range(20)
+            ]
+        ), patch.object(
             server, "_yandex_completion",
             return_value={"answer": "Комментарий", "model": "test", "usage": {}},
         ):
-            result = server.api_forecast({"kind": "metal", "id": "XAU"})
+            result = server.api_forecast({"kind": "metal", "id": "XAU", "horizon": 14})
         self.assertEqual(result["horizonDays"], 14)
         self.assertEqual(len(result["points"]), 14)
         self.assertEqual(result["asset"]["unit"], "RUB/g")
 
     def test_fx_forecast_uses_cbr_history(self):
         with patch.object(server, "api_market", return_value=MARKET), patch.object(
-            server, "_fx_history", return_value=[80 + i * 0.1 for i in range(20)]
+            server, "_fx_history_points", return_value=[
+                {"t": f"2026-01-{i + 1:02d}", "c": 80 + i * 0.1} for i in range(20)
+            ]
         ), patch.object(
             server, "_yandex_completion",
             return_value={"answer": "Комментарий", "model": "test", "usage": {}},
         ):
-            result = server.api_forecast({"kind": "fx", "id": "USD"})
+            result = server.api_forecast({"kind": "fx", "id": "USD", "horizon": 14})
         self.assertEqual(result["horizonDays"], 14)
         self.assertEqual(result["asset"]["unit"], "RUB")
         self.assertEqual(result["asset"]["price"], 81.0)
