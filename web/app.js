@@ -111,7 +111,7 @@ const S = {
   addKind: 'crypto',
   addPreset: {},
   dep: { q: '', bank: 'all', source: 'all', sort: 'rate', limit: 40 },
-  re: { q: '', rooms: 'all', source: 'all', sort: 'price', limit: 12 },
+  re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 12 },
   calc: null,
 };
 S.portfolio = loadPortfolio(S.profiles.active);
@@ -395,7 +395,7 @@ function homePage() {
   const xpt = metals.items.find((m) => m.code === 'XPT');
   const topDep = bestDeposit();
   const msk = S.realty?.stats?.moscow;
-  const spb = S.realty?.stats?.spb;
+  const russia = S.realty?.stats?.russia;
   const v = valuation();
   const insights = [];
 
@@ -510,14 +510,14 @@ function homePage() {
 
         <article class="card">
           <div class="card-head">
-            <div><h3>Недвижимость</h3><div class="sub">Москва и Санкт-Петербург</div></div>
+            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Авито, Циан, БН.ру</div></div>
             <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
           </div>
           ${msk ? `<div class="metric-big" style="font-size:23px">${money(msk.avgM2)}<span class="muted" style="font-size:12px;font-weight:500">/м²</span></div>
             <div class="muted" style="font-size:11.5px">Москва · средняя квартира ${money(msk.avgPrice)}</div>` : '<p class="muted" style="font-size:12px">Загружаем средние цены…</p>'}
           <div class="mini-rows" style="margin-top:12px">
-            ${spb ? `<div class="mini-row">${icon('building')}<span class="name">СПб · медиана</span><span class="price">${money(spb.median)}</span></div>` : ''}
-            ${spb?.avgM2 ? `<div class="mini-row"><span class="name">СПб · цена м²</span><span class="price">${money(spb.avgM2)}</span></div>` : ''}
+            ${russia ? `<div class="mini-row">${icon('building')}<span class="name">Россия · медиана</span><span class="price">${money(russia.median)}</span></div>` : ''}
+            ${russia?.avgM2 ? `<div class="mini-row"><span class="name">Россия · цена м²</span><span class="price">${money(russia.avgM2)}</span></div>` : ''}
           </div>
           <div class="card-foot"><a class="link-more" href="#/realty">Смотреть объявления ${icon('arrow')}</a><a class="chev-link" href="#/realty">${icon('chev')}</a></div>
         </article>
@@ -860,9 +860,10 @@ function realtyRowsHtml() {
   let items = realtyList();
   if (S.re.q) {
     const q = S.re.q.toLowerCase();
-    items = items.filter((r) => (r.title + ' ' + r.address + ' ' + r.district + ' ' + r.metro).toLowerCase().includes(q));
+    items = items.filter((r) => (r.title + ' ' + r.address + ' ' + r.district + ' ' + r.metro + ' ' + r.city).toLowerCase().includes(q));
   }
   if (S.re.source !== 'all') items = items.filter((r) => r.source === S.re.source);
+  if (S.re.city !== 'all') items = items.filter((r) => r.city === S.re.city);
   if (S.re.rooms === '4') items = items.filter((r) => Number(r.rooms) >= 4);
   else if (S.re.rooms !== 'all') items = items.filter((r) => String(r.rooms) === S.re.rooms);
   const sort = S.re.sort;
@@ -873,11 +874,11 @@ function realtyRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card">
-    <a class="re-img" href="${esc(r.url)}" target="_blank" rel="noopener">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : r.city)}</span></a>
+    <a class="re-img" href="${esc(r.url)}" target="_blank" rel="noopener">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></a>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
-      <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || 'Санкт-Петербург'}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
+      <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
       <div class="re-foot"><span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}</div>
     </div>
   </article>`).join('')}</div>`;
@@ -888,12 +889,16 @@ function realtyRowsHtml() {
 function realtyPage() {
   if (!S.realty) return loadingView();
   const msk = S.realty.stats?.moscow;
-  const spb = S.realty.stats?.spb;
+  const russia = S.realty.stats?.russia;
   const sources = S.realty.sources || [];
+  const cities = [...new Set(realtyList().map((r) => r.city).filter(Boolean))]
+    .map((city) => ({ city, count: realtyList().filter((r) => r.city === city).length }))
+    .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, 'ru'))
+    .slice(0, 20);
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и живые объявления Санкт-Петербурга с БН.ру, Авито и Циана. Данные обновляются с публичных витрин, ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -908,23 +913,27 @@ function realtyPage() {
         <div><span>Диапазон</span><b>${money(msk.min)} – ${money(msk.max)}</b></div>
       </div>
     </div>` : ''}
-    ${spb ? `<div class="card stat-card">
-      <div class="stat-head"><span class="badge">Санкт-Петербург</span><a class="link-more" href="${esc(spb.url)}" target="_blank" rel="noopener">${esc(spb.source)} ${icon('ext')}</a></div>
-      <div class="stat-big">${money(spb.median)}</div>
+    ${russia ? `<div class="card stat-card">
+      <div class="stat-head"><span class="badge">Россия</span><a class="link-more" href="${esc(russia.url)}" target="_blank" rel="noopener">${esc(russia.source)} ${icon('ext')}</a></div>
+      <div class="stat-big">${money(russia.median)}</div>
       <div class="muted">медиана в выборке объявлений</div>
       <div class="stat-rows">
-        <div><span>Средняя цена м²</span><b>${money(spb.avgM2)}</b></div>
-        <div><span>Объявлений в выборке</span><b>${num(spb.count, 0)}</b></div>
-        <div><span>Источник</span><b>${esc(spb.source)}</b></div>
+        <div><span>Средняя цена м²</span><b>${money(russia.avgM2)}</b></div>
+        <div><span>Объявлений в выборке</span><b>${num(russia.count, 0)}</b></div>
+        <div><span>Городов в выборке</span><b>${num(russia.cities, 0)}</b></div>
       </div>
     </div>` : ''}
   </div>
 
   <div class="filters">
-    <input type="search" id="re-search" placeholder="Район, метро или адрес…" value="${esc(S.re.q)}" autocomplete="off">
+    <input type="search" id="re-search" placeholder="Город, район, метро или адрес…" value="${esc(S.re.q)}" autocomplete="off">
+    <select id="re-city" aria-label="Город">
+      <option value="all" ${S.re.city === 'all' ? 'selected' : ''}>Все города</option>
+      ${cities.map((c) => `<option value="${esc(c.city)}" ${S.re.city === c.city ? 'selected' : ''}>${esc(c.city)} · ${c.count}</option>`).join('')}
+    </select>
     <select id="re-source" aria-label="Источник">
       <option value="all" ${S.re.source === 'all' ? 'selected' : ''}>Все источники</option>
-      ${sources.filter((s) => s.key !== 'mirkvartir').map((s) => `<option value="${esc(s.name)}" ${S.re.source === s.name ? 'selected' : ''}>${esc(s.name)} · ${s.count}</option>`).join('')}
+      ${sources.filter((s) => s.key !== 'moscow').map((s) => `<option value="${esc(s.name)}" ${S.re.source === s.name ? 'selected' : ''}>${esc(s.name)}${s.scope ? ` · ${esc(s.scope)}` : ''} · ${s.count}</option>`).join('')}
     </select>
     <select id="re-rooms" aria-label="Комнат">
       <option value="all" ${S.re.rooms === 'all' ? 'selected' : ''}>Любая комнатность</option>
@@ -942,7 +951,7 @@ function realtyPage() {
     </select>
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления Санкт-Петербурга — выборка с БН.ру, Авито и Циана, средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: portfolio */
@@ -1066,7 +1075,7 @@ function searchPage(params) {
     if ((d.bank + ' ' + d.name).toLowerCase().includes(needle)) found.push({ type: 'Вклад', name: d.name, sub: `${d.bank}${d.termDays ? ' · ' + d.termDays + ' дн.' : ''}`, value: num(d.rate, 2) + '%', chg: null, href: '#/deposits', url: d.url });
   });
   realtyList().forEach((r) => {
-    if ((r.title + ' ' + r.address + ' ' + r.district + ' ' + r.metro).toLowerCase().includes(needle)) found.push({ type: 'Недвижимость', name: r.title, sub: `${r.city} · ${r.district || r.address}`, value: money(r.price), chg: null, href: '#/realty', url: r.url });
+    if ((r.title + ' ' + r.address + ' ' + r.district + ' ' + r.metro + ' ' + r.city).toLowerCase().includes(needle)) found.push({ type: 'Недвижимость', name: r.title, sub: `${r.city} · ${r.district || r.address}`, value: money(r.price), chg: null, href: '#/realty', url: r.url });
   });
 
   return `${sourceWarning()}
@@ -1433,6 +1442,7 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 'dep-source') { S.dep.source = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
   if (e.target.id === 'dep-sort') { S.dep.sort = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
   if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-city') { S.re.city = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
 });

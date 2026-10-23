@@ -893,7 +893,7 @@ def build_mirkvartir_stats():
     }
 
 
-AVITO_URL = "https://www.avito.ru/sankt-peterburg/kvartiry/prodam"
+AVITO_URL = "https://www.avito.ru/rossiya/kvartiry/prodam"
 AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => ({
   id: card.dataset.itemId,
   title: card.querySelector('[itemprop="name"]')?.innerText,
@@ -914,9 +914,90 @@ CIAN_JS = r"""JSON.stringify([...document.querySelectorAll('article[data-name="C
   text: card.innerText
 })))"""
 
+CITY_SLUGS = {
+    "sankt-peterburg": "Санкт-Петербург",
+    "moskva": "Москва",
+    "novosibirsk": "Новосибирск",
+    "ekaterinburg": "Екатеринбург",
+    "kazan": "Казань",
+    "krasnodar": "Краснодар",
+    "nizhniy_novgorod": "Нижний Новгород",
+    "chelyabinsk": "Челябинск",
+    "samara": "Самара",
+    "ufa": "Уфа",
+    "rostov-na-donu": "Ростов-на-Дону",
+    "krasnoyarsk": "Красноярск",
+    "perm": "Пермь",
+    "voronezh": "Воронеж",
+    "volgograd": "Волгоград",
+    "groznyy": "Грозный",
+    "abakan": "Абакан",
+    "yaroslavl": "Ярославль",
+    "ryazan": "Рязань",
+    "krasnogorsk": "Красногорск",
+    "kirov": "Киров",
+    "vologda": "Вологда",
+    "yoshkar-ola": "Йошкар-Ола",
+    "novaya_usman": "Новая Усмань",
+    "orenburg": "Оренбург",
+    "tver": "Тверь",
+    "kaliningrad": "Калининград",
+    "tyumen": "Тюмень",
+    "sochi": "Сочи",
+    "domodedovo": "Домодедово",
+    "voskresenskoe": "Воскресенское",
+    "odintsovo": "Одинцово",
+}
+
+
+def _clean_city(value):
+    city = _clean(value)
+    city = re.sub(r"^г\.о\.\s*", "", city, flags=re.I)
+    city = re.sub(r"^г\.\s*", "", city, flags=re.I)
+    city = re.sub(r"\s*[·•]\s*$", "", city)
+    return city.strip()
+
+
+def _avito_city(parts, addr, url):
+    text = " ".join(parts)
+    if "Санкт-Петербург" in text:
+        return "Санкт-Петербург"
+    if re.search(r"\bМосква\b", text):
+        return "Москва"
+    region_city = re.search(r"(?:област\w*|обл\.|край|Республика|респ\.|АО|автономный округ)[^,]*,\s*([^,]+)", addr)
+    if region_city:
+        city = _clean_city(region_city.group(1))
+        if city and not re.search(r"(ул\.|просп|переул|наб\.|шоссе|бульвар|пл\.|линия|д\.|р-н)", city, re.I):
+            return city
+    city_prefix = re.search(r"\bг\.(?:о\.)?\s*([^,]+)", addr)
+    if city_prefix:
+        return _clean_city(city_prefix.group(1))
+    if "," in addr:
+        first, last = addr.split(",", 1)[0], addr.split(",")[-1].strip()
+        if not re.search(r"(ул\.|просп|пр-т|переул|наб\.|шоссе|бульвар|пл\.|линия|д\.)", first, re.I):
+            if not re.search(r"\d", last) and not re.search(r"(ул\.|просп|пр-т|переул|наб\.|шоссе|бульвар|пл\.|линия|д\.)", last, re.I):
+                return _clean_city(last)
+    slug = re.search(r"avito\.ru/([^/]+)/", url)
+    if slug:
+        value = slug.group(1)
+        if value in CITY_SLUGS:
+            return CITY_SLUGS[value]
+        for prefix in ("moskovskaya_oblast_", "leningradskaya_oblast_"):
+            if value.startswith(prefix) and value[len(prefix):] in CITY_SLUGS:
+                return CITY_SLUGS[value[len(prefix):]]
+    return ""
+
 
 def build_avito():
-    rows = browser_json(AVITO_URL, AVITO_JS, wait=11)
+    rows = []
+    for wait in (15, 18):
+        try:
+            rows = browser_json(AVITO_URL, AVITO_JS, wait=wait)
+        except Exception:
+            rows = []
+        if rows:
+            break
+        time.sleep(2)
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
@@ -926,28 +1007,34 @@ def build_avito():
             continue
         raw_addr = row.get("addr") or ""
         text = row.get("text") or ""
-        parts = [_clean(x) for x in raw_addr.splitlines() if _clean(x)]
+        parts = []
+        for raw in raw_addr.splitlines():
+            part = _clean(raw)
+            part = re.sub(r"\s*·\s*[\d,.]+\s*·\s*\d+\s*отзыв\w*", "", part)
+            part = re.sub(r"^\s*[\d,.]+\s*·\s*\d+\s*отзыв\w*", "", part).strip()
+            part = re.sub(r"\s*[·•]\s*$", "", part).strip()
+            if not part or "отзыв" in part.lower():
+                continue
+            if part.startswith(("ЖК", "Экопоселок", "Квартал", "Микрорайон")):
+                continue
+            parts.append(part)
         addr, district, metro = "", "", ""
         for part in parts:
-            if part.startswith("ЖК") or "отзыв" in part.lower():
+            if "мин." in part:
+                if not metro:
+                    metro = part.split(",")[0].strip()
                 continue
-            if part.startswith("Санкт-Петербург"):
+            if re.match(r"р-н\s+", part):
+                if not district:
+                    district = re.sub(r"^р-н\s+", "", part).strip()
+                continue
+            if not addr and (part.startswith(("Санкт-Петербург", "Москва")) or "," in part):
                 addr = part
-            if re.match(r"р-н\s+", part) and not district:
-                district = re.sub(r"^р-н\s+", "", part).strip()
-            if "мин." in part and not metro:
-                metro = part.split(",")[0].strip()
         if not addr:
-            addr = next((p for p in parts if re.search(r"(ул\.|просп|пр-т|переул|наб\.|шоссе|бульвар|пл\.)", p)), "")
-        if not addr and metro:
-            addr = "Санкт-Петербург"
-        low = (raw_addr + " " + addr).lower()
-        if (
-            "санкт-петербург" not in low
-            and not any(d in district.lower() for d in SPB_DISTRICTS)
-            and not metro
-        ):
-            continue
+            addr = next((p for p in parts if re.search(r"(ул\.|просп|пр-т|переул|наб\.|шоссе|бульвар|пл\.|линия)", p)), "")
+        city = _avito_city(parts, addr, url)
+        if not addr and city:
+            addr = city
         area = re.search(r"([\d.,]+)\s*м²", title)
         room_match = re.search(r"(\d+)-к", title)
         rooms = "Студия" if "студи" in title.lower() else (room_match.group(1) if room_match else "")
@@ -959,7 +1046,7 @@ def build_avito():
         items.append({
             "id": "avito:" + item_id,
             "source": "Авито",
-            "city": "Санкт-Петербург",
+            "city": city,
             "title": title,
             "price": price,
             "priceM2": _digits(ppm.group(1)) if ppm else None,
@@ -1011,7 +1098,7 @@ def build_cian():
         items.append({
             "id": "cian:" + sale.group(1),
             "source": "Циан",
-            "city": "Санкт-Петербург",
+            "city": _clean_city(addr.split(",")[0]) or "Санкт-Петербург",
             "title": layout,
             "price": price,
             "priceM2": _digits(ppm.group(1)) if ppm else (round(price / area) if area else None),
@@ -1050,32 +1137,38 @@ def api_realty():
     if not listings and not moscow:
         raise RuntimeError("Недвижимость: источники недоступны")
 
-    spb = None
-    if listings:
+    avito_items = metas["realty_avito"][0] or []
+    sample = avito_items or listings
+    russia = None
+    if sample:
         # shortcut: медиана и средняя цена м² по выборке карточек, не по всему рынку; перейти на API агрегатора при необходимости.
-        prices = sorted(x["price"] for x in listings if x.get("price"))
-        ppsm = [x["priceM2"] for x in listings if x.get("priceM2")]
-        spb = {
-            "city": "Санкт-Петербург",
-            "count": len(listings),
+        prices = sorted(x["price"] for x in sample if x.get("price"))
+        ppsm = [x["priceM2"] for x in sample if x.get("priceM2")]
+        cities = {x.get("city") for x in sample if x.get("city")}
+        russia = {
+            "city": "Россия",
+            "count": len(sample),
+            "cities": len(cities),
             "median": prices[len(prices) // 2] if prices else None,
             "avgM2": round(sum(ppsm) / len(ppsm)) if ppsm else None,
-            "source": "БН.ру, Авито, Циан",
-            "url": "https://www.bn.ru/kvartiry-vtorichka/",
+            "source": "Авито, вся Россия" if avito_items else "Авито, Циан, БН.ру",
+            "url": AVITO_URL if avito_items else "https://www.avito.ru/rossiya/kvartiry/prodam",
             "sample": True,
         }
 
     sources = []
+    scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб", "realty_moscow": "Москва"}
     for key, label, _ in (("realty_bn", "БН.ру", build_bn), ("realty_avito", "Авито", build_avito),
                           ("realty_cian", "Циан", build_cian), ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
         data, meta = metas[key]
         count = len(data) if isinstance(data, list) else (1 if data else 0)
-        sources.append({"key": key.replace("realty_", ""), "name": label, "count": count, "meta": meta})
+        sources.append({"key": key.replace("realty_", ""), "name": label, "scope": scopes[key],
+                        "count": count, "meta": meta})
 
     meta_list = [m for _, m in metas.values()]
     return {
         "items": listings,
-        "stats": {"moscow": moscow, "spb": spb},
+        "stats": {"moscow": moscow, "russia": russia},
         "sources": sources,
         "meta": {
             "ok": any(m.get("ok") for m in meta_list),
