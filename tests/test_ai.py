@@ -1,7 +1,9 @@
+import io
 import json
 import os
 import sys
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,6 +47,16 @@ class YandexGptTest(unittest.TestCase):
         body = json.loads(request.data.decode("utf-8"))
         self.assertEqual(body["modelUri"], "gpt://test-folder/yandexgpt-lite/latest")
         self.assertEqual(request.get_header("Authorization"), "Api-Key test-key")
+
+    def test_auth_error_message(self):
+        error = urllib.error.HTTPError("https://example.test", 401, "Unauthorized", {}, io.BytesIO(b"{}"))
+        env = {"YANDEX_GPT_API_KEY": "test-key", "YANDEX_GPT_FOLDER_ID": "test-folder"}
+        with patch.dict(os.environ, env, clear=True), patch(
+            "server.urllib.request.urlopen", side_effect=error
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                server.api_ai({"question": "Что в портфеле?"})
+        self.assertIn("отклонил ключ", str(ctx.exception))
 
 
 if __name__ == "__main__":

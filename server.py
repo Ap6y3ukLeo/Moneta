@@ -1417,6 +1417,11 @@ def api_ai(payload):
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:400]
+        if exc.code in (401, 403):
+            raise RuntimeError(
+                "YandexGPT отклонил ключ: проверьте YANDEX_GPT_API_KEY, "
+                "права сервисного аккаунта и scope yc.ai.languageModels.execute"
+            ) from exc
         raise RuntimeError(f"YandexGPT: HTTP {exc.code} {detail}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"YandexGPT недоступен: {exc.reason}") from exc

@@ -52,7 +52,9 @@ $env:YANDEX_GPT_FOLDER_ID="ваш-folder-id"
 python server.py
 ```
 
-Необязательно: `YANDEX_GPT_MODEL` — по умолчанию `yandexgpt-lite/latest`, можно указать `yandexgpt/latest` или полный `gpt://...` URI. Ключ нужен сервисному аккаунту с ролью `ai.languageModels.user`. На Vercel те же переменные добавляются в Settings → Environment Variables. Ключ хранится только на сервере.
+Необязательно: `YANDEX_GPT_MODEL` — по умолчанию `yandexgpt-lite/latest`, можно указать `yandexgpt/latest` или полный `gpt://...` URI. Ключ нужен сервисному аккаунту с ролью `ai.languageModels.user` и scope `yc.ai.languageModels.execute`. На Vercel те же переменные добавляются в Settings → Environment Variables. Ключ хранится только на сервере.
+
+Если API отвечает 401, ключ скопирован не полностью, удалён или создан без нужного scope. Создайте новый API-ключ и скопируйте его целиком при создании.
 
 ## Файлы
 
