@@ -1634,23 +1634,36 @@ function renderForecast(data) {
   const direction = data.direction === 'up' ? 'up' : data.direction === 'down' ? 'down' : 'flat';
   const directionLabel = direction === 'up' ? 'рост' : direction === 'down' ? 'снижение' : 'боковик';
   const change = `${data.changePct > 0 ? '+' : ''}${num(data.changePct, 1)}%`;
+  const bt = data.backtest || {};
+  const btText = bt.samples
+    ? `Бэктест на ${bt.horizonDays} дн.: <b>${num(bt.directionAccuracyPct, 0)}%</b> направления · ошибка <b>${num(bt.mapePct, 1)}%</b> · n=${bt.samples}`
+    : 'Бэктест: мало данных';
+  const modelWeights = bt.weights
+    ? Object.entries(bt.weights).map(([key, value]) => `${key === 'random' ? 'RW' : key === 'momentum' ? 'MOM' : 'MR'} ${Math.round(value * 100)}%`).join(' · ')
+    : '';
   if (title) title.textContent = `AI-прогноз · ${asset.name || ''}`;
   if (sub) sub.textContent = `${data.horizonDays} дн. · сейчас ${fmtForecast(asset.price, unit)}`;
   body.innerHTML = `
     <div class="forecast-summary">
       <div class="forecast-pill forecast-pill--${direction}">${directionLabel}</div>
       <div><b>${change}</b><span>за ${data.horizonDays} дн.</span></div>
-      <div><b>${Math.round((data.confidence || 0) * 100)}%</b><span>уверенность</span></div>
+      <div><b>${Math.round((data.confidence || 0) * 100)}%</b><span>оценка модели</span></div>
       <div><b>±${num(data.bandPct, 1)}%</b><span>диапазон</span></div>
     </div>
-    ${data.fallback ? '<div class="forecast-note">AI вернул некорректный ответ — показан резервный линейный сценарий.</div>' : ''}
     <div class="forecast-chart-wrap">${forecastChart(data.history, data.points, data.bandPct, unit, direction)}</div>
     <div class="forecast-levels">
+      <span>${btText}</span>
+      <span>Волатильность: <b>${num(data.volatilityPct, 1)}%</b></span>
       <span>Поддержка: <b>${fmtForecast(data.support, unit)}</b></span>
       <span>Сопротивление: <b>${fmtForecast(data.resistance, unit)}</b></span>
+      ${modelWeights ? `<span>Веса: ${modelWeights}</span>` : ''}
+      <span>Модель: <b>${esc(data.model || 'ensemble')}</b>${data.aiModel ? ' + AI' : ''}</span>
       <span>Данные: ${esc(timeOf(data.generatedAt))}</span>
     </div>
+    ${data.factorsText ? `<div class="forecast-factors"><b>Что учтено:</b> числовая модель — история цены; факторы для AI-комментария: ${esc(data.factorsText)}.</div>` : ''}
     <div class="forecast-text">${formatAi(data.summary)}</div>
+    ${data.aiError ? `<div class="forecast-note">AI-комментарий недоступен: ${esc(data.aiError)}. Показан статистический прогноз.</div>` : ''}
+    ${data.commentary ? `<div class="forecast-commentary forecast-text"><b>Комментарий AI</b>${formatAi(data.commentary)}</div>` : ''}
     <p class="forecast-disclaimer">${esc(data.disclaimer || 'Это не инвестиционная рекомендация.')}</p>`;
 }
 

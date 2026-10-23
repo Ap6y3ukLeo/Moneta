@@ -570,6 +570,8 @@ table.data th.num { text-align: right; }
 .chart-end { fill: var(--navy); font-size: 11px; font-weight: 600; }
 .forecast-levels { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 11px; }
 .forecast-levels b { color: var(--navy); }
+.forecast-factors { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.forecast-factors b { color: var(--navy); }
 .forecast-text { color: #40536a; font-size: 12.5px; line-height: 1.55; }
 .forecast-text p { margin: 0 0 6px; }
 .forecast-text p:last-child { margin-bottom: 0; }
@@ -577,6 +579,8 @@ table.data th.num { text-align: right; }
 .forecast-text li { margin: 2px 0; }
 .forecast-text strong { color: var(--navy); }
 .forecast-text code { padding: 1px 4px; border-radius: 4px; background: #e8f7f2; font-size: 11.5px; }
+.forecast-commentary { padding: 10px 12px; border-radius: 12px; background: #f2fbf8; border: 1px solid #d8f2ea; }
+.forecast-commentary b { display: block; margin-bottom: 4px; color: var(--teal-700); font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; }
 .forecast-note { padding: 9px 11px; border-radius: 10px; background: #fff8e8; border: 1px solid #f2dfae; color: #8a6418; font-size: 11px; }
 .forecast-disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; }
 .forecast-loading { display: flex; align-items: center; gap: 10px; padding: 32px 18px; color: var(--muted); font-size: 12px; }

@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import math
 import os
 import re
 import shutil
@@ -1451,16 +1452,13 @@ YANDEX_GPT_SYSTEM = (
     "«Это не инвестиционная рекомендация.»"
 )
 
-YANDEX_FORECAST_SYSTEM = (
-    "Ты — AI-аналитик сервиса «Монетка». По истории цены сделай осторожный "
-    "краткосрочный прогноз. Учитывай тренд, волатильность и ближайшие уровни. "
-    "Не гарантируй доходность и не давай персональных инвестиционных рекомендаций. "
-    "Верни только валидный JSON без markdown и без текста вне JSON. Схема: "
-    '{"direction":"up|down|flat","confidence":0.0,"bandPct":5.0,'
-    '"summary":"1–2 предложения","points":[числа],"support":число,"resistance":число}. '
-    "confidence — от 0 до 1. bandPct — ожидаемая ширина диапазона в процентах. "
-    "points — ровно {horizon} чисел: цена на конец каждого следующего дня. "
-    "support и resistance — ближайшие уровни в тех же единицах, что и цена."
+YANDEX_COMMENTARY_SYSTEM = (
+    "Ты — AI-аналитик сервиса «Монетка». Тебе дают факты и уже рассчитанный "
+    "статистический прогноз. Не меняй числа и не придумывай новые. Объясни "
+    "2–4 предложениями: режим рынка, что подтверждает сценарий, главные риски "
+    "и на что смотреть. Учитывай переданные факторы. Уверенность модели — "
+    "это условная оценка, не вероятность; не называй её вероятностью. Пиши "
+    "по-русски, кратко, без персональных инвестиционных рекомендаций."
 )
 
 
@@ -1529,98 +1527,205 @@ def _num_or_none(value):
         return None
 
 
-def _resample_points(points, count):
-    if len(points) == count:
-        return list(points)
-    if len(points) == 1:
-        return [points[0]] * count
-    result = []
-    for i in range(count):
-        pos = i * (len(points) - 1) / (count - 1) if count > 1 else 0
-        lo = int(pos)
-        hi = min(lo + 1, len(points) - 1)
-        frac = pos - lo
-        result.append(points[lo] * (1 - frac) + points[hi] * frac)
-    return result
+def _mean(values):
+    return sum(values) / len(values) if values else 0.0
 
 
-def _fallback_forecast(history, price, horizon):
-    tail = history[-8:] or [price]
-    slope = (tail[-1] - tail[0]) / (len(tail) - 1) if len(tail) > 1 else 0
-    points = []
-    for i in range(1, horizon + 1):
-        value = tail[-1] + slope * i * 0.6
-        points.append(round(min(max(value, price * 0.85), price * 1.15), 4))
-    change = (points[-1] / price - 1) * 100 if price else 0
-    direction = "up" if change > 1 else "down" if change < -1 else "flat"
-    recent = history[-10:] or [price]
+def _std(values):
+    if len(values) < 2:
+        return 0.0
+    avg = _mean(values)
+    return (sum((value - avg) ** 2 for value in values) / len(values)) ** 0.5
+
+
+def _log_returns(prices):
+    return [
+        math.log(prices[i] / prices[i - 1])
+        for i in range(1, len(prices))
+        if prices[i] > 0 and prices[i - 1] > 0
+    ]
+
+
+def _model_path(history, horizon, kind, model):
+    last = history[-1]
+    returns = _log_returns(history)
+    window = min(len(returns), 20)
+    drift = _mean(returns[-window:]) if window else 0.0
+    ma_window = min(len(history), 20)
+    ma = _mean(history[-ma_window:])
+    steps_per_day = 8 if kind == "crypto" else 1
+    path = []
+    for day in range(1, horizon + 1):
+        step = day * steps_per_day
+        if model == "random":
+            value = last
+        elif model == "momentum":
+            value = last * math.exp(drift * step * 0.7)
+        else:
+            value = last + (ma - last) * (1 - math.exp(-step / 5)) * 0.5
+        path.append(value)
+    return path
+
+
+def _backtest(history, kind, horizon):
+    steps_per_day = 8 if kind == "crypto" else 1
+    backtest_days = 2 if kind == "crypto" else max(1, horizon)
+    step_points = backtest_days * steps_per_day
+    start = max(1, len(history) - 30)
+    end = len(history) - step_points
+    models = ("random", "momentum", "reversion")
+    errors = {model: [] for model in models}
+    preds = {model: [] for model in models}
+    actuals = []
+    for i in range(start, end):
+        current = history[i]
+        actual = history[i + step_points]
+        actuals.append((current, actual))
+        for model in models:
+            pred = _model_path(history[:i + 1], backtest_days, kind, model)[-1]
+            preds[model].append(pred)
+            errors[model].append(abs(pred / actual - 1))
+    samples = len(actuals)
+    if not samples:
+        return {
+            "samples": 0,
+            "directionAccuracyPct": 50.0,
+            "mapePct": 0.0,
+            "horizonDays": backtest_days,
+            "weights": {model: round(1 / len(models), 3) for model in models},
+        }
+    mape = {model: _mean(errors[model]) * 100 for model in models}
+    weights = {model: 1 / (mape[model] + 1e-6) for model in models}
+    total = sum(weights.values()) or 1
+    weights = {model: value / total for model, value in weights.items()}
+    ensemble = [
+        sum(weights[model] * preds[model][index] for model in models)
+        for index in range(samples)
+    ]
+    ensemble_mape = _mean([
+        abs(pred / actual - 1)
+        for pred, (_, actual) in zip(ensemble, actuals)
+    ]) * 100
+    hits = [
+        1 if (pred >= current) == (actual >= current) else 0
+        for pred, (current, actual) in zip(ensemble, actuals)
+    ]
     return {
-        "direction": direction,
-        "changePct": round(change, 2),
-        "confidence": 0.35,
-        "bandPct": 6.0,
-        "summary": "AI не смог вернуть корректный прогноз, поэтому показан базовый линейный сценарий по последним точкам. Это не рекомендация.",
-        "points": points,
-        "support": round(min(recent), 4),
-        "resistance": round(max(recent), 4),
+        "samples": samples,
+        "directionAccuracyPct": round(_mean(hits) * 100, 1),
+        "mapePct": round(ensemble_mape, 2),
+        "horizonDays": backtest_days,
+        "weights": {model: round(value, 3) for model, value in weights.items()},
     }
 
 
-def _parse_forecast_answer(answer, price, horizon, history):
-    text = str(answer or "").strip()
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
-        raise ValueError("В ответе нет JSON")
-    data = json.loads(text[start:end + 1])
-    if not isinstance(data, dict):
-        raise ValueError("Некорректный JSON")
-    raw_points = data.get("points") or []
-    points = []
-    for value in raw_points:
-        number = _num_or_none(value)
-        if number and number > 0:
-            points.append(number)
-    if len(points) < 2:
-        raise ValueError("В прогнозе нет точек")
-    points = _resample_points(points, horizon)
+def _stat_forecast(history, kind, horizon, price):
+    steps_per_day = 8 if kind == "crypto" else 1
+    models = ("random", "momentum", "reversion")
+    backtest = _backtest(history, kind, horizon)
+    weights = backtest["weights"]
+    paths = {model: _model_path(history, horizon, kind, model) for model in models}
+    points = [
+        sum(weights[model] * paths[model][day] for model in models)
+        for day in range(horizon)
+    ]
     floor, ceil = price * 0.5, price * 1.5
     points = [round(min(max(value, floor), ceil), 4) for value in points]
     change = (points[-1] / price - 1) * 100 if price else 0
-    direction = data.get("direction")
-    if direction not in ("up", "down", "flat"):
-        direction = "up" if change > 1 else "down" if change < -1 else "flat"
-    confidence = _num_or_none(data.get("confidence"))
-    if confidence is None:
-        confidence = 0.5
-    if confidence > 1:
-        confidence /= 100
-    confidence = min(max(confidence, 0.0), 1.0)
-    band = _num_or_none(data.get("bandPct"))
-    if band is None:
-        band = max(2.0, (1 - confidence) * 10)
-    if 0 < band <= 0.2:
-        band *= 100
-    band = min(max(band, 0.5), 20.0)
-    summary = str(data.get("summary") or "").strip()[:600]
-    if not summary:
-        summary = "Краткосрочный сценарий по истории цены. Это не рекомендация."
-    recent = history[-10:] or [price]
-    support = _num_or_none(data.get("support"))
-    resistance = _num_or_none(data.get("resistance"))
-    support = min(max(support if support and support > 0 else min(recent), floor), ceil)
-    resistance = min(max(resistance if resistance and resistance > 0 else max(recent), floor), ceil)
+    direction = "up" if change > 0.5 else "down" if change < -0.5 else "flat"
+    returns = _log_returns(history)
+    window = min(len(returns), 20)
+    vol = _std(returns[-window:]) if window else 0.0
+    sigma_h = vol * math.sqrt(max(1, horizon * steps_per_day))
+    band = min(max((math.exp(1.28 * sigma_h) - 1) * 100, 1.0), 25.0)
+    volatility = min(max((math.exp(sigma_h) - 1) * 100, 0.0), 50.0)
+    accuracy = backtest["directionAccuracyPct"] / 100
+    samples = backtest["samples"]
+    confidence = 0.3 + (accuracy - 0.5) * 0.9 + (min(samples, 30) / 30) * 0.1 if samples else 0.35
+    confidence = min(max(confidence, 0.2), 0.8)
+    recent = history[-20:] or [price]
+    label = {"up": "рост", "down": "снижение", "flat": "боковик"}[direction]
+    summary = (
+        f"Статистический сценарий: {label} на {horizon} дн. Ожидаемое изменение "
+        f"{change:+.1f}%. Волатильность {volatility:.1f}%. Бэктест на "
+        f"{backtest['horizonDays']} дн.: направление {backtest['directionAccuracyPct']:.0f}% "
+        f"(n={samples}), средняя ошибка {backtest['mapePct']:.1f}%."
+    )
     return {
         "direction": direction,
         "changePct": round(change, 2),
         "confidence": round(confidence, 2),
         "bandPct": round(band, 2),
+        "volatilityPct": round(volatility, 2),
         "summary": summary,
         "points": points,
-        "support": round(support, 4),
-        "resistance": round(resistance, 4),
+        "support": round(min(recent), 4),
+        "resistance": round(max(recent), 4),
+        "backtest": backtest,
+        "model": "ensemble",
     }
+
+
+def _forecast_factors(market, kind, item):
+    fx_items = (market.get("fx") or {}).get("items") or []
+    usd = next((_num_or_none(x.get("value")) for x in fx_items if x.get("code") == "USD"), None)
+    factors = {
+        "keyRate": (market.get("keyRate") or {}).get("value"),
+        "usdRub": usd,
+        "change24hPct": round(_num_or_none(item.get("change24h")) or 0, 2),
+    }
+    if kind == "crypto":
+        cryptos = (market.get("crypto") or {}).get("items") or []
+        breadth = [_num_or_none(x.get("change24h")) for x in cryptos]
+        breadth = [value for value in breadth if value is not None]
+        btc = next((x for x in cryptos if x.get("id") == "bitcoin"), None)
+        btc_change = _num_or_none(btc.get("change24h")) if btc else None
+        factors["marketBreadthPct"] = round(_mean(breadth), 2) if breadth else None
+        factors["btcChange24hPct"] = round(btc_change, 2) if btc_change is not None else None
+        factors["volumeUsd"] = _num_or_none(item.get("volume"))
+    elif kind == "metal":
+        metals = (market.get("metals") or {}).get("items") or []
+        gold = next((_num_or_none(x.get("price")) for x in metals if x.get("code") == "XAU"), None)
+        silver = next((_num_or_none(x.get("price")) for x in metals if x.get("code") == "XAG"), None)
+        factors["goldSilverRatio"] = round(gold / silver, 2) if gold and silver else None
+    else:
+        cross = [
+            _num_or_none(x.get("change24h"))
+            for x in fx_items
+            if x.get("code") in ("USD", "EUR", "CNY", "GBP") and x.get("code") != item.get("code")
+        ]
+        cross = [value for value in cross if value is not None]
+        factors["fxCrossChangePct"] = round(_mean(cross), 2) if cross else None
+    return factors
+
+
+def _factor_text(factors):
+    labels = {
+        "keyRate": ("ключевая ставка", "%"),
+        "usdRub": ("USD/RUB", ""),
+        "change24hPct": ("изменение за 24ч", "%"),
+        "marketBreadthPct": ("средняя динамика крипторынка", "%"),
+        "btcChange24hPct": ("BTC за 24ч", "%"),
+        "volumeUsd": ("объём 24ч", "usd"),
+        "goldSilverRatio": ("золото/серебро", ""),
+        "fxCrossChangePct": ("другие основные валюты", "%"),
+    }
+    parts = []
+    for key, (label, suffix) in labels.items():
+        value = factors.get(key)
+        if value is None:
+            continue
+        if suffix == "usd":
+            parts.append(f"{label}: ${value / 1e6:.0f}M")
+        elif key == "keyRate":
+            parts.append(f"{label}: {value:g}%")
+        elif suffix == "%":
+            parts.append(f"{label}: {value:+.2f}%")
+        elif key == "usdRub":
+            parts.append(f"{label}: {value:.2f}")
+        else:
+            parts.append(f"{label}: {value:.1f}")
+    return "; ".join(parts) or "нет дополнительных факторов"
 
 
 def api_forecast(payload):
@@ -1674,32 +1779,40 @@ def api_forecast(payload):
     except (TypeError, ValueError):
         horizon = default_horizon
     horizon = max(5, min(30, horizon))
-    context = {
-        "asset": name or asset_id,
-        "symbol": symbol or asset_id,
-        "kind": kind,
-        "unit": unit,
-        "current": round(price, 4),
-        "change24hPct": round(_num_or_none(item.get("change24h")) or 0, 2),
-        "history": history,
-        "horizonDays": horizon,
-    }
-    system = YANDEX_FORECAST_SYSTEM.replace("{horizon}", str(horizon))
-    messages = [
-        {"role": "system", "text": system},
-        {"role": "user", "text": f"Данные:\n{json.dumps(context, ensure_ascii=False)}\n\nСделай прогноз на {horizon} дней."},
-    ]
+    forecast = _stat_forecast(history, kind, horizon, price)
+    factors = _forecast_factors(market, kind, item)
+    commentary = None
+    ai_error = None
+    ai_model = None
+    usage = None
+    direction_label = {"up": "рост", "down": "снижение", "flat": "боковик"}[forecast["direction"]]
+    bt = forecast["backtest"]
+    factors_text = _factor_text(factors)
+    facts_text = (
+        f"Актив: {name or asset_id} ({symbol or asset_id}), цена {price:.6g} {unit}, "
+        f"горизонт {horizon} дн.\n"
+        f"Статистический прогноз: {direction_label}, изменение "
+        f"{forecast['changePct']:+.1f}%, диапазон ±{forecast['bandPct']:.1f}%, "
+        f"волатильность {forecast['volatilityPct']:.1f}%.\n"
+        f"Бэктест на {bt['horizonDays']} дн.: направление "
+        f"{bt['directionAccuracyPct']:.0f}% (n={bt['samples']}), средняя ошибка "
+        f"{bt['mapePct']:.1f}%.\n"
+        f"Уверенность модели: {forecast['confidence'] * 100:.0f}% "
+        "(условная оценка, не вероятность).\n"
+        f"Поддержка: {forecast['support']:.6g}, сопротивление: {forecast['resistance']:.6g}.\n"
+        f"Факторы: {factors_text}.\n"
+        f"Последние значения: {', '.join(f'{value:.6g}' for value in history[-12:])}."
+    )
     try:
-        result = _yandex_completion(messages, temperature=0.2, max_tokens=900, timeout=60)
-        forecast = _parse_forecast_answer(result["answer"], price, horizon, history)
-        fallback = False
-        model = result.get("model")
+        result = _yandex_completion([
+            {"role": "system", "text": YANDEX_COMMENTARY_SYSTEM},
+            {"role": "user", "text": f"Факты:\n{facts_text}\n\nДай комментарий к прогнозу."},
+        ], temperature=0.2, max_tokens=400, timeout=25)
+        commentary = result["answer"].strip()[:800] or None
+        ai_model = result.get("model")
         usage = result.get("usage")
-    except ValueError:
-        forecast = _fallback_forecast(history, price, horizon)
-        fallback = True
-        model = None
-        usage = None
+    except Exception as exc:  # noqa: BLE001 - прогноз должен вернуться даже без комментария AI
+        ai_error = str(exc)[:240]
     forecast.update({
         "asset": {
             "kind": kind,
@@ -1712,11 +1825,14 @@ def api_forecast(payload):
         },
         "history": history,
         "horizonDays": horizon,
-        "fallback": fallback,
-        "model": model,
+        "commentary": commentary,
+        "aiModel": ai_model,
+        "aiError": ai_error,
         "usage": usage,
+        "factors": factors,
+        "factorsText": factors_text,
         "generatedAt": now_msk(),
-        "disclaimer": "Прогноз нейросети — вероятностный сценарий по историческим данным, не инвестиционная рекомендация.",
+        "disclaimer": "Числовой прогноз — статистический ансамбль по истории; AI-комментарий — интерпретация факторов. Бэктест не гарантирует будущую точность. Не инвестиционная рекомендация.",
     })
     return forecast
 
