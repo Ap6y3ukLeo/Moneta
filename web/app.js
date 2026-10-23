@@ -733,7 +733,7 @@ function fxPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ на ${esc(fx.date || '')}. Используются для пересчёта криптовалют и металлов в портфеле.</p></div>
+    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ на ${esc(fx.date || '')}. Используются для пересчёта криптовалют и металлов в портфеле. AI-прогноз доступен для основных валют.</p></div>
     <div class="head-meta">${sourcePill('ЦБ РФ', fx.meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -747,7 +747,7 @@ function fxPage() {
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-forecast="fx:${esc(f.code)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(f.code)}">${icon('spark')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -1574,6 +1574,7 @@ function fmtForecast(value, unit) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
   if (unit === 'USD') return `$${num(number, number < 1 ? 4 : 2)}`;
+  if (unit === 'RUB') return money(number);
   return `${money(number)}/г`;
 }
 
@@ -1662,7 +1663,7 @@ async function openForecast(kind, id) {
   const title = $('#forecast-title');
   const sub = $('#forecast-sub');
   if (!dialog || !body) return;
-  const asset = kind === 'crypto' ? findCrypto(id) : findMetal(id);
+  const asset = kind === 'crypto' ? findCrypto(id) : kind === 'metal' ? findMetal(id) : findFx(id);
   if (!asset) { toast('Актив не найден', true); return; }
   if (title) title.textContent = `AI-прогноз · ${asset.name}`;
   if (sub) sub.textContent = 'Строим сценарий по истории цены…';

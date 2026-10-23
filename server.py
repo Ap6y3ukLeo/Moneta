@@ -55,6 +55,7 @@ COINS = [
 ]
 METALS = {"1": ("XAU", "Золото"), "2": ("XAG", "Серебро"), "3": ("XPT", "Платина"), "4": ("XPD", "Палладий")}
 FX_CODES = ["USD", "EUR", "CNY", "GBP", "CHF", "JPY", "TRY", "KZT", "BYN", "AED"]
+FX_HISTORY_IDS = {"USD": "R01235", "EUR": "R01239", "CNY": "R01375", "GBP": "R01010"}
 SPB_DISTRICTS = (
     "адмиралтейский", "василеостровский", "выборгский", "калининский", "кировский",
     "колпинский", "красногвардейский", "красносельский", "кронштадтский", "курортный",
@@ -542,6 +543,35 @@ def build_fx():
     if not items:
         raise RuntimeError("Нет курсов ЦБ РФ")
     return {"items": items, "date": d, "provider": "ЦБ РФ"}
+
+
+def _fx_history(code):
+    cbr_id = FX_HISTORY_IDS.get(code)
+    if not cbr_id:
+        return []
+    today = datetime.now(MSK).date()
+    start = today - timedelta(days=45)
+    url = (
+        "https://www.cbr.ru/scripts/XML_dynamic.asp"
+        f"?date_req1={start:%d/%m/%Y}&date_req2={today:%d/%m/%Y}&VAL_NM_RQ={cbr_id}"
+    )
+    try:
+        xml = http_text(url, "cp1251", timeout=20)
+    except Exception:
+        return []
+    records = re.findall(
+        r'<Record Date="([\d.]+)"[^>]*>\s*<Nominal>([\d.]+)</Nominal>\s*<Value>([\d,]+)</Value>',
+        xml,
+    )
+    values = []
+    for _, nominal, value in records:
+        try:
+            number = float(value.replace(",", ".")) / float(nominal)
+        except (TypeError, ValueError):
+            continue
+        if number > 0:
+            values.append(round(number, 4))
+    return values[-30:]
 
 
 # ---------------------------------------------------------------- key rate
@@ -1598,8 +1628,8 @@ def api_forecast(payload):
         raise ValueError("Некорректный запрос")
     kind = str(payload.get("kind") or "").strip()
     asset_id = str(payload.get("id") or "").strip()
-    if kind not in ("crypto", "metal"):
-        raise ValueError("Прогноз доступен для криптовалют и драгметаллов")
+    if kind not in ("crypto", "metal", "fx"):
+        raise ValueError("Прогноз доступен для криптовалют, драгметаллов и валют")
     if not asset_id:
         raise ValueError("Не выбран актив")
     market = api_market()
@@ -1610,7 +1640,7 @@ def api_forecast(payload):
         symbol = item.get("symbol") if item else None
         default_horizon = 7
         limit = 60
-    else:
+    elif kind == "metal":
         item = next((x for x in market["metals"]["items"]
                      if str(x.get("id")) == asset_id or str(x.get("code")) == asset_id), None)
         unit = "RUB/g"
@@ -1618,17 +1648,27 @@ def api_forecast(payload):
         symbol = item.get("code") if item else None
         default_horizon = 14
         limit = 30
+    else:
+        item = next((x for x in market["fx"]["items"] if str(x.get("code")) == asset_id), None)
+        unit = "RUB"
+        name = item.get("name") if item else None
+        symbol = item.get("code") if item else None
+        default_horizon = 14
+        limit = 30
     if not item:
         raise ValueError("Актив не найден")
-    history = []
-    for value in item.get("spark") or []:
-        number = _num_or_none(value)
-        if number and number > 0:
-            history.append(number)
+    if kind == "fx":
+        history = _fx_history(asset_id)
+    else:
+        history = []
+        for value in item.get("spark") or []:
+            number = _num_or_none(value)
+            if number and number > 0:
+                history.append(number)
     if len(history) < 5:
-        raise ValueError("Недостаточно истории для прогноза")
-    history = [round(value, 4 if kind == "crypto" else 2) for value in history[-limit:]]
-    price = _num_or_none(item.get("price")) or history[-1]
+        raise ValueError("Недостаточно истории для прогноза" if kind != "fx" else "Не удалось загрузить историю валюты")
+    history = [round(value, 4 if kind in ("crypto", "fx") else 2) for value in history[-limit:]]
+    price = _num_or_none(item.get("price")) or _num_or_none(item.get("value")) or history[-1]
     try:
         horizon = int(payload.get("horizon") or default_horizon)
     except (TypeError, ValueError):

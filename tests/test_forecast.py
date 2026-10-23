@@ -20,7 +20,12 @@ MARKET = {
             "price": 200.0, "change24h": -1.0, "spark": [190 + i for i in range(20)],
         }],
     },
-    "fx": {"items": []},
+    "fx": {
+        "items": [{
+            "code": "USD", "name": "Доллар США", "value": 81.0,
+            "prev": 80.0, "change24h": 1.25,
+        }],
+    },
 }
 
 
@@ -52,6 +57,20 @@ class ForecastTest(unittest.TestCase):
         self.assertEqual(result["horizonDays"], 14)
         self.assertEqual(len(result["points"]), 14)
         self.assertEqual(result["asset"]["unit"], "RUB/g")
+
+    def test_fx_forecast_uses_cbr_history(self):
+        answer = json.dumps({"points": [81.2] * 14, "summary": "Курс стабилен"})
+        with patch.object(server, "api_market", return_value=MARKET), patch.object(
+            server, "_fx_history", return_value=[80 + i * 0.1 for i in range(20)]
+        ), patch.object(
+            server, "_yandex_completion",
+            return_value={"answer": answer, "model": "test", "usage": {}},
+        ):
+            result = server.api_forecast({"kind": "fx", "id": "USD"})
+        self.assertEqual(result["horizonDays"], 14)
+        self.assertEqual(result["asset"]["unit"], "RUB")
+        self.assertEqual(result["asset"]["price"], 81.0)
+        self.assertEqual(len(result["history"]), 20)
 
     def test_invalid_answer_falls_back(self):
         with patch.object(server, "api_market", return_value=MARKET), patch.object(
