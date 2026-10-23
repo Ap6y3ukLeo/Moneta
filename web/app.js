@@ -165,6 +165,7 @@ function rub(usd) {
 }
 const cryptoList = () => S.market?.crypto?.items || [];
 const metalList = () => S.market?.metals?.items || [];
+const fxList = () => S.market?.fx?.items || [];
 const depositList = () => S.deposits?.items || [];
 const realtyList = () => S.realty?.items || [];
 function bestDeposit(amount = 500000) {
@@ -174,6 +175,7 @@ function bestDeposit(amount = 500000) {
 }
 const findCrypto = (id) => cryptoList().find((c) => c.id === id);
 const findMetal = (id) => metalList().find((m) => m.id === id);
+const findFx = (code) => fxList().find((f) => f.code === code);
 const keyRateValue = () => S.market?.keyRate?.value ?? S.deposits?.keyRate?.value ?? 0;
 
 /* ------------------------------------------------------------------ data */
@@ -265,6 +267,17 @@ function valuation() {
       sub = `${qtyText(p.qty)} г · покупка ${money(p.buy)}/г`;
       url = 'https://www.cbr.ru/hd_base/metall/';
       metalCls = p.assetId === 'XAU' ? 'coin--gold' : p.assetId === 'XAG' ? 'coin--silver' : 'coin--platinum';
+    } else if (p.kind === 'fx') {
+      const f = findFx(p.assetId);
+      name = f?.name || p.name || p.assetId;
+      const px = f?.value || 0;
+      cur = px ? p.qty * px : p.qty * p.buy;
+      const d = f?.change24h || 0;
+      prev = d !== -100 ? cur / (1 + d / 100) : cur;
+      cost = p.qty * p.buy;
+      sub = `${qtyText(p.qty)} ${p.assetId} · покупка ${money(p.buy)}`;
+      url = 'https://www.cbr.ru/currency_base/daily/';
+      metalCls = 'coin--silver';
     } else {
       const d = depositCalc(p, now);
       name = p.name || 'Вклад';
@@ -288,8 +301,8 @@ function valuation() {
       cost,
       pnl,
       pnlPct: cost ? (pnl / cost) * 100 : 0,
-      kindLabel: p.kind === 'crypto' ? 'Криптовалюта' : p.kind === 'metal' ? 'Драгметалл' : 'Вклад',
-      iconText: p.kind === 'crypto' ? (findCrypto(p.assetId)?.symbol || 'C') : p.kind === 'metal' ? p.assetId : '₽',
+      kindLabel: p.kind === 'crypto' ? 'Криптовалюта' : p.kind === 'metal' ? 'Драгметалл' : p.kind === 'fx' ? 'Валюта' : 'Вклад',
+      iconText: p.kind === 'crypto' ? (findCrypto(p.assetId)?.symbol || 'C') : p.kind === 'metal' || p.kind === 'fx' ? p.assetId : '₽',
     };
   }).sort((a, b) => b.cur - a.cur);
 
@@ -510,7 +523,7 @@ function homePage() {
 
         <article class="card">
           <div class="card-head">
-            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Авито, Циан, БН.ру</div></div>
+            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Яндекс, Авито, Циан, БН.ру</div></div>
             <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
           </div>
           ${msk ? `<div class="metric-big" style="font-size:23px">${money(msk.avgM2)}<span class="muted" style="font-size:12px;font-weight:500">/м²</span></div>
@@ -708,7 +721,7 @@ function fxPage() {
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions">${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -897,7 +910,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -950,7 +963,7 @@ function realtyPage() {
     </select>
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Яндекса и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: portfolio */
@@ -959,7 +972,7 @@ function portfolioPage() {
   const v = valuation();
   if (!v.rows.length) {
     return `${sourceWarning()}
-    <div class="page-head"><div><h1>Портфель</h1><p>Один расчёт по крипте, металлам и вкладам — с пересчётом в рубли и доходностью.</p></div>
+    <div class="page-head"><div><h1>Портфель</h1><p>Один расчёт по крипте, валютам, металлам и вкладам — с пересчётом в рубли и доходностью.</p></div>
       <div class="head-meta"><button class="btn" data-action="open-add">${icon('plus')} Добавить позицию</button><button class="btn btn--ghost" data-action="demo">Демо-портфель</button></div></div>
     <div class="card empty-card">
       <h3>Пока пусто</h3>
@@ -985,7 +998,7 @@ function portfolioPage() {
 
   return `${sourceWarning()}
   <div class="page-head">
-    <div><h1>Портфель</h1><p>Стоимость пересчитывается по текущим котировкам. Вклады — с капитализацией и налогом на проценты.</p></div>
+    <div><h1>Портфель</h1><p>Стоимость пересчитывается по текущим котировкам. Вклады — с капитализацией и налогом на проценты; валюта — по курсу ЦБ.</p></div>
     <div class="head-meta">
       <button class="btn" data-action="open-add">${icon('plus')} Добавить</button>
       <button class="btn btn--ghost btn--sm" data-action="demo">Демо</button>
@@ -1250,22 +1263,24 @@ function renderAddFields() {
   const today = isoDate();
   const preset = S.addPreset;
 
-  if (S.addKind === 'crypto' || S.addKind === 'metal') {
+  if (S.addKind === 'crypto' || S.addKind === 'metal' || S.addKind === 'fx') {
     const isCrypto = S.addKind === 'crypto';
-    const list = isCrypto ? cryptoList() : metalList();
+    const isFx = S.addKind === 'fx';
+    const list = isCrypto ? cryptoList() : isFx ? fxList() : metalList();
     if (!list.length) {
       box.innerHTML = `<p class="muted" style="grid-column:1/-1">Котировки ещё не загружены. Попробуйте через минуту.</p>`;
       return;
     }
-    const selected = preset.assetId || list[0].id;
-    const item = list.find((x) => x.id === selected) || list[0];
-    const unitPrice = isCrypto ? rub(item.price) : item.price;
+    const assetId = (a) => isFx ? a.code : a.id;
+    const selected = preset.assetId || assetId(list[0]);
+    const item = list.find((x) => assetId(x) === selected) || list[0];
+    const unitPrice = isCrypto ? rub(item.price) : isFx ? item.value : item.price;
     box.innerHTML = `
-      ${fieldHtml(isCrypto ? 'Актив' : 'Металл', `<select id="f-asset">${list.map((a) => `<option value="${esc(a.id)}" ${a.id === selected ? 'selected' : ''}>${esc(a.name)}${isCrypto ? ' · ' + esc(a.symbol) : ' · ₽/г'}</option>`).join('')}</select>`, true)}
-      ${fieldHtml(isCrypto ? 'Количество' : 'Граммы', `<input id="f-qty" type="number" min="0" step="any" inputmode="decimal" placeholder="0,05" value="${preset.qty || ''}">`)}
-      ${fieldHtml('Цена покупки, ₽', `<input id="f-buy" type="number" min="0" step="any" inputmode="decimal" value="${preset.buy || unitPrice}">`)}
+      ${fieldHtml(isCrypto ? 'Актив' : isFx ? 'Валюта' : 'Металл', `<select id="f-asset">${list.map((a) => `<option value="${esc(assetId(a))}" ${assetId(a) === selected ? 'selected' : ''}>${esc(a.name)} · ${esc(isCrypto ? a.symbol : isFx ? a.code : '₽/г')}</option>`).join('')}</select>`, true)}
+      ${fieldHtml(isCrypto || isFx ? 'Количество' : 'Граммы', `<input id="f-qty" type="number" min="0" step="any" inputmode="decimal" placeholder="${isFx ? '1000' : '0,05'}" value="${preset.qty || ''}">`)}
+      ${fieldHtml(isFx ? 'Цена покупки, ₽ за единицу' : 'Цена покупки, ₽', `<input id="f-buy" type="number" min="0" step="any" inputmode="decimal" value="${preset.buy || unitPrice}">`)}
       ${fieldHtml('Дата покупки', `<input id="f-date" type="date" max="${today}" value="${preset.date || today}">`, true)}
-      <div class="field field--full muted" style="font-size:10.5px">Текущая цена: ${money(unitPrice)}${isCrypto ? ` · $${price(item.price)}` : '/г'}${isCrypto && item.tradeUrl ? ` · <a class="link-more" href="${esc(item.tradeUrl)}" target="_blank" rel="noopener">Купить ${esc(item.symbol)} на Bybit ${icon('ext')}</a>` : ''}.</div>`;
+      <div class="field field--full muted" style="font-size:10.5px">Текущая цена: ${money(unitPrice)}${isCrypto ? ` · $${price(item.price)}` : isFx ? ` за 1 ${esc(item.code)}` : '/г'}${isCrypto && item.tradeUrl ? ` · <a class="link-more" href="${esc(item.tradeUrl)}" target="_blank" rel="noopener">Купить ${esc(item.symbol)} на Bybit ${icon('ext')}</a>` : ''}.</div>`;
   } else {
     const offers = depositList();
     const top = offers[0];
@@ -1288,16 +1303,16 @@ function handleSubmit(e) {
   const date = $('#f-date')?.value || isoDate();
   let pos = null;
 
-  if (S.addKind === 'crypto' || S.addKind === 'metal') {
+  if (S.addKind === 'crypto' || S.addKind === 'metal' || S.addKind === 'fx') {
     const qty = parseNum($('#f-qty')?.value);
     const buy = parseNum($('#f-buy')?.value);
     if (!(qty > 0)) return void (err.textContent = 'Укажите количество больше нуля.');
     if (!(buy >= 0)) return void (err.textContent = 'Укажите цену покупки.');
-    const list = S.addKind === 'crypto' ? cryptoList() : metalList();
-    const asset = list.find((a) => a.id === $('#f-asset').value);
+    const list = S.addKind === 'crypto' ? cryptoList() : S.addKind === 'fx' ? fxList() : metalList();
+    const asset = list.find((a) => (S.addKind === 'fx' ? a.code : a.id) === $('#f-asset').value);
     if (!asset) return void (err.textContent = 'Выберите актив.');
     pos = {
-      id: uid(), kind: S.addKind, assetId: asset.id, name: asset.name,
+      id: uid(), kind: S.addKind, assetId: S.addKind === 'fx' ? asset.code : asset.id, name: asset.name,
       qty, buy, date,
     };
   } else {
@@ -1333,6 +1348,7 @@ function addDemo() {
   const eth = findCrypto('ethereum');
   const gold = findMetal('XAU');
   const silver = findMetal('XAG');
+  const usd = findFx('USD');
   const top = bestDeposit();
   const daysAgo = (n) => isoDate(new Date(Date.now() - n * 864e5));
   const positions = [];
@@ -1340,6 +1356,7 @@ function addDemo() {
   if (eth) positions.push({ id: uid(), kind: 'crypto', assetId: 'ethereum', name: 'Ethereum', qty: 1.5, buy: rub(eth.price) * 0.93, date: daysAgo(90) });
   if (gold) positions.push({ id: uid(), kind: 'metal', assetId: 'XAU', name: 'Золото', qty: 30, buy: gold.price * 0.94, date: daysAgo(220) });
   if (silver) positions.push({ id: uid(), kind: 'metal', assetId: 'XAG', name: 'Серебро', qty: 500, buy: silver.price * 1.02, date: daysAgo(60) });
+  if (usd) positions.push({ id: uid(), kind: 'fx', assetId: 'USD', name: 'Доллар США', qty: 1000, buy: usd.value * 0.97, date: daysAgo(120) });
   if (top) positions.push({
     id: uid(), kind: 'deposit', assetId: top.id, name: top.name, bank: top.bank, url: top.url,
     amount: 300000, rate: top.rate, months: 12, cap: 'month', date: daysAgo(95),
@@ -1365,6 +1382,8 @@ document.addEventListener('click', (e) => {
   if (addCrypto) { openAdd('crypto', { assetId: addCrypto.dataset.addCrypto }); return; }
   const addMetal = e.target.closest('[data-add-metal]');
   if (addMetal) { openAdd('metal', { assetId: addMetal.dataset.addMetal }); return; }
+  const addFx = e.target.closest('[data-add-fx]');
+  if (addFx) { openAdd('fx', { assetId: addFx.dataset.addFx }); return; }
   const addDep = e.target.closest('[data-add-deposit]');
   if (addDep) {
     const offer = depositList().find((d) => d.id === addDep.dataset.addDeposit);
@@ -1426,9 +1445,10 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 'profile-select') switchProfile(e.target.value);
   if (e.target.id === 'f-asset') {
     const isCrypto = S.addKind === 'crypto';
-    const list = isCrypto ? cryptoList() : metalList();
-    const item = list.find((a) => a.id === e.target.value);
-    if (item) $('#f-buy').value = (isCrypto ? rub(item.price) : item.price).toFixed(2);
+    const isFx = S.addKind === 'fx';
+    const list = isCrypto ? cryptoList() : isFx ? fxList() : metalList();
+    const item = list.find((a) => (isFx ? a.code : a.id) === e.target.value);
+    if (item) $('#f-buy').value = (isCrypto ? rub(item.price) : isFx ? item.value : item.price).toFixed(2);
   }
   if (e.target.id === 'f-offer') {
     const offer = depositList().find((d) => d.id === e.target.value);

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Монетка — аналитика рынка и портфель</title>
-<meta name="description" content="Криптовалюта, драгметаллы, вклады банков, валюта и недвижимость в одном сервисе. Живые курсы ЦБ РФ, котировки Bybit, витрины банков и объявления Авито по всей России, БН.ру и Циана.">
+<meta name="description" content="Криптовалюта, драгметаллы, вклады банков, валюта и недвижимость в одном сервисе. Живые курсы ЦБ РФ, котировки Bybit, витрины банков и объявления Яндекса и Авито по всей России, БН.ру и Циана.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -90,7 +90,7 @@
         </span>
         <span class="brand-text"><strong>Монетка</strong><small>Аналитика. Возможности. Твой рост.</small></span>
       </div>
-      <p class="footer-note">Котировки: ЦБ РФ и Bybit. Вклады: Банки.ру, Банкирос, Финуслуги, Сравни.ру. Недвижимость: Авито по всей России, Циан и БН.ру, средние цены — «Мир квартир». Сервис не является инвестиционной рекомендацией; условия продуктов уточняйте у банка.</p>
+      <p class="footer-note">Котировки: ЦБ РФ и Bybit. Вклады: Банки.ру, Банкирос, Финуслуги, Сравни.ру. Недвижимость: Яндекс и Авито по всей России, Циан и БН.ру, средние цены — «Мир квартир». Сервис не является инвестиционной рекомендацией; условия продуктов уточняйте у банка.</p>
       <div class="footer-links">
         <a href="https://www.cbr.ru/currency_base/daily/" target="_blank" rel="noopener">Курсы ЦБ РФ</a>
         <a href="https://www.bybit.com/ru-RU/trade/spot/BTC/USDT" target="_blank" rel="noopener">Bybit</a>
@@ -112,6 +112,7 @@
     <div class="seg" id="kind-seg">
       <button type="button" class="seg-btn is-active" data-kind="crypto">Криптовалюта</button>
       <button type="button" class="seg-btn" data-kind="metal">Драгметалл</button>
+      <button type="button" class="seg-btn" data-kind="fx">Валюта</button>
       <button type="button" class="seg-btn" data-kind="deposit">Вклад</button>
     </div>
     <div id="add-fields" class="fields"></div>
@@ -120,7 +121,7 @@
       <button class="btn btn--ghost" type="button" data-action="close-dialog">Отмена</button>
       <button class="btn" type="submit">Добавить</button>
     </div>
-    <p class="dialog-hint">Для вклада доход считается с капитализацией и налогом с процентов (13% сверх 1 млн × ключевая ставка).</p>
+    <p class="dialog-hint">Валюту и металлы считаем по курсу ЦБ. Для вклада доход считается с капитализацией и налогом с процентов (13% сверх 1 млн × ключевая ставка).</p>
   </form>
 </dialog>
 

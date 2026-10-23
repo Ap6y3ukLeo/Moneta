@@ -21,7 +21,7 @@ import time
 import urllib.request
 import webbrowser
 import zlib
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -69,7 +69,7 @@ REGION_CITIES = (
 
 # ---------------------------------------------------------------- transport
 def http_get(url: str, timeout: int = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", "Accept-Language": "ru-RU,ru;q=0.9"})
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "*/*", "Accept-Language": "ru-RU,ru;q=0.9", "Accept-Encoding": "gzip, deflate"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read()
         encoding = (resp.headers.get("Content-Encoding") or "").lower()
@@ -1177,14 +1177,147 @@ def build_cian():
     return items
 
 
+# Яндекс.Недвижимость отдаёт готовое состояние страницы обычному HTTP-клиенту:
+# один запрос — 23 карточки, без Chrome и антибота. Национальная выдача и
+# крупные города дают по 25 страниц, чего хватает на широкую выборку.
+YANDEX_RUSSIA_URL = "https://realty.yandex.ru/rossiya/kupit/kvartira/?rgid=143"
+YANDEX_PAGES = 25
+YANDEX_CITY_PAGES = 6
+YANDEX_CITIES = (
+    ("moskva", "Москва"),
+    ("sankt-peterburg", "Санкт-Петербург"),
+    ("novosibirsk", "Новосибирск"),
+    ("ekaterinburg", "Екатеринбург"),
+    ("kazan", "Казань"),
+    ("krasnodar", "Краснодар"),
+    ("chelyabinsk", "Челябинск"),
+    ("samara", "Самара"),
+    ("ufa", "Уфа"),
+    ("rostov-na-donu", "Ростов-на-Дону"),
+    ("krasnoyarsk", "Красноярск"),
+    ("perm", "Пермь"),
+    ("voronezh", "Воронеж"),
+    ("volgograd", "Волгоград"),
+    ("tyumen", "Тюмень"),
+    ("sochi", "Сочи"),
+    ("kaliningrad", "Калининград"),
+    ("orenburg", "Оренбург"),
+    ("izhevsk", "Ижевск"),
+    ("irkutsk", "Иркутск"),
+    ("vladivostok", "Владивосток"),
+    ("mahachkala", "Махачкала"),
+    ("tomsk", "Томск"),
+    ("omsk", "Омск"),
+    ("stavropol", "Ставрополь"),
+)
+
+
+def _yandex_url(slug: str, page: int) -> str:
+    base = f"https://realty.yandex.ru/{slug}/kupit/kvartira/" if slug else YANDEX_RUSSIA_URL
+    if page <= 1:
+        return base
+    return base + ("&" if "?" in base else "?") + f"page={page}"
+
+
+def _parse_yandex(html: str, fallback_city: str = ""):
+    marker = "window.INITIAL_STATE = "
+    start = html.find(marker)
+    if start < 0:
+        raise RuntimeError("Яндекс: нет состояния страницы")
+    start += len(marker)
+    end = html.find("</script>", start)
+    if end < 0:
+        raise RuntimeError("Яндекс: не найден конец состояния")
+    state = json.loads(html[start:end].rstrip(" ;\n"))
+    entities = ((state.get("search") or {}).get("offers") or {}).get("entities") or []
+    items = []
+    for entity in entities:
+        if entity.get("offerCategory") != "APARTMENT" or entity.get("offerType") != "SELL":
+            continue
+        price = (entity.get("price") or {}).get("value")
+        area = (entity.get("area") or {}).get("value")
+        if not price or not (300_000 <= price <= 1_000_000_000):
+            continue
+        if area and not (10 <= area <= 300):
+            continue
+        location = entity.get("location") or {}
+        components = (location.get("structuredAddress") or {}).get("component") or []
+        city = next((c.get("value") for c in components if c.get("regionType") == "CITY"), "") or fallback_city
+        if not city:
+            continue
+        address = location.get("address") or location.get("geocoderAddress") or ""
+        if address and city not in address:
+            address = f"{city}, {address}"
+        rooms = entity.get("roomsTotal")
+        rooms_text = "Студия" if rooms in (0, "0", "STUDIO") else (str(rooms) if rooms else "")
+        area_text = f"{area:g}" if isinstance(area, (int, float)) else ""
+        title = (f"{rooms_text}-комн. квартира" if rooms_text else "Квартира") + (f", {area_text} м²" if area_text else "")
+        images = entity.get("minicardImages") or entity.get("mainImages") or entity.get("origImages") or []
+        img = images[0] if images else ""
+        if img.startswith("//"):
+            img = "https:" + img
+        flat = entity.get("flatType") or ""
+        items.append({
+            "id": "yandex:" + str(entity.get("offerId")),
+            "source": "Яндекс",
+            "city": _clean_city(city),
+            "title": title,
+            "price": int(price),
+            "priceM2": round(price / area) if area else None,
+            "area": area,
+            "rooms": rooms_text,
+            "address": _clean(address),
+            "district": "",
+            "metro": _clean((location.get("metro") or {}).get("name") or ""),
+            "sub": "Новостройка" if flat.startswith("NEW") else "Вторичка",
+            "img": img,
+            "url": f"https://realty.yandex.ru/offer/{entity.get('offerId')}/",
+        })
+    return items
+
+
+def build_yandex():
+    tasks = [(None, page, "") for page in range(1, YANDEX_PAGES + 1)]
+    tasks += [(slug, page, name) for slug, name in YANDEX_CITIES for page in range(1, YANDEX_CITY_PAGES + 1)]
+
+    def fetch(task):
+        slug, page, fallback = task
+        url = _yandex_url(slug or "", page)
+        last = None
+        for _ in range(2):
+            try:
+                return _parse_yandex(http_text(url, timeout=45), fallback)
+            except Exception as exc:  # noqa: BLE001 - одна страница не должна ронять всю выборку
+                last = exc
+                time.sleep(1)
+        raise last
+
+    items, seen = [], set()
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(fetch, task) for task in tasks]
+        for future in as_completed(futures):
+            try:
+                rows = future.result()
+            except Exception:
+                continue
+            for item in rows:
+                if item["id"] not in seen:
+                    seen.add(item["id"])
+                    items.append(item)
+    if not items:
+        raise RuntimeError("Яндекс: не удалось получить объявления")
+    return items
+
+
 def api_realty():
     jobs = [
         ("realty_bn", 10800, build_bn),
         ("realty_avito", 10800, build_avito),
         ("realty_cian", 10800, build_cian),
+        ("realty_yandex", 10800, build_yandex),
         ("realty_moscow", 21600, build_mirkvartir_stats),
     ]
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         results = list(pool.map(lambda job: _safe_source(*job), jobs))
 
     listings = []
@@ -1199,7 +1332,8 @@ def api_realty():
         raise RuntimeError("Недвижимость: источники недоступны")
 
     avito_items = metas["realty_avito"][0] or []
-    sample = avito_items or listings
+    yandex_items = metas["realty_yandex"][0] or []
+    sample = avito_items + yandex_items or listings
     russia = None
     if sample:
         # shortcut: медиана и средняя цена м² по выборке карточек, не по всему рынку; перейти на API агрегатора при необходимости.
@@ -1212,15 +1346,17 @@ def api_realty():
             "cities": len(cities),
             "median": prices[len(prices) // 2] if prices else None,
             "avgM2": round(sum(ppsm) / len(ppsm)) if ppsm else None,
-            "source": "Авито, вся Россия" if avito_items else "Авито, Циан, БН.ру",
-            "url": AVITO_URL if avito_items else "https://www.avito.ru/rossiya/kvartiry/prodam",
+            "source": "Авито и Яндекс, вся Россия" if avito_items and yandex_items else "Яндекс, вся Россия" if yandex_items else "Авито, вся Россия",
+            "url": YANDEX_RUSSIA_URL if yandex_items else AVITO_URL,
             "sample": True,
         }
 
     sources = []
-    scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб", "realty_moscow": "Москва"}
+    scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб",
+              "realty_yandex": "Россия", "realty_moscow": "Москва"}
     for key, label, _ in (("realty_bn", "БН.ру", build_bn), ("realty_avito", "Авито", build_avito),
-                          ("realty_cian", "Циан", build_cian), ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
+                          ("realty_cian", "Циан", build_cian), ("realty_yandex", "Яндекс", build_yandex),
+                          ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
         data, meta = metas[key]
         count = len(data) if isinstance(data, list) else (1 if data else 0)
         sources.append({"key": key.replace("realty_", ""), "name": label, "scope": scopes[key],
