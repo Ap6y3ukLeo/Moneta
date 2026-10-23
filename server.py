@@ -352,7 +352,7 @@ def build_crypto():
             "marketCap": None,
             "volume": float(row.get("turnover24h") or 0),
             "spark": _bybit_spark(pair, inverse),
-            "tradeUrl": f"https://www.bybit.com/trade/spot/{sym}/{('USDC' if inverse else 'USDT')}",
+            "tradeUrl": "https://www.bybit.com/fiat/trade/onramp" if sym == "USDT" else f"https://www.bybit.com/trade/spot/{sym}/USDT",
         }
 
     with ThreadPoolExecutor(max_workers=6) as pool:
@@ -378,7 +378,7 @@ def build_crypto_fallback():
             "marketCap": usd.get("market_cap"),
             "volume": usd.get("volume_24h"),
             "spark": [],
-            "tradeUrl": f"https://www.bybit.com/trade/spot/{sym}/{('USDC' if sym == 'USDT' else 'USDT')}",
+            "tradeUrl": "https://www.bybit.com/fiat/trade/onramp" if sym == "USDT" else f"https://www.bybit.com/trade/spot/{sym}/USDT",
         }
 
     with ThreadPoolExecutor(max_workers=6) as pool:
