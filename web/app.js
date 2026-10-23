@@ -1585,7 +1585,7 @@ function fmtForecast(value, unit) {
 /* ------------------------------------------------------------------ interactive chart */
 const chartState = {
   seq: 0, kind: '', id: '', name: '', symbol: '', unit: '',
-  range: '1m', horizon: 30, points: [], forecast: null,
+  range: '1m', horizon: 30, points: [], forecast: null, showForecast: true,
   view: { start: 0, end: 0 }, hover: null, dragging: false, drag: null,
   historyLoading: false, historyError: '', forecastLoading: false, forecastError: '',
 };
@@ -1615,7 +1615,7 @@ function chartLabelDate(iso, range) {
 function chartAllPoints() {
   const history = chartState.points || [];
   if (!history.length) return [];
-  const forecast = chartState.forecast?.points || [];
+  const forecast = chartState.showForecast ? (chartState.forecast?.points || []) : [];
   if (!forecast.length) return history;
   const last = new Date(history[history.length - 1].t).getTime();
   const base = isFinite(last) ? last : Date.now();
@@ -1630,13 +1630,25 @@ function chartToolbarHtml() {
   const ranges = chartState.kind === 'crypto' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
   return `<div class="chart-toolbar">
     <div class="chart-ranges">${ranges.map((range) => `<button class="chart-tab${chartState.range === range ? ' is-active' : ''}" type="button" data-chart-range="${range}">${CHART_RANGE_LABELS[range]}</button>`).join('')}</div>
-    <div class="chart-horizon-note">AI-горизонт: ${chartState.horizon} дн.</div>
+    <div class="chart-ai-controls"><label class="chart-toggle"><input id="chart-ai-toggle" type="checkbox"${chartState.showForecast ? ' checked' : ''}><span>AI-прогноз</span></label><span class="chart-horizon-note">${chartState.horizon} дн.</span></div>
   </div>`;
+}
+
+function renderChartLegend() {
+  const box = $('#chart-legend');
+  if (!box) return;
+  let ai = '';
+  if (!chartState.showForecast) ai = '<span>AI-прогноз выключен</span>';
+  else if (chartState.forecastLoading) ai = '<span>AI-прогноз загружается…</span>';
+  else if (chartState.forecastError) ai = '<span>AI-прогноз недоступен</span>';
+  else if (chartState.forecast) ai = '<span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span>';
+  box.innerHTML = `<span><i class="legend-line"></i>история</span>${ai}<span>вертикальная линия — сегодня</span>`;
 }
 
 function renderChartToolbar() {
   const bar = $('#chart-toolbar');
   if (bar) bar.innerHTML = chartToolbarHtml();
+  renderChartLegend();
 }
 
 function chartSvg(all) {
@@ -1713,7 +1725,7 @@ function chartSvg(all) {
     <text x="${padL}" y="${height - 12}" class="chart-label">${esc(chartLabelDate(all[start].t, chartState.range))}</text>
     <text x="${(padL + width - padR) / 2}" y="${height - 12}" text-anchor="middle" class="chart-label">${esc(chartLabelDate(all[Math.floor((start + end) / 2)].t, chartState.range))}</text>
     <text x="${width - padR}" y="${height - 12}" text-anchor="end" class="chart-label">${esc(chartLabelDate(all[end].t, chartState.range))}</text>
-    ${chartState.forecast ? `<text x="${width - padR}" y="${padT - 8}" text-anchor="end" class="chart-end">AI-прогноз ${chartState.forecast.horizonDays} дн.</text>` : ''}
+    ${chartState.showForecast && chartState.forecast ? `<text x="${width - padR}" y="${padT - 8}" text-anchor="end" class="chart-end">AI-прогноз ${chartState.forecast.horizonDays} дн.</text>` : ''}
   </svg>${tip}`;
 }
 
@@ -1732,65 +1744,14 @@ function renderChartStage() {
   stage.innerHTML = points.length ? chartSvg(points) : '<div class="chart-empty">Нет данных для графика</div>';
 }
 
-function forecastPanelHtml(data) {
-  const asset = data.asset || {};
-  const unit = asset.unit || chartState.unit;
-  const direction = data.direction === 'up' ? 'up' : data.direction === 'down' ? 'down' : 'flat';
-  const directionLabel = direction === 'up' ? 'рост' : direction === 'down' ? 'снижение' : 'боковик';
-  const change = `${data.changePct > 0 ? '+' : ''}${num(data.changePct, 1)}%`;
-  const bt = data.backtest || {};
-  const btText = bt.samples
-    ? `Бэктест на ${bt.horizonDays} дн.: <b>${num(bt.directionAccuracyPct, 0)}%</b> направления · ошибка <b>${num(bt.mapePct, 1)}%</b> · n=${bt.samples}`
-    : 'Бэктест: мало данных';
-  const modelWeights = bt.weights
-    ? Object.entries(bt.weights).map(([key, value]) => `${key === 'random' ? 'RW' : key === 'momentum' ? 'MOM' : 'MR'} ${Math.round(value * 100)}%`).join(' · ')
-    : '';
-  return `<div class="chart-ai-title">AI-анализ на ${data.horizonDays} дн.</div>
-    <div class="forecast-summary">
-      <div class="forecast-pill forecast-pill--${direction}">${directionLabel}</div>
-      <div><b>${change}</b><span>за ${data.horizonDays} дн.</span></div>
-      <div><b>${Math.round((data.confidence || 0) * 100)}%</b><span>оценка модели</span></div>
-      <div><b>±${num(data.bandPct, 1)}%</b><span>диапазон</span></div>
-    </div>
-    <div class="forecast-levels">
-      <span>${btText}</span>
-      <span>Волатильность: <b>${num(data.volatilityPct, 1)}%</b></span>
-      <span>Поддержка: <b>${fmtForecast(data.support, unit)}</b></span>
-      <span>Сопротивление: <b>${fmtForecast(data.resistance, unit)}</b></span>
-      ${modelWeights ? `<span>Веса: ${modelWeights}</span>` : ''}
-      <span>Модель: <b>${esc(data.model || 'ensemble')}</b>${data.aiModel ? ' + AI' : ''}</span>
-    </div>
-    ${data.factorsText ? `<div class="forecast-factors"><b>Что учтено:</b> числовая модель — история цены; факторы для AI-комментария: ${esc(data.factorsText)}.</div>` : ''}
-    <div class="forecast-text">${formatAi(data.summary)}</div>
-    ${data.aiError ? `<div class="forecast-note">AI-комментарий недоступен: ${esc(data.aiError)}. Показан статистический прогноз.</div>` : ''}
-    ${data.commentary ? `<div class="forecast-commentary forecast-text"><b>Комментарий AI</b>${formatAi(data.commentary)}</div>` : ''}
-    <div class="forecast-bias">Сценарий для покупки или удержания. Мы не рассматриваем шорт.</div>
-    <p class="forecast-disclaimer">${esc(data.disclaimer || 'Это не инвестиционная рекомендация.')}</p>`;
-}
-
-function renderChartAi() {
-  const box = $('#chart-ai');
-  if (!box) return;
-  if (chartState.forecastLoading && !chartState.forecast) {
-    box.innerHTML = '<div class="chart-ai-loading">Нейросеть анализирует историю…</div>';
-    return;
-  }
-  if (chartState.forecastError && !chartState.forecast) {
-    box.innerHTML = `<div class="forecast-error">${icon('shield')}<div><b>AI-анализ недоступен</b><p>${esc(chartState.forecastError)}</p><button class="btn btn--sm" type="button" data-chart-retry="${esc(chartState.kind)}:${esc(chartState.id)}">Повторить</button></div></div>`;
-    return;
-  }
-  box.innerHTML = chartState.forecast
-    ? forecastPanelHtml(chartState.forecast)
-    : '<div class="chart-ai-loading">AI-анализ появится после загрузки прогноза.</div>';
-}
-
 function updateChartSub() {
   const sub = $('#forecast-sub');
   if (!sub) return;
   const last = chartState.points[chartState.points.length - 1];
   const label = CHART_RANGE_LABELS[chartState.range] || chartState.range;
+  const ai = !chartState.showForecast ? 'AI выкл.' : chartState.forecastLoading ? 'AI загрузка…' : chartState.forecastError ? 'AI недоступен' : `AI ${chartState.horizon} дн.`;
   sub.textContent = last
-    ? `${label} · ${fmtForecast(last.c, chartState.unit)} · ${chartState.points.length} точек · AI ${chartState.horizon} дн.`
+    ? `${label} · ${fmtForecast(last.c, chartState.unit)} · ${chartState.points.length} точек · ${ai}`
     : 'Загружаем историю…';
 }
 
@@ -1868,7 +1829,6 @@ async function loadChartHistory() {
   chartState.historyError = '';
   renderChartToolbar();
   renderChartStage();
-  renderChartAi();
   updateChartSub();
   const key = `${chartState.kind}:${chartState.id}:${chartState.range}`;
   try {
@@ -1897,15 +1857,13 @@ async function loadChartHistory() {
     if (chartState.forecast) chartState.view = { start: 0, end: chartAllPoints().length - 1 };
     renderChartToolbar();
     renderChartStage();
-    renderChartAi();
-    updateChartSub();
+      updateChartSub();
   } catch (err) {
     if (seq !== chartState.seq) return;
     chartState.historyLoading = false;
     chartState.historyError = err.name === 'AbortError' ? 'История не загрузилась вовремя.' : (err.message || 'Не удалось загрузить историю.');
     renderChartStage();
-    renderChartAi();
-    updateChartSub();
+      updateChartSub();
   }
 }
 
@@ -1916,7 +1874,6 @@ async function loadChartForecast() {
   chartState.forecast = null;
   renderChartToolbar();
   renderChartStage();
-  renderChartAi();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
@@ -1935,15 +1892,13 @@ async function loadChartForecast() {
     if (atEnd) chartState.view = { start: 0, end: chartAllPoints().length - 1 };
     renderChartToolbar();
     renderChartStage();
-    renderChartAi();
-    updateChartSub();
+      updateChartSub();
   } catch (err) {
     if (seq !== chartState.seq) return;
     chartState.forecastLoading = false;
     chartState.forecastError = err.name === 'AbortError' ? 'AI-анализ не ответил вовремя.' : (err.message || 'Не удалось получить AI-анализ.');
     renderChartStage();
-    renderChartAi();
-  } finally {
+    } finally {
     clearTimeout(timer);
   }
 }
@@ -1966,6 +1921,7 @@ async function openChart(kind, id) {
   chartState.horizon = preferredHorizon('1m');
   chartState.points = [];
   chartState.forecast = null;
+  chartState.showForecast = true;
   chartState.view = { start: 0, end: 0 };
   chartState.hover = null;
   chartState.historyLoading = true;
@@ -1974,7 +1930,7 @@ async function openChart(kind, id) {
   chartState.forecastError = '';
   if (title) title.textContent = `График · ${asset.name}`;
   if (sub) sub.textContent = 'Загружаем историю…';
-  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-legend"><span><i class="legend-line"></i>история</span><span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span><span>вертикальная линия — сегодня</span></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий · AI-горизонт подстраивается под диапазон</div><div id="chart-ai" class="chart-ai"></div>';
+  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий</div>';
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();
@@ -2138,6 +2094,15 @@ $('#add-form').addEventListener('submit', handleSubmit);
 $('#profile-form').addEventListener('submit', saveProfileName);
 $('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); askAi(); });
 $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent = ''; });
+document.addEventListener('change', (e) => {
+  if (e.target.id !== 'chart-ai-toggle') return;
+  chartState.showForecast = e.target.checked;
+  const all = chartAllPoints();
+  chartState.view = { start: 0, end: Math.max(1, all.length - 1) };
+  renderChartToolbar();
+  renderChartStage();
+  updateChartSub();
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.body.classList.remove('menu-open');

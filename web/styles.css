@@ -565,6 +565,12 @@ table.data th.num { text-align: right; }
 .chart-ranges, .chart-horizons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .chart-horizons span { color: var(--muted); font-size: 10.5px; margin-right: 2px; }
 .chart-horizon-note { align-self: center; color: var(--muted); font-size: 10.5px; }
+.chart-ai-controls { display: flex; align-items: center; gap: 10px; }
+.chart-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; cursor: pointer; user-select: none; }
+.chart-toggle input { appearance: none; width: 28px; height: 16px; border-radius: 999px; background: #dbe5ea; position: relative; cursor: pointer; transition: background .15s; }
+.chart-toggle input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(28, 40, 74, .2); transition: transform .15s; }
+.chart-toggle input:checked { background: var(--teal); }
+.chart-toggle input:checked::after { transform: translateX(12px); }
 .chart-tab { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #64748a; font-size: 11px; cursor: pointer; }
 .chart-tab.is-active { background: var(--mint); color: var(--teal-700); border-color: #bdeee2; font-weight: 600; }
 .chart-stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; overflow: hidden; user-select: none; touch-action: none; cursor: crosshair; }
