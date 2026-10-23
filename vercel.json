@@ -12,7 +12,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": "max",
-      "includeFiles": "{server.py,data/**/*.json}"
+      "includeFiles": "**/*"
     }
   }
 }
