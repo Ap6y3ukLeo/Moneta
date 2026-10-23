@@ -378,7 +378,7 @@ def build_crypto_fallback():
             "marketCap": usd.get("market_cap"),
             "volume": usd.get("volume_24h"),
             "spark": [],
-            "tradeUrl": f"https://www.bybit.com/trade/spot/{sym}/USDT",
+            "tradeUrl": f"https://www.bybit.com/trade/spot/{sym}/{('USDC' if sym == 'USDT' else 'USDT')}",
         }
 
     with ThreadPoolExecutor(max_workers=6) as pool:
@@ -920,7 +920,7 @@ def build_avito():
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
-        url = row.get("url") or ""
+        url = (row.get("url") or "").split("?")[0]
         price = _digits(row.get("price"))
         if not title or not url or not (1_000_000 <= price <= 1_000_000_000):
             continue
@@ -983,7 +983,7 @@ def build_cian():
     for row in rows:
         title = _clean(row.get("title"))
         subtitle = _clean(row.get("subtitle"))
-        url = row.get("url") or ""
+        url = (row.get("url") or "").split("?")[0]
         text = row.get("text") or ""
         layout = subtitle if re.search(r"(комн|студи|м²)", subtitle, re.I) else title
         if not layout or not url or "своб. планировка" in (layout + " " + title).lower():

@@ -7,6 +7,9 @@
     { "source": "/api/health", "destination": "/api/index?route=health" }
   ],
   "functions": {
-    "api/index.py": { "maxDuration": 60 }
+    "api/index.py": {
+      "maxDuration": 60,
+      "includeFiles": ["server.py", "data/**/*.json"]
+    }
   }
 }
