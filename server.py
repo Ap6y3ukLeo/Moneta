@@ -1281,7 +1281,7 @@ def _parse_yandex(html: str, fallback_city: str = ""):
         flat = entity.get("flatType") or ""
         items.append({
             "id": "yandex:" + str(entity.get("offerId")),
-            "source": "Яндекс",
+            "source": "Агрегатор",
             "city": _clean_city(city),
             "title": title,
             "price": int(price),
@@ -1355,6 +1355,8 @@ def api_realty():
 
     avito_items = metas["realty_avito"][0] or []
     yandex_items = metas["realty_yandex"][0] or []
+    for item in yandex_items:
+        item["source"] = "Агрегатор"
     sample = avito_items + yandex_items or listings
     russia = None
     if sample:
@@ -1368,7 +1370,7 @@ def api_realty():
             "cities": len(cities),
             "median": prices[len(prices) // 2] if prices else None,
             "avgM2": round(sum(ppsm) / len(ppsm)) if ppsm else None,
-            "source": "Авито и Яндекс, вся Россия" if avito_items and yandex_items else "Яндекс, вся Россия" if yandex_items else "Авито, вся Россия",
+            "source": "Авито и агрегатор, вся Россия" if avito_items and yandex_items else "Агрегатор, вся Россия" if yandex_items else "Авито, вся Россия",
             "url": YANDEX_RUSSIA_URL if yandex_items else AVITO_URL,
             "sample": True,
         }
@@ -1377,7 +1379,7 @@ def api_realty():
     scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб",
               "realty_yandex": "Россия", "realty_moscow": "Москва"}
     for key, label, _ in (("realty_bn", "БН.ру", build_bn), ("realty_avito", "Авито", build_avito),
-                          ("realty_cian", "Циан", build_cian), ("realty_yandex", "Яндекс", build_yandex),
+                          ("realty_cian", "Циан", build_cian), ("realty_yandex", "Агрегатор", build_yandex),
                           ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
         data, meta = metas[key]
         count = len(data) if isinstance(data, list) else (1 if data else 0)

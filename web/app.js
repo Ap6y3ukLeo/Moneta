@@ -547,7 +547,7 @@ function homePage() {
 
         <article class="card">
           <div class="card-head">
-            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Яндекс, Авито, Циан, БН.ру</div></div>
+            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · 4 источника</div></div>
             <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
           </div>
           ${msk ? `<div class="metric-big" style="font-size:23px">${money(msk.avgM2)}<span class="muted" style="font-size:12px;font-weight:500">/м²</span></div>
@@ -935,7 +935,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Авито, Циан, БН.ру и крупный агрегатор. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -988,7 +988,7 @@ function realtyPage() {
     </select>
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Яндекса и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с агрегатора и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: portfolio */
