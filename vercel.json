@@ -1,0 +1,12 @@
+{
+  "outputDirectory": "web",
+  "rewrites": [
+    { "source": "/api/market", "destination": "/api/index?route=market" },
+    { "source": "/api/deposits", "destination": "/api/index?route=deposits" },
+    { "source": "/api/realty", "destination": "/api/index?route=realty" },
+    { "source": "/api/health", "destination": "/api/index?route=health" }
+  ],
+  "functions": {
+    "api/index.py": { "maxDuration": 60 }
+  }
+}
