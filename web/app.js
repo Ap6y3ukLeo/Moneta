@@ -917,12 +917,12 @@ function realtyRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card">
-    <a class="re-img" href="${esc(r.url)}" target="_blank" rel="noopener">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></a>
+    <button class="re-img" type="button" data-realty="${esc(r.id)}" aria-label="Подробнее: ${esc(r.title)}">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></button>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
       <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
-      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}</div>
+      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span><button class="link-more" type="button" data-realty="${esc(r.id)}">Подробнее</button>${ext(r.url, 'Открыть объявление')}</div>
     </div>
   </article>`).join('')}</div>`;
   const more = items.length - shown.length;
@@ -994,6 +994,43 @@ function realtyPage() {
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
   <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с агрегатора и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+}
+
+function openRealty(id) {
+  const item = realtyList().find((r) => r.id === id);
+  const dialog = $('#realty-dialog');
+  const body = $('#realty-body');
+  const title = $('#realty-title');
+  const sub = $('#realty-sub');
+  if (!item || !dialog || !body) return;
+  const rooms = item.rooms === 'Студия' ? 'Студия' : item.rooms ? `${item.rooms}-комн.` : 'Квартира';
+  if (title) title.textContent = item.title || rooms;
+  if (sub) sub.textContent = [item.city, item.source].filter(Boolean).join(' · ');
+  const details = [
+    ['Город', item.city],
+    ['Район', item.district],
+    ['Метро', item.metro],
+    ['Комнат', item.rooms === 'Студия' ? 'Студия' : item.rooms],
+    ['Площадь', item.area ? `${num(item.area, 1)} м²` : ''],
+    ['Тип', item.sub],
+  ].filter(([, value]) => value && value !== '—');
+  body.innerHTML = `
+    <div class="realty-photo-wrap">
+      <div class="realty-photo-empty">Нет фото</div>
+      ${item.img ? `<img class="realty-photo" src="${esc(item.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
+    </div>
+    <div class="realty-price-row">
+      <div><div class="realty-price">${money(item.price)}</div>${item.priceM2 ? `<div class="muted">${money(item.priceM2)} / м²</div>` : ''}</div>
+      <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
+    </div>
+    <div class="realty-address">${esc(item.address || item.city || '')}</div>
+    <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
+    <div class="realty-actions">
+      ${item.url ? `<a class="btn btn--ghost btn--sm" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
+      <button class="btn btn--sm" type="button" data-action="close-realty">Закрыть</button>
+    </div>
+    <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>`;
+  if (!dialog.open) dialog.showModal();
 }
 
 /* ------------------------------------------------------------------ pages: portfolio */
@@ -1959,6 +1996,11 @@ document.addEventListener('click', (e) => {
     openAdd('deposit', offer ? { offerId: offer.id, rate: offer.rate, name: offer.name, amount: S.calc?.amount || 300000, months: S.calc?.months || 12 } : {});
     return;
   }
+  const realtyCard = e.target.closest('[data-realty]');
+  if (realtyCard) {
+    openRealty(realtyCard.dataset.realty);
+    return;
+  }
   const chartTrigger = e.target.closest('[data-chart], [data-forecast]');
   if (chartTrigger) {
     const [kind, id] = (chartTrigger.dataset.chart || chartTrigger.dataset.forecast || '').split(':');
@@ -2013,6 +2055,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'profile') openProfileDialog();
   else if (action === 'close-profile') $('#profile-dialog').close();
   else if (action === 'close-forecast') $('#forecast-dialog').close();
+  else if (action === 'close-realty') $('#realty-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();

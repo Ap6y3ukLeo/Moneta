@@ -490,9 +490,11 @@ table.data th.num { text-align: right; }
   border-radius: 16px; overflow: hidden; transition: border-color .15s, box-shadow .15s;
 }
 .re-card:hover { border-color: #c7ece2; box-shadow: 0 10px 24px rgba(28,40,74,.07); }
-.re-img { display: block; position: relative; height: 148px; overflow: hidden; background: linear-gradient(135deg, #e8faf5, #d7efe9); }
+.re-img { display: block; position: relative; width: 100%; height: 148px; overflow: hidden; border: 0; padding: 0; text-align: left; cursor: pointer; background: linear-gradient(135deg, #e8faf5, #d7efe9); }
 .re-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
 .re-card:hover .re-img img { transform: scale(1.03); }
+.re-img::after { content: 'Подробнее'; position: absolute; z-index: 2; left: 50%; bottom: 10px; transform: translate(-50%, 4px); padding: 4px 9px; border-radius: 7px; background: rgba(28,40,74,.88); color: #fff; font-size: 9.5px; font-weight: 600; opacity: 0; transition: opacity .15s, transform .15s; }
+.re-img:hover::after, .re-img:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 .re-city {
   position: absolute; top: 10px; left: 10px; padding: 3px 8px; border-radius: 7px;
   background: rgba(255,255,255,.93); font-size: 9px; font-weight: 700; color: var(--navy);
@@ -504,7 +506,7 @@ table.data th.num { text-align: right; }
 .re-price { font-size: 14px; font-weight: 800; letter-spacing: -0.3px; white-space: nowrap; }
 .re-addr { font-size: 11.5px; color: #45556b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .re-meta { font-size: 10.5px; color: var(--muted); line-height: 1.35; }
-.re-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }
+.re-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; }
 .re-foot .icon-btn { width: 30px; height: 30px; border-radius: 9px; }
 
 .calc-card { position: sticky; top: 84px; }
@@ -558,6 +560,24 @@ table.data th.num { text-align: right; }
 .form-error { color: var(--red); font-size: 11.5px; min-height: 16px; margin: -4px 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .dialog-hint { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.realty-dialog { width: min(720px, calc(100vw - 28px)); }
+.realty-card { max-height: calc(100vh - 40px); overflow-y: auto; }
+.realty-body { display: flex; flex-direction: column; gap: 12px; }
+.realty-photo-wrap { position: relative; min-height: 220px; max-height: 340px; border-radius: 14px; overflow: hidden; background: linear-gradient(135deg, #e8faf5, #d7efe9); }
+.realty-photo { display: block; width: 100%; max-height: 340px; object-fit: cover; position: relative; z-index: 1; }
+.realty-photo-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.realty-price-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.realty-price { color: var(--navy); font-size: 26px; font-weight: 800; letter-spacing: -0.7px; }
+.realty-address { color: #45556b; font-size: 12px; line-height: 1.45; }
+.realty-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.realty-grid > div { padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdfc; }
+.realty-grid span { display: block; color: var(--muted); font-size: 10px; }
+.realty-grid b { display: block; margin-top: 2px; color: var(--navy); font-size: 12px; font-weight: 600; }
+.realty-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.realty-note { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+@media (max-width: 640px) {
+  .realty-grid { grid-template-columns: 1fr; }
+}
 .forecast-dialog { width: min(980px, calc(100vw - 28px)); }
 .forecast-card { max-height: calc(100vh - 40px); overflow-y: auto; }
 .forecast-body { display: flex; flex-direction: column; gap: 12px; }
