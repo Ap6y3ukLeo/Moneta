@@ -46,7 +46,7 @@ class YandexGptTest(unittest.TestCase):
         self.assertEqual(result["answer"], "Короткий ответ")
         request = open_mock.call_args.args[0]
         body = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(body["modelUri"], "gpt://test-folder/yandexgpt-lite/latest")
+        self.assertEqual(body["modelUri"], "gpt://test-folder/yandexgpt/latest")
         self.assertEqual(request.get_header("Authorization"), "Api-Key test-key")
 
     def test_auth_error_message(self):

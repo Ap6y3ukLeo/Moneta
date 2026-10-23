@@ -1403,27 +1403,57 @@ function aiContext() {
     pnl: Math.round(r.pnl),
     sharePct: +(r.cur / (v.value || 1) * 100).toFixed(1),
   }));
-  const btc = findCrypto('bitcoin');
-  const gold = findMetal('XAU');
-  const usd = findFx('USD');
+  const crypto = cryptoList().slice(0, 6).map((c) => ({
+    symbol: c.symbol, name: c.name, priceUsd: c.price, change24h: c.change24h,
+  }));
+  const metals = metalList().map((m) => ({
+    code: m.code, name: m.name, rubPerGram: m.price, change24h: m.change24h,
+  }));
+  const fx = fxList().map((f) => ({
+    code: f.code, name: f.name, rub: f.value, change24h: f.change24h,
+  }));
+  const seenBanks = new Set();
+  const deposits = [...depositList()]
+    .sort((a, b) => b.rate - a.rate)
+    .filter((d) => { if (seenBanks.has(d.bank)) return false; seenBanks.add(d.bank); return true; })
+    .slice(0, 8)
+    .map((d) => ({
+      bank: d.bank, name: d.name, rate: d.rate, min: d.min, max: d.max, termDays: d.termDays, currency: d.currency,
+    }));
+  const byTypeMap = {};
+  for (const p of positions) byTypeMap[p.type] = (byTypeMap[p.type] || 0) + p.value;
+  const byType = Object.entries(byTypeMap).map(([type, value]) => ({
+    type, value: Math.round(value), sharePct: +(value / (v.value || 1) * 100).toFixed(1),
+  }));
+  const moscow = S.realty?.stats?.moscow;
   const russia = S.realty?.stats?.russia;
-  const deposit = bestDeposit();
+  const best = bestDeposit();
   return JSON.stringify({
+    page: (location.hash || '#/').replace(/^#\/?/, '') || 'home',
     portfolio: {
       value: Math.round(v.value),
       invested: Math.round(v.invested),
       pnl: Math.round(v.pnl),
       pnlPct: Number.isFinite(v.pnlPct) ? +v.pnlPct.toFixed(1) : 0,
+      changeDay: Math.round(v.changeDay),
+      changePct: Number.isFinite(v.changePct) ? +v.changePct.toFixed(2) : 0,
+      irrPct: v.irr == null ? null : +(v.irr * 100).toFixed(1),
+      depositIncome: Math.round(v.depositIncome),
+      byType,
       positions,
     },
     market: {
-      btcUsd: btc?.price,
-      goldRubG: gold?.price,
-      usdRub: usd?.value,
       keyRate: keyRateValue(),
-      bestDeposit: deposit ? { bank: deposit.bank, rate: deposit.rate } : null,
+      crypto,
+      metals,
+      fx,
+      bestDeposit: best ? { bank: best.bank, rate: best.rate } : null,
     },
-    realty: russia ? { median: russia.median, avgM2: russia.avgM2, count: russia.count, cities: russia.cities } : null,
+    deposits,
+    realty: {
+      moscow: moscow ? { avgPrice: moscow.avgPrice, avgM2: moscow.avgM2, count: moscow.count } : null,
+      russia: russia ? { median: russia.median, avgM2: russia.avgM2, count: russia.count, cities: russia.cities } : null,
+    },
   });
 }
 
@@ -1435,7 +1465,7 @@ function renderAiLog() {
   if (!log) return;
   log.innerHTML = aiLog.length
     ? aiLog.map((m) => `<div class="ai-msg ai-msg--${m.role === 'user' ? 'user' : m.error ? 'error' : 'bot'}${m.typing ? ' ai-msg--typing' : ''}">${esc(m.text)}</div>`).join('')
-    : '<div class="ai-msg ai-msg--bot">Привет! Спросите о рисках, концентрации или доходности портфеля — отвечу по текущим данным.</div>';
+    : '<div class="ai-msg ai-msg--bot">Привет! Разберу портфель, сравню вклады, посмотрю валюты, металлы и недвижимость, посчитаю доходность. Спросите или выберите подсказку.</div>';
   log.scrollTop = log.scrollHeight;
 }
 
