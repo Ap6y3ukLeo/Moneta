@@ -111,7 +111,7 @@ const S = {
   addKind: 'crypto',
   addPreset: {},
   dep: { q: '', bank: 'all', source: 'all', sort: 'rate', limit: 40 },
-  re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 12 },
+  re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 24 },
   calc: null,
 };
 S.portfolio = loadPortfolio(S.profiles.active);
@@ -893,8 +893,7 @@ function realtyPage() {
   const sources = S.realty.sources || [];
   const cities = [...new Set(realtyList().map((r) => r.city).filter(Boolean))]
     .map((city) => ({ city, count: realtyList().filter((r) => r.city === city).length }))
-    .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, 'ru'))
-    .slice(0, 20);
+    .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, 'ru'));
   return `
   ${sourceWarning()}
   <div class="page-head">
@@ -1417,7 +1416,7 @@ document.addEventListener('click', (e) => {
     const box = $('#dep-list');
     if (box) box.innerHTML = depositRowsHtml();
   } else if (action === 're-more') {
-    S.re.limit += 12;
+    S.re.limit += 24;
     const box = $('#re-list');
     if (box) box.innerHTML = realtyRowsHtml();
   }
@@ -1441,10 +1440,10 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 'dep-bank') { S.dep.bank = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
   if (e.target.id === 'dep-source') { S.dep.source = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
   if (e.target.id === 'dep-sort') { S.dep.sort = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
-  if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
-  if (e.target.id === 're-city') { S.re.city = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
-  if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
-  if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 12; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-city') { S.re.city = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
 });
 
 document.addEventListener('input', (e) => {
@@ -1455,7 +1454,7 @@ document.addEventListener('input', (e) => {
   }
   if (e.target.id === 're-search') {
     S.re.q = e.target.value;
-    S.re.limit = 12;
+    S.re.limit = 24;
     $('#re-list').innerHTML = realtyRowsHtml();
   }
   if (['c-amount', 'c-months', 'c-rate', 'c-cap'].includes(e.target.id)) updateCalc();

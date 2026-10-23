@@ -192,8 +192,8 @@ def _cdp_call(sock: socket.socket, msg_id: int, method: str, params: dict | None
             return data
 
 
-def browser_json(url: str, expression: str, wait: float = 11):
-    """Открывает url в headless Chrome и возвращает JSON из expression."""
+def browser_json_many(urls, expression: str, waits):
+    """Открывает несколько URL в одном Chrome и возвращает JSON с каждой страницы."""
     if os.environ.get("VERCEL"):
         raise RuntimeError("Авито/Циан недоступны на Vercel: нужен локальный Chrome")
     chrome = chrome_path()
@@ -227,19 +227,28 @@ def browser_json(url: str, expression: str, wait: float = 11):
             if not target:
                 raise RuntimeError("Chrome не запустился")
             sock = _ws_connect(target["webSocketDebuggerUrl"])
+            values = []
             try:
                 _cdp_call(sock, 1, "Page.enable")
-                _cdp_call(sock, 2, "Page.navigate", {"url": url})
-                time.sleep(wait)
-                result = _cdp_call(sock, 3, "Runtime.evaluate", {"expression": expression, "returnByValue": True})
+                msg_id = 2
+                for index, (url, wait) in enumerate(zip(urls, waits)):
+                    _cdp_call(sock, msg_id, "Page.navigate", {"url": url})
+                    msg_id += 1
+                    time.sleep(wait)
+                    result = _cdp_call(sock, msg_id, "Runtime.evaluate", {"expression": expression, "returnByValue": True})
+                    msg_id += 1
+                    if result.get("result", {}).get("exceptionDetails"):
+                        raise RuntimeError("Chrome JS: " + str(result["result"]["exceptionDetails"])[:200])
+                    value = result.get("result", {}).get("result", {}).get("value")
+                    if not isinstance(value, str):
+                        raise RuntimeError("Chrome не вернул данные страницы")
+                    parsed = json.loads(value)
+                    values.append(parsed)
+                    if index and isinstance(parsed, list) and not parsed:
+                        break
             finally:
                 sock.close()
-            if result.get("result", {}).get("exceptionDetails"):
-                raise RuntimeError("Chrome JS: " + str(result["result"]["exceptionDetails"])[:200])
-            value = result.get("result", {}).get("result", {}).get("value")
-            if not isinstance(value, str):
-                raise RuntimeError("Chrome не вернул данные страницы")
-            return json.loads(value)
+            return values
         finally:
             proc.terminate()
             try:
@@ -247,6 +256,28 @@ def browser_json(url: str, expression: str, wait: float = 11):
             except subprocess.TimeoutExpired:
                 proc.kill()
             shutil.rmtree(profile, ignore_errors=True)
+
+
+def browser_json(url: str, expression: str, wait: float = 11):
+    """Открывает url в headless Chrome и возвращает JSON из expression."""
+    return browser_json_many([url], expression, [wait])[0]
+
+
+def _page_url(url: str, page: int) -> str:
+    if page <= 1:
+        return url
+    return url + ("&" if "?" in url else "?") + f"p={page}"
+
+
+def browser_json_pages(url: str, expression: str, pages: int, first_wait: float = 10, wait: float = 5):
+    """Собирает JSON с нескольких страниц выдачи, пока страница не опустеет."""
+    urls = [_page_url(url, page) for page in range(1, pages + 1)]
+    values = browser_json_many(urls, expression, [first_wait] + [wait] * (pages - 1))
+    rows = []
+    for value in values:
+        if isinstance(value, list):
+            rows.extend(value)
+    return rows
 
 
 def _digits(value) -> int:
@@ -264,6 +295,20 @@ def source(name: str, ttl: int, builder):
     hit = MEM.get(name)
     if hit and hit["exp"] > time.time():
         return hit["value"], hit["meta"]
+
+    path = os.path.join(CACHE_DIR, name + ".json")
+    try:
+        age = time.time() - os.path.getmtime(path)
+        if age < ttl:
+            with open(path, encoding="utf-8") as f:
+                cached = json.load(f)
+            if cached.get("value") is not None:
+                meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
+                with LOCK:
+                    MEM[name] = {"exp": time.time() + ttl - age, "value": cached["value"], "meta": meta}
+                return cached["value"], meta
+    except Exception:
+        pass
 
     try:
         value = builder()
@@ -816,8 +861,11 @@ def api_deposits():
 
 
 # ---------------------------------------------------------------- realty
-def build_bn():
-    html = http_text("https://www.bn.ru/kvartiry-vtorichka/", timeout=45)
+BN_URL = "https://www.bn.ru/kvartiry-vtorichka/"
+BN_PAGES = 20
+
+
+def _parse_bn(html):
     parts = re.split(r'(?=<a href="/detail/flats/\d+/")', html)
     items = []
     for part in parts:
@@ -869,6 +917,23 @@ def build_bn():
             "img": img,
             "url": "https://www.bn.ru" + m.group(1),
         })
+    return items
+
+
+def build_bn():
+    items, seen = [], set()
+    for page in range(1, BN_PAGES + 1):
+        try:
+            html = http_text(BN_URL + ("" if page == 1 else f"?page={page}"), timeout=45)
+        except Exception:
+            break
+        page_items = _parse_bn(html)
+        if not page_items:
+            break
+        for item in page_items:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                items.append(item)
     if not items:
         raise RuntimeError("bn.ru: не удалось разобрать объявления")
     return items
@@ -894,6 +959,7 @@ def build_mirkvartir_stats():
 
 
 AVITO_URL = "https://www.avito.ru/rossiya/kvartiry/prodam"
+AVITO_PAGES = 3
 AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => ({
   id: card.dataset.itemId,
   title: card.querySelector('[itemprop="name"]')?.innerText,
@@ -904,7 +970,8 @@ AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"
   text: card.innerText
 })))"""
 
-CIAN_URL = "https://spb.cian.ru/kupit-kvartiru/"
+CIAN_URL = "https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=2"
+CIAN_PAGES = 20
 CIAN_JS = r"""JSON.stringify([...document.querySelectorAll('article[data-name="CardComponent"]')].map((card) => ({
   url: card.querySelector('a[href*="/sale/flat/"]')?.href,
   title: card.querySelector('[data-mark="OfferTitle"]')?.innerText,
@@ -989,15 +1056,9 @@ def _avito_city(parts, addr, url):
 
 
 def build_avito():
-    rows = []
-    for wait in (15, 18):
-        try:
-            rows = browser_json(AVITO_URL, AVITO_JS, wait=wait)
-        except Exception:
-            rows = []
-        if rows:
-            break
-        time.sleep(2)
+    rows = browser_json_pages(AVITO_URL, AVITO_JS, AVITO_PAGES, first_wait=14, wait=6)
+    if not rows:
+        rows = browser_json_pages(AVITO_URL, AVITO_JS, 1, first_wait=18)
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
@@ -1065,7 +1126,7 @@ def build_avito():
 
 
 def build_cian():
-    rows = browser_json(CIAN_URL, CIAN_JS, wait=11)
+    rows = browser_json_pages(CIAN_URL, CIAN_JS, CIAN_PAGES, first_wait=10, wait=5)
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))

@@ -19,6 +19,10 @@ class AvitoCityTest(unittest.TestCase):
     def test_city_marker(self):
         self.assertEqual(server._avito_city([], "г.о. Сочи, ул. Ленина", ""), "Сочи")
 
+    def test_page_url(self):
+        self.assertEqual(server._page_url("https://example.test/list", 2), "https://example.test/list?p=2")
+        self.assertEqual(server._page_url("https://example.test/list?region=2", 2), "https://example.test/list?region=2&p=2")
+
 
 if __name__ == "__main__":
     unittest.main()
