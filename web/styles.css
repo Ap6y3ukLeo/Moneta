@@ -566,6 +566,11 @@ table.data th.num { text-align: right; }
 .realty-photo-wrap { position: relative; min-height: 220px; max-height: 340px; border-radius: 14px; overflow: hidden; background: linear-gradient(135deg, #e8faf5, #d7efe9); }
 .realty-photo { display: block; width: 100%; max-height: 340px; object-fit: cover; position: relative; z-index: 1; }
 .realty-photo-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
+.realty-photo-count { position: absolute; right: 10px; bottom: 10px; z-index: 2; padding: 3px 7px; border-radius: 6px; background: rgba(28,40,74,.8); color: #fff; font-size: 10px; }
+.realty-thumbs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.realty-thumb { flex: none; width: 64px; height: 48px; padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 8px; background: #f2f7f6; cursor: pointer; }
+.realty-thumb.is-active { border-color: var(--teal); }
+.realty-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .realty-price-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .realty-price { color: var(--navy); font-size: 26px; font-weight: 800; letter-spacing: -0.7px; }
 .realty-address { color: #45556b; font-size: 12px; line-height: 1.45; }

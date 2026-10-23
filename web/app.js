@@ -551,7 +551,7 @@ function homePage() {
 
         <article class="card">
           <div class="card-head">
-            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · 4 источника</div></div>
+            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Яндекс, Авито, Циан, БН.ру</div></div>
             <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
           </div>
           ${msk ? `<div class="metric-big" style="font-size:23px">${money(msk.avgM2)}<span class="muted" style="font-size:12px;font-weight:500">/м²</span></div>
@@ -940,7 +940,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Авито, Циан, БН.ру и крупный агрегатор. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -993,7 +993,33 @@ function realtyPage() {
     </select>
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с агрегатора и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Яндекса и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
+}
+
+let realtyGallery = { id: '', images: [], index: 0 };
+
+function realtyHiRes(url) {
+  return String(url || '')
+    .replace(/\/minicard$/, '/main')
+    .replace(/realty_minicard$/, 'realty_main')
+    .replace('/s/640x480/', '/s/1280x960/');
+}
+
+function realtyGalleryHtml() {
+  const images = realtyGallery.images || [];
+  if (!images.length) return '<div class="realty-photo-wrap"><div class="realty-photo-empty">Нет фото</div></div>';
+  const index = Math.min(realtyGallery.index, images.length - 1);
+  return `<div class="realty-photo-wrap">
+      <div class="realty-photo-empty">Нет фото</div>
+      <img class="realty-photo" src="${esc(images[index])}" alt="" loading="eager" referrerpolicy="no-referrer" onerror="this.remove()">
+      <span class="realty-photo-count">${index + 1} / ${images.length}</span>
+    </div>
+    ${images.length > 1 ? `<div class="realty-thumbs">${images.map((src, i) => `<button class="realty-thumb${i === index ? ' is-active' : ''}" type="button" data-realty-photo="${i}" aria-label="Фото ${i + 1}"><img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"></button>`).join('')}</div>` : ''}`;
+}
+
+function renderRealtyGallery() {
+  const box = $('#realty-gallery');
+  if (box) box.innerHTML = realtyGalleryHtml();
 }
 
 function openRealty(id) {
@@ -1004,6 +1030,7 @@ function openRealty(id) {
   const sub = $('#realty-sub');
   if (!item || !dialog || !body) return;
   const rooms = item.rooms === 'Студия' ? 'Студия' : item.rooms ? `${item.rooms}-комн.` : 'Квартира';
+  realtyGallery = { id: item.id, images: item.img ? [realtyHiRes(item.img)] : [], index: 0 };
   if (title) title.textContent = item.title || rooms;
   if (sub) sub.textContent = [item.city, item.source].filter(Boolean).join(' · ');
   const details = [
@@ -1015,10 +1042,7 @@ function openRealty(id) {
     ['Тип', item.sub],
   ].filter(([, value]) => value && value !== '—');
   body.innerHTML = `
-    <div class="realty-photo-wrap">
-      <div class="realty-photo-empty">Нет фото</div>
-      ${item.img ? `<img class="realty-photo" src="${esc(item.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-    </div>
+    <div id="realty-gallery">${realtyGalleryHtml()}</div>
     <div class="realty-price-row">
       <div><div class="realty-price">${money(item.price)}</div>${item.priceM2 ? `<div class="muted">${money(item.priceM2)} / м²</div>` : ''}</div>
       <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
@@ -1031,6 +1055,17 @@ function openRealty(id) {
     </div>
     <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>`;
   if (!dialog.open) dialog.showModal();
+  if (item.id.startsWith('yandex:')) {
+    fetch(`/api/realty-photos?id=${encodeURIComponent(item.id)}`)
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        if (realtyGallery.id !== item.id || !data.images?.length) return;
+        realtyGallery.images = data.images.map(realtyHiRes);
+        realtyGallery.index = 0;
+        renderRealtyGallery();
+      })
+      .catch(() => {});
+  }
 }
 
 /* ------------------------------------------------------------------ pages: portfolio */
@@ -1994,6 +2029,12 @@ document.addEventListener('click', (e) => {
   if (addDep) {
     const offer = depositList().find((d) => d.id === addDep.dataset.addDeposit);
     openAdd('deposit', offer ? { offerId: offer.id, rate: offer.rate, name: offer.name, amount: S.calc?.amount || 300000, months: S.calc?.months || 12 } : {});
+    return;
+  }
+  const realtyPhoto = e.target.closest('[data-realty-photo]');
+  if (realtyPhoto) {
+    realtyGallery.index = Number(realtyPhoto.dataset.realtyPhoto) || 0;
+    renderRealtyGallery();
     return;
   }
   const realtyCard = e.target.closest('[data-realty]');

@@ -40,6 +40,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 MSK = timezone(timedelta(hours=3))
 LOCK = threading.Lock()
 MEM: dict[str, dict] = {}
+PHOTOS_MEM: dict[str, dict] = {}
 
 COINS = [
     ("bitcoin", "btc-bitcoin", "BTC", "Bitcoin"),
@@ -1509,7 +1510,7 @@ def _parse_yandex(html: str, fallback_city: str = ""):
         flat = entity.get("flatType") or ""
         items.append({
             "id": "yandex:" + str(entity.get("offerId")),
-            "source": "Агрегатор",
+            "source": "Яндекс",
             "city": _clean_city(city),
             "title": title,
             "price": int(price),
@@ -1584,11 +1585,11 @@ def api_realty():
     avito_items = metas["realty_avito"][0] or []
     yandex_items = metas["realty_yandex"][0] or []
     for item in yandex_items:
-        item["source"] = "Агрегатор"
+        item["source"] = "Яндекс"
     sample = avito_items + yandex_items or listings
     russia = None
     if sample:
-        # shortcut: медиана и средняя цена м² по выборке карточек, не по всему рынку; перейти на API агрегатора при необходимости.
+        # shortcut: медиана и средняя цена м² по выборке карточек, не по всему рынку; перейти на API Яндекса при необходимости.
         prices = sorted(x["price"] for x in sample if x.get("price"))
         ppsm = [x["priceM2"] for x in sample if x.get("priceM2")]
         cities = {x.get("city") for x in sample if x.get("city")}
@@ -1598,7 +1599,7 @@ def api_realty():
             "cities": len(cities),
             "median": prices[len(prices) // 2] if prices else None,
             "avgM2": round(sum(ppsm) / len(ppsm)) if ppsm else None,
-            "source": "Авито и агрегатор, вся Россия" if avito_items and yandex_items else "Агрегатор, вся Россия" if yandex_items else "Авито, вся Россия",
+            "source": "Авито и Яндекс, вся Россия" if avito_items and yandex_items else "Яндекс, вся Россия" if yandex_items else "Авито, вся Россия",
             "url": YANDEX_RUSSIA_URL if yandex_items else AVITO_URL,
             "sample": True,
         }
@@ -1607,7 +1608,7 @@ def api_realty():
     scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб",
               "realty_yandex": "Россия", "realty_moscow": "Москва"}
     for key, label, _ in (("realty_bn", "БН.ру", build_bn), ("realty_avito", "Авито", build_avito),
-                          ("realty_cian", "Циан", build_cian), ("realty_yandex", "Агрегатор", build_yandex),
+                          ("realty_cian", "Циан", build_cian), ("realty_yandex", "Яндекс", build_yandex),
                           ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
         data, meta = metas[key]
         count = len(data) if isinstance(data, list) else (1 if data else 0)
@@ -1626,6 +1627,47 @@ def api_realty():
         },
         "serverTime": now_msk(),
     }
+
+
+def _yandex_offer_images(offer_id):
+    html = http_text(f"https://realty.yandex.ru/offer/{offer_id}/", timeout=35)
+    marker = "window.INITIAL_STATE = "
+    start = html.find(marker)
+    if start < 0:
+        return []
+    start += len(marker)
+    end = html.find("</script>", start)
+    if end < 0:
+        return []
+    state = json.loads(html[start:end].rstrip(" ;\n"))
+    card = (state.get("offerCard") or {}).get("card") or {}
+    raw = card.get("mainImages") or card.get("minicardImages") or card.get("origImages") or []
+    images = []
+    for value in raw:
+        if not value:
+            continue
+        image = value if value.startswith("http") else ("https:" + value if value.startswith("//") else value)
+        if image not in images:
+            images.append(image)
+    return images[:12]
+
+
+def api_realty_photos(params):
+    item_id = str((params or {}).get("id") or "").strip()
+    if not item_id.startswith("yandex:"):
+        return {"id": item_id, "images": []}
+    hit = PHOTOS_MEM.get(item_id)
+    if hit and hit["exp"] > time.time():
+        return hit["value"]
+    try:
+        images = _yandex_offer_images(item_id.split(":", 1)[1])
+    except Exception:
+        images = []
+    value = {"id": item_id, "images": images}
+    if images:
+        with LOCK:
+            PHOTOS_MEM[item_id] = {"exp": time.time() + 21600, "value": value}
+    return value
 
 
 # ---------------------------------------------------------------- ai (YandexGPT)
@@ -2066,6 +2108,10 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/history":
                 query = parse_qs(self.path.partition("?")[2])
                 self.send_json(api_history({key: values[0] for key, values in query.items()}))
+                return
+            if path == "/api/realty-photos":
+                query = parse_qs(self.path.partition("?")[2])
+                self.send_json(api_realty_photos({key: values[0] for key, values in query.items()}))
                 return
             if path == "/api/health":
                 self.send_json({"ok": True, "time": now_msk()})

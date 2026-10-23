@@ -1,4 +1,4 @@
-"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/history, /api/health, /api/ai, /api/forecast."""
+"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/realty-photos, /api/history, /api/health, /api/ai, /api/forecast."""
 import json
 import os
 import sys
@@ -22,6 +22,8 @@ class handler(BaseHTTPRequestHandler):
                 payload = server.api_realty()
             elif route == "history":
                 payload = server.api_history({key: values[0] for key, values in params.items()})
+            elif route == "realty_photos":
+                payload = server.api_realty_photos({key: values[0] for key, values in params.items()})
             elif route == "health":
                 payload = {"ok": True, "time": server.now_msk()}
             else:
