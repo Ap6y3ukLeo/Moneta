@@ -289,7 +289,15 @@ button { cursor: pointer; }
 .ai-log { flex: 1; min-height: 170px; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; background: #fbfdfc; }
 .ai-msg { max-width: 88%; padding: 9px 11px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ai-msg--user { align-self: flex-end; background: var(--teal); color: #fff; border-bottom-right-radius: 4px; }
-.ai-msg--bot { align-self: flex-start; background: var(--mint-2); color: #40536a; border: 1px solid #e2f4ee; border-bottom-left-radius: 4px; }
+.ai-msg--bot { align-self: flex-start; background: var(--mint-2); color: #40536a; border: 1px solid #e2f4ee; border-bottom-left-radius: 4px; white-space: normal; }
+.ai-msg--bot p { margin: 0 0 6px; }
+.ai-msg--bot p:last-child { margin-bottom: 0; }
+.ai-msg--bot ul, .ai-msg--bot ol { margin: 4px 0 6px; padding-left: 18px; }
+.ai-msg--bot li { margin: 2px 0; }
+.ai-msg--bot strong { color: var(--navy); }
+.ai-msg--bot code { padding: 1px 4px; border-radius: 4px; background: #e8f7f2; font-size: 11.5px; }
+.ai-msg--bot hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+.ai-msg--bot h4 { margin: 0 0 4px; font-size: 12.5px; color: var(--navy); }
 .ai-msg--error { background: #fff4f2; border-color: #ffd9d2; color: #a33b2e; }
 .ai-msg--typing { color: var(--muted); }
 .ai-panel-presets { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; background: #fbfdfc; }
@@ -545,6 +553,39 @@ table.data th.num { text-align: right; }
 .form-error { color: var(--red); font-size: 11.5px; min-height: 16px; margin: -4px 0; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .dialog-hint { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.forecast-dialog { width: min(780px, calc(100vw - 28px)); }
+.forecast-card { max-height: calc(100vh - 40px); overflow-y: auto; }
+.forecast-body { display: flex; flex-direction: column; gap: 12px; }
+.forecast-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.forecast-summary > div { padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #f7fbfa; }
+.forecast-summary b { display: block; color: var(--navy); font-size: 17px; letter-spacing: -0.3px; }
+.forecast-summary span { display: block; color: var(--muted); font-size: 10px; margin-top: 2px; }
+.forecast-pill { display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.forecast-pill--up { background: #e8faf5 !important; color: #0b7a5c; }
+.forecast-pill--down { background: #fff0ee !important; color: #b23a2e; }
+.forecast-pill--flat { background: #eef2f8 !important; color: var(--navy); }
+.forecast-chart-wrap { padding: 8px 10px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; }
+.forecast-chart { display: block; width: 100%; height: auto; }
+.chart-label { fill: #8a9aad; font-size: 10px; }
+.chart-end { fill: var(--navy); font-size: 11px; font-weight: 600; }
+.forecast-levels { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 11px; }
+.forecast-levels b { color: var(--navy); }
+.forecast-text { color: #40536a; font-size: 12.5px; line-height: 1.55; }
+.forecast-text p { margin: 0 0 6px; }
+.forecast-text p:last-child { margin-bottom: 0; }
+.forecast-text ul, .forecast-text ol { margin: 4px 0 6px; padding-left: 18px; }
+.forecast-text li { margin: 2px 0; }
+.forecast-text strong { color: var(--navy); }
+.forecast-text code { padding: 1px 4px; border-radius: 4px; background: #e8f7f2; font-size: 11.5px; }
+.forecast-note { padding: 9px 11px; border-radius: 10px; background: #fff8e8; border: 1px solid #f2dfae; color: #8a6418; font-size: 11px; }
+.forecast-disclaimer { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.forecast-loading { display: flex; align-items: center; gap: 10px; padding: 32px 18px; color: var(--muted); font-size: 12px; }
+.forecast-error { display: flex; gap: 10px; padding: 16px; border: 1px solid #ffd9d2; border-radius: 12px; background: #fff4f2; color: #a33b2e; font-size: 12px; }
+.forecast-error b { display: block; margin-bottom: 3px; }
+.forecast-error p { margin: 0 0 10px; }
+@media (max-width: 640px) {
+  .forecast-summary { grid-template-columns: repeat(2, 1fr); }
+}
 .toast {
   position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 16px);
   background: #1c284a; color: #fff; padding: 11px 18px; border-radius: 12px;

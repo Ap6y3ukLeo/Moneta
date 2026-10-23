@@ -1,4 +1,4 @@
-"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/health, /api/ai."""
+"""Vercel Python-функция: /api/market, /api/deposits, /api/realty, /api/health, /api/ai, /api/forecast."""
 import json
 import os
 import sys
@@ -32,14 +32,14 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         route = parse_qs(urlparse(self.path).query).get("route", [""])[0]
         try:
-            if route != "ai":
+            if route not in ("ai", "forecast"):
                 self._send({"error": "unknown route"}, 404)
                 return
             length = int(self.headers.get("Content-Length") or 0)
             if length > 32_000:
                 raise ValueError("Слишком большой запрос")
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-            self._send(server.api_ai(payload))
+            self._send(server.api_ai(payload) if route == "ai" else server.api_forecast(payload))
         except ValueError as exc:
             self._send({"error": str(exc)}, 400)
         except Exception as exc:  # noqa: BLE001

@@ -1421,34 +1421,29 @@ YANDEX_GPT_SYSTEM = (
     "«Это не инвестиционная рекомендация.»"
 )
 
+YANDEX_FORECAST_SYSTEM = (
+    "Ты — AI-аналитик сервиса «Монетка». По истории цены сделай осторожный "
+    "краткосрочный прогноз. Учитывай тренд, волатильность и ближайшие уровни. "
+    "Не гарантируй доходность и не давай персональных инвестиционных рекомендаций. "
+    "Верни только валидный JSON без markdown и без текста вне JSON. Схема: "
+    '{"direction":"up|down|flat","confidence":0.0,"bandPct":5.0,'
+    '"summary":"1–2 предложения","points":[числа],"support":число,"resistance":число}. '
+    "confidence — от 0 до 1. bandPct — ожидаемая ширина диапазона в процентах. "
+    "points — ровно {horizon} чисел: цена на конец каждого следующего дня. "
+    "support и resistance — ближайшие уровни в тех же единицах, что и цена."
+)
 
-def api_ai(payload):
-    if not isinstance(payload, dict):
-        raise ValueError("Некорректный запрос")
-    question = str(payload.get("question") or "").strip()[:1200]
-    if not question:
-        raise ValueError("Введите вопрос")
-    context = str(payload.get("context") or "").strip()[:8000]
+
+def _yandex_completion(messages, *, temperature=0.3, max_tokens=700, timeout=45):
     key = (os.environ.get("YANDEX_GPT_API_KEY") or "").strip()
     folder = (os.environ.get("YANDEX_GPT_FOLDER_ID") or "").strip()
     if not key or not folder:
         raise RuntimeError("Нейросеть не настроена: администратору нужно добавить ключ API")
     model = (os.environ.get("YANDEX_GPT_MODEL") or "yandexgpt/latest").strip()
     model_uri = model if model.startswith("gpt://") else f"gpt://{folder}/{model}"
-    messages = [{"role": "system", "text": YANDEX_GPT_SYSTEM}]
-    history = payload.get("history") or []
-    if isinstance(history, list):
-        for item in history[-6:]:
-            if not isinstance(item, dict):
-                continue
-            role = item.get("role")
-            text = str(item.get("text") or "").strip()[:1500]
-            if role in ("user", "assistant") and text:
-                messages.append({"role": role, "text": text})
-    messages.append({"role": "user", "text": f"Данные:\n{context or 'Нет данных'}\n\nВопрос: {question}"})
     body = json.dumps({
         "modelUri": model_uri,
-        "completionOptions": {"stream": False, "temperature": 0.3, "maxTokens": 700},
+        "completionOptions": {"stream": False, "temperature": temperature, "maxTokens": max_tokens},
         "messages": messages,
     }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(YANDEX_GPT_URL, data=body, method="POST", headers={
@@ -1456,7 +1451,7 @@ def api_ai(payload):
         "Content-Type": "application/json",
     })
     try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:400]
@@ -1474,6 +1469,216 @@ def api_ai(payload):
     if not answer:
         raise RuntimeError("Нейросеть вернула пустой ответ")
     return {"answer": answer, "model": model, "usage": result.get("usage")}
+
+
+def api_ai(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректный запрос")
+    question = str(payload.get("question") or "").strip()[:1200]
+    if not question:
+        raise ValueError("Введите вопрос")
+    context = str(payload.get("context") or "").strip()[:8000]
+    messages = [{"role": "system", "text": YANDEX_GPT_SYSTEM}]
+    history = payload.get("history") or []
+    if isinstance(history, list):
+        for item in history[-6:]:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            text = str(item.get("text") or "").strip()[:1500]
+            if role in ("user", "assistant") and text:
+                messages.append({"role": role, "text": text})
+    messages.append({"role": "user", "text": f"Данные:\n{context or 'Нет данных'}\n\nВопрос: {question}"})
+    return _yandex_completion(messages, temperature=0.3, max_tokens=700, timeout=45)
+
+
+def _num_or_none(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resample_points(points, count):
+    if len(points) == count:
+        return list(points)
+    if len(points) == 1:
+        return [points[0]] * count
+    result = []
+    for i in range(count):
+        pos = i * (len(points) - 1) / (count - 1) if count > 1 else 0
+        lo = int(pos)
+        hi = min(lo + 1, len(points) - 1)
+        frac = pos - lo
+        result.append(points[lo] * (1 - frac) + points[hi] * frac)
+    return result
+
+
+def _fallback_forecast(history, price, horizon):
+    tail = history[-8:] or [price]
+    slope = (tail[-1] - tail[0]) / (len(tail) - 1) if len(tail) > 1 else 0
+    points = []
+    for i in range(1, horizon + 1):
+        value = tail[-1] + slope * i * 0.6
+        points.append(round(min(max(value, price * 0.85), price * 1.15), 4))
+    change = (points[-1] / price - 1) * 100 if price else 0
+    direction = "up" if change > 1 else "down" if change < -1 else "flat"
+    recent = history[-10:] or [price]
+    return {
+        "direction": direction,
+        "changePct": round(change, 2),
+        "confidence": 0.35,
+        "bandPct": 6.0,
+        "summary": "AI не смог вернуть корректный прогноз, поэтому показан базовый линейный сценарий по последним точкам. Это не рекомендация.",
+        "points": points,
+        "support": round(min(recent), 4),
+        "resistance": round(max(recent), 4),
+    }
+
+
+def _parse_forecast_answer(answer, price, horizon, history):
+    text = str(answer or "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("В ответе нет JSON")
+    data = json.loads(text[start:end + 1])
+    if not isinstance(data, dict):
+        raise ValueError("Некорректный JSON")
+    raw_points = data.get("points") or []
+    points = []
+    for value in raw_points:
+        number = _num_or_none(value)
+        if number and number > 0:
+            points.append(number)
+    if len(points) < 2:
+        raise ValueError("В прогнозе нет точек")
+    points = _resample_points(points, horizon)
+    floor, ceil = price * 0.5, price * 1.5
+    points = [round(min(max(value, floor), ceil), 4) for value in points]
+    change = (points[-1] / price - 1) * 100 if price else 0
+    direction = data.get("direction")
+    if direction not in ("up", "down", "flat"):
+        direction = "up" if change > 1 else "down" if change < -1 else "flat"
+    confidence = _num_or_none(data.get("confidence"))
+    if confidence is None:
+        confidence = 0.5
+    if confidence > 1:
+        confidence /= 100
+    confidence = min(max(confidence, 0.0), 1.0)
+    band = _num_or_none(data.get("bandPct"))
+    if band is None:
+        band = max(2.0, (1 - confidence) * 10)
+    if 0 < band <= 0.2:
+        band *= 100
+    band = min(max(band, 0.5), 20.0)
+    summary = str(data.get("summary") or "").strip()[:600]
+    if not summary:
+        summary = "Краткосрочный сценарий по истории цены. Это не рекомендация."
+    recent = history[-10:] or [price]
+    support = _num_or_none(data.get("support"))
+    resistance = _num_or_none(data.get("resistance"))
+    support = min(max(support if support and support > 0 else min(recent), floor), ceil)
+    resistance = min(max(resistance if resistance and resistance > 0 else max(recent), floor), ceil)
+    return {
+        "direction": direction,
+        "changePct": round(change, 2),
+        "confidence": round(confidence, 2),
+        "bandPct": round(band, 2),
+        "summary": summary,
+        "points": points,
+        "support": round(support, 4),
+        "resistance": round(resistance, 4),
+    }
+
+
+def api_forecast(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Некорректный запрос")
+    kind = str(payload.get("kind") or "").strip()
+    asset_id = str(payload.get("id") or "").strip()
+    if kind not in ("crypto", "metal"):
+        raise ValueError("Прогноз доступен для криптовалют и драгметаллов")
+    if not asset_id:
+        raise ValueError("Не выбран актив")
+    market = api_market()
+    if kind == "crypto":
+        item = next((x for x in market["crypto"]["items"] if str(x.get("id")) == asset_id), None)
+        unit = "USD"
+        name = item.get("name") if item else None
+        symbol = item.get("symbol") if item else None
+        default_horizon = 7
+        limit = 60
+    else:
+        item = next((x for x in market["metals"]["items"]
+                     if str(x.get("id")) == asset_id or str(x.get("code")) == asset_id), None)
+        unit = "RUB/g"
+        name = item.get("name") if item else None
+        symbol = item.get("code") if item else None
+        default_horizon = 14
+        limit = 30
+    if not item:
+        raise ValueError("Актив не найден")
+    history = []
+    for value in item.get("spark") or []:
+        number = _num_or_none(value)
+        if number and number > 0:
+            history.append(number)
+    if len(history) < 5:
+        raise ValueError("Недостаточно истории для прогноза")
+    history = [round(value, 4 if kind == "crypto" else 2) for value in history[-limit:]]
+    price = _num_or_none(item.get("price")) or history[-1]
+    try:
+        horizon = int(payload.get("horizon") or default_horizon)
+    except (TypeError, ValueError):
+        horizon = default_horizon
+    horizon = max(5, min(30, horizon))
+    context = {
+        "asset": name or asset_id,
+        "symbol": symbol or asset_id,
+        "kind": kind,
+        "unit": unit,
+        "current": round(price, 4),
+        "change24hPct": round(_num_or_none(item.get("change24h")) or 0, 2),
+        "history": history,
+        "horizonDays": horizon,
+    }
+    system = YANDEX_FORECAST_SYSTEM.replace("{horizon}", str(horizon))
+    messages = [
+        {"role": "system", "text": system},
+        {"role": "user", "text": f"Данные:\n{json.dumps(context, ensure_ascii=False)}\n\nСделай прогноз на {horizon} дней."},
+    ]
+    try:
+        result = _yandex_completion(messages, temperature=0.2, max_tokens=900, timeout=60)
+        forecast = _parse_forecast_answer(result["answer"], price, horizon, history)
+        fallback = False
+        model = result.get("model")
+        usage = result.get("usage")
+    except ValueError:
+        forecast = _fallback_forecast(history, price, horizon)
+        fallback = True
+        model = None
+        usage = None
+    forecast.update({
+        "asset": {
+            "kind": kind,
+            "id": asset_id,
+            "name": name or asset_id,
+            "symbol": symbol or asset_id,
+            "unit": unit,
+            "price": price,
+            "change24h": _num_or_none(item.get("change24h")) or 0,
+        },
+        "history": history,
+        "horizonDays": horizon,
+        "fallback": fallback,
+        "model": model,
+        "usage": usage,
+        "generatedAt": now_msk(),
+        "disclaimer": "Прогноз нейросети — вероятностный сценарий по историческим данным, не инвестиционная рекомендация.",
+    })
+    return forecast
 
 
 # ---------------------------------------------------------------- http server
@@ -1505,7 +1710,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = self.path.split("?")[0]
-        if path != "/api/ai":
+        if path not in ("/api/ai", "/api/forecast"):
             self.send_json({"error": "unknown route"}, status=404)
             return
         try:
@@ -1513,7 +1718,7 @@ class Handler(SimpleHTTPRequestHandler):
             if length > 32_000:
                 raise ValueError("Слишком большой запрос")
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-            self.send_json(api_ai(payload))
+            self.send_json(api_ai(payload) if path == "/api/ai" else api_forecast(payload))
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:  # noqa: BLE001

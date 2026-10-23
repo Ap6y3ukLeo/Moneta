@@ -6,7 +6,7 @@
 <title>Монетка — аналитика рынка и портфель</title>
 <meta name="description" content="Криптовалюта, драгметаллы, вклады банков, валюта и недвижимость в одном сервисе. Живые курсы ЦБ РФ, котировки Bybit, витрины банков и объявления агрегаторов и Авито по всей России, БН.ру и Циана.">
 <link rel="icon" href="logo.svg" type="image/svg+xml">
-<link rel="stylesheet" href="styles.css?v=20261023h">
+<link rel="stylesheet" href="styles.css?v=20261023j">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
@@ -150,6 +150,16 @@
   </form>
 </dialog>
 
+<dialog id="forecast-dialog" class="dialog forecast-dialog">
+  <div class="dialog-card forecast-card">
+    <div class="dialog-head">
+      <div><h2 id="forecast-title">AI-прогноз</h2><p id="forecast-sub">Краткосрочный сценарий по истории цены</p></div>
+      <button class="icon-btn" type="button" data-action="close-forecast" aria-label="Закрыть прогноз"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+    <div id="forecast-body" class="forecast-body"></div>
+  </div>
+</dialog>
+
 <div class="ai-widget" id="ai-widget">
   <section class="ai-panel" id="ai-panel" aria-label="Чат с нейросетью" hidden>
     <header class="ai-panel-head">
@@ -181,6 +191,6 @@
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=20261023h"></script>
+<script src="app.js?v=20261023j"></script>
 </body>
 </html>

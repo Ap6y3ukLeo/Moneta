@@ -653,7 +653,7 @@ function cryptoPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Криптовалюта</h1><p>Цены с Bybit, пересчёт в рубли по курсу ЦБ РФ, динамика за 24 часа и 7 дней. Кнопка «Купить» ведёт на спотовую пару выбранной монеты.</p></div>
+    <div><h1>Криптовалюта</h1><p>Цены с Bybit, пересчёт в рубли по курсу ЦБ РФ, динамика за 24 часа и 7 дней. AI-прогноз строит сценарий по истории цены. Кнопка «Купить» ведёт на спотовую пару выбранной монеты.</p></div>
     <div class="head-meta">${sourcePill(provider, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -673,6 +673,7 @@ function cryptoPage() {
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
               <button class="icon-btn" data-add-crypto="${esc(c.id)}" title="В портфель" aria-label="Добавить ${esc(c.name)} в портфель">${icon('plus')}</button>
+              <button class="icon-btn" data-forecast="crypto:${esc(c.id)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(c.name)}">${icon('spark')}</button>
             </div></td>
           </tr>`;
         }).join('')}
@@ -691,7 +692,7 @@ function metalsPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Драгметаллы</h1><p>Официальные котировки ЦБ РФ: рубли за грамм, унция и динамика за день. Металлы торгуются в банках и на бирже — сравнивайте спред.</p></div>
+    <div><h1>Драгметаллы</h1><p>Официальные котировки ЦБ РФ: рубли за грамм, унция и динамика за день. AI-прогноз строит сценарий по истории цены. Металлы торгуются в банках и на бирже — сравнивайте спред.</p></div>
     <div class="head-meta">${sourcePill('ЦБ РФ · ' + date, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="metal-cards">
@@ -701,7 +702,7 @@ function metalsPage() {
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
       <div class="chg">${chg(m.change24h)} <span class="muted">за день</span></div>
       ${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}
-      <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
+      <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-forecast="metal:${esc(m.id)}" style="border:0;background:none;padding:0">AI-прогноз ${icon('spark')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
     </article>`).join('')}
   </div>
   <div class="card table-card">
@@ -716,7 +717,7 @@ function metalsPage() {
           <td class="num">$${num(m.ozUsd, 2)}</td>
           <td class="num">${chg(m.change24h)}</td>
           <td class="muted">ЦБ РФ, ${esc(m.date)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button></div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-forecast="metal:${esc(m.id)}" title="AI-прогноз" aria-label="AI-прогноз ${esc(m.name)}">${icon('spark')}</button></div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -1460,11 +1461,48 @@ function aiContext() {
 const aiLog = [];
 let aiBusy = false;
 
+function formatAi(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const inline = (s) => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  let html = '';
+  let list = '';
+  const closeList = () => { if (list) { html += `</${list}>`; list = ''; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { closeList(); continue; }
+    if (/^[-—_]{3,}$/.test(line)) { closeList(); html += '<hr>'; continue; }
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    if (heading) { closeList(); html += `<h4>${inline(heading[1])}</h4>`; continue; }
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    if (bullet) {
+      if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; }
+      html += `<li>${inline(bullet[1])}</li>`;
+      continue;
+    }
+    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (numbered) {
+      if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; }
+      html += `<li>${inline(numbered[1])}</li>`;
+      continue;
+    }
+    closeList();
+    html += `<p>${inline(line)}</p>`;
+  }
+  closeList();
+  return html;
+}
+
 function renderAiLog() {
   const log = $('#ai-log');
   if (!log) return;
   log.innerHTML = aiLog.length
-    ? aiLog.map((m) => `<div class="ai-msg ai-msg--${m.role === 'user' ? 'user' : m.error ? 'error' : 'bot'}${m.typing ? ' ai-msg--typing' : ''}">${esc(m.text)}</div>`).join('')
+    ? aiLog.map((m) => {
+      const cls = `ai-msg ai-msg--${m.role === 'user' ? 'user' : m.error ? 'error' : 'bot'}${m.typing ? ' ai-msg--typing' : ''}`;
+      const body = m.role === 'user' || m.error ? esc(m.text) : formatAi(m.text);
+      return `<div class="${cls}">${body}</div>`;
+    }).join('')
     : '<div class="ai-msg ai-msg--bot">Привет! Разберу портфель, сравню вклады, посмотрю валюты, металлы и недвижимость, посчитаю доходность. Спросите или выберите подсказку.</div>';
   log.scrollTop = log.scrollHeight;
 }
@@ -1531,6 +1569,129 @@ async function askAi() {
   }
 }
 
+/* ------------------------------------------------------------------ ai forecast */
+function fmtForecast(value, unit) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '—';
+  if (unit === 'USD') return `$${num(number, number < 1 ? 4 : 2)}`;
+  return `${money(number)}/г`;
+}
+
+function forecastChart(history, points, bandPct, unit, direction) {
+  const width = 700, height = 300, padL = 74, padR = 20, padT = 24, padB = 34;
+  const hist = (history || []).filter((v) => Number.isFinite(Number(v))).map(Number);
+  const fc = (points || []).filter((v) => Number.isFinite(Number(v))).map(Number);
+  if (hist.length < 2 || !fc.length) return '<div class="empty-state" style="padding:30px 12px">Недостаточно истории для графика.</div>';
+  const band = Math.max(0.5, Number(bandPct) || 5) / 100;
+  const all = [...hist, ...fc, ...fc.map((v) => v * (1 + band)), ...fc.map((v) => v * (1 - band))];
+  let min = Math.min(...all), max = Math.max(...all);
+  const pad = (max - min) * 0.08 || max * 0.02 || 1;
+  min -= pad; max += pad;
+  const total = hist.length + fc.length;
+  const x = (i) => padL + (i / (total - 1)) * (width - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (height - padT - padB);
+  const historyPath = hist.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const historyArea = `${historyPath} L ${x(hist.length - 1).toFixed(1)} ${(height - padB).toFixed(1)} L ${padL} ${(height - padB).toFixed(1)} Z`;
+  const forecastPath = [hist[hist.length - 1], ...fc]
+    .map((v, i) => `${i ? 'L' : 'M'}${x(hist.length - 1 + i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const bandPoints = [
+    [x(hist.length - 1), y(hist[hist.length - 1])],
+    ...fc.map((v, i) => [x(hist.length + i), y(v * (1 + band))]),
+    ...fc.map((v, i) => [x(hist.length + fc.length - 1 - i), y(fc[fc.length - 1 - i] * (1 - band))]),
+  ].map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
+  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
+  const last = fc[fc.length - 1];
+  const grid = [0.25, 0.5, 0.75].map((p) => {
+    const gy = padT + p * (height - padT - padB);
+    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
+  }).join('');
+  return `<svg class="forecast-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="История и AI-прогноз">
+    ${grid}
+    <path d="${historyArea}" fill="${fill}" opacity=".7"/>
+    <path d="${historyPath}" fill="none" stroke="#40536a" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+    <polygon points="${bandPoints}" fill="${color}" opacity=".14"/>
+    <path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${x(hist.length - 1)}" y1="${padT}" x2="${x(hist.length - 1)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>
+    <circle cx="${x(total - 1)}" cy="${y(last)}" r="4" fill="${color}"/>
+    <text x="${padL - 8}" y="${padT}" text-anchor="end" class="chart-label">${fmtForecast(max, unit)}</text>
+    <text x="${padL - 8}" y="${height - padB}" text-anchor="end" class="chart-label">${fmtForecast(min, unit)}</text>
+    <text x="${padL}" y="${height - 12}" class="chart-label">прошлое</text>
+    <text x="${x(hist.length - 1)}" y="${height - 12}" text-anchor="middle" class="chart-label">сегодня</text>
+    <text x="${width - padR}" y="${height - 12}" text-anchor="end" class="chart-label">+${fc.length} дн.</text>
+    <text x="${x(total - 1) - 8}" y="${y(last) - 10}" text-anchor="end" class="chart-end">${fmtForecast(last, unit)}</text>
+  </svg>`;
+}
+
+function renderForecast(data) {
+  const body = $('#forecast-body');
+  const title = $('#forecast-title');
+  const sub = $('#forecast-sub');
+  if (!body || !data) return;
+  const asset = data.asset || {};
+  const unit = asset.unit || 'RUB/g';
+  const direction = data.direction === 'up' ? 'up' : data.direction === 'down' ? 'down' : 'flat';
+  const directionLabel = direction === 'up' ? 'рост' : direction === 'down' ? 'снижение' : 'боковик';
+  const change = `${data.changePct > 0 ? '+' : ''}${num(data.changePct, 1)}%`;
+  if (title) title.textContent = `AI-прогноз · ${asset.name || ''}`;
+  if (sub) sub.textContent = `${data.horizonDays} дн. · сейчас ${fmtForecast(asset.price, unit)}`;
+  body.innerHTML = `
+    <div class="forecast-summary">
+      <div class="forecast-pill forecast-pill--${direction}">${directionLabel}</div>
+      <div><b>${change}</b><span>за ${data.horizonDays} дн.</span></div>
+      <div><b>${Math.round((data.confidence || 0) * 100)}%</b><span>уверенность</span></div>
+      <div><b>±${num(data.bandPct, 1)}%</b><span>диапазон</span></div>
+    </div>
+    ${data.fallback ? '<div class="forecast-note">AI вернул некорректный ответ — показан резервный линейный сценарий.</div>' : ''}
+    <div class="forecast-chart-wrap">${forecastChart(data.history, data.points, data.bandPct, unit, direction)}</div>
+    <div class="forecast-levels">
+      <span>Поддержка: <b>${fmtForecast(data.support, unit)}</b></span>
+      <span>Сопротивление: <b>${fmtForecast(data.resistance, unit)}</b></span>
+      <span>Данные: ${esc(timeOf(data.generatedAt))}</span>
+    </div>
+    <div class="forecast-text">${formatAi(data.summary)}</div>
+    <p class="forecast-disclaimer">${esc(data.disclaimer || 'Это не инвестиционная рекомендация.')}</p>`;
+}
+
+let forecastSeq = 0;
+
+async function openForecast(kind, id) {
+  const seq = ++forecastSeq;
+  const dialog = $('#forecast-dialog');
+  const body = $('#forecast-body');
+  const title = $('#forecast-title');
+  const sub = $('#forecast-sub');
+  if (!dialog || !body) return;
+  const asset = kind === 'crypto' ? findCrypto(id) : findMetal(id);
+  if (!asset) { toast('Актив не найден', true); return; }
+  if (title) title.textContent = `AI-прогноз · ${asset.name}`;
+  if (sub) sub.textContent = 'Строим сценарий по истории цены…';
+  body.innerHTML = '<div class="forecast-loading"><span class="loader"></span><span>Нейросеть анализирует историю…</span></div>';
+  if (!dialog.open) dialog.showModal();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
+  try {
+    const res = await fetch('/api/forecast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({ kind, id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Ошибка ${res.status}`);
+    if (seq === forecastSeq) renderForecast(data);
+  } catch (err) {
+    if (seq !== forecastSeq) return;
+    const message = err.name === 'AbortError'
+      ? 'Нейросеть не ответила вовремя.'
+      : (err.message || 'Не удалось получить прогноз.');
+    body.innerHTML = `<div class="forecast-error">${icon('shield')}<div><b>Прогноз недоступен</b><p>${esc(message)}</p><button class="btn btn--sm" data-forecast-retry="${esc(kind)}:${esc(id)}">Повторить</button></div></div>`;
+    if (sub) sub.textContent = 'Проверьте настройки AI и попробуйте снова';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /* ------------------------------------------------------------------ events */
 function onRoute() {
   render();
@@ -1551,6 +1712,18 @@ document.addEventListener('click', (e) => {
   if (addDep) {
     const offer = depositList().find((d) => d.id === addDep.dataset.addDeposit);
     openAdd('deposit', offer ? { offerId: offer.id, rate: offer.rate, name: offer.name, amount: S.calc?.amount || 300000, months: S.calc?.months || 12 } : {});
+    return;
+  }
+  const forecast = e.target.closest('[data-forecast]');
+  if (forecast) {
+    const [kind, id] = (forecast.dataset.forecast || '').split(':');
+    if (kind && id) openForecast(kind, id);
+    return;
+  }
+  const forecastRetry = e.target.closest('[data-forecast-retry]');
+  if (forecastRetry) {
+    const [kind, id] = (forecastRetry.dataset.forecastRetry || '').split(':');
+    if (kind && id) openForecast(kind, id);
     return;
   }
   const del = e.target.closest('[data-del]');
@@ -1582,6 +1755,7 @@ document.addEventListener('click', (e) => {
   if (action === 'menu') document.body.classList.toggle('menu-open');
   else if (action === 'profile') openProfileDialog();
   else if (action === 'close-profile') $('#profile-dialog').close();
+  else if (action === 'close-forecast') $('#forecast-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();

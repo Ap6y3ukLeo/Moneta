@@ -8,6 +8,7 @@
     { "source": "/api/deposits", "destination": "/api/index?route=deposits" },
     { "source": "/api/realty", "destination": "/api/index?route=realty" },
     { "source": "/api/ai", "destination": "/api/index?route=ai" },
+    { "source": "/api/forecast", "destination": "/api/index?route=forecast" },
     { "source": "/api/health", "destination": "/api/index?route=health" }
   ],
   "functions": {
