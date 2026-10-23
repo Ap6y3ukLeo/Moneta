@@ -922,7 +922,7 @@ function realtyRowsHtml() {
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
       <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
-      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span><button class="link-more" type="button" data-realty="${esc(r.id)}">Подробнее</button>${ext(r.url, 'Открыть объявление')}</div>
+      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span><button class="re-more" type="button" data-realty="${esc(r.id)}">Подробнее</button>${ext(r.url, 'Открыть объявление')}</div>
     </div>
   </article>`).join('')}</div>`;
   const more = items.length - shown.length;
@@ -2178,6 +2178,9 @@ $('#add-form').addEventListener('submit', handleSubmit);
 $('#profile-form').addEventListener('submit', saveProfileName);
 $('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); askAi(); });
 $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent = ''; });
+$('#realty-dialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+});
 document.addEventListener('change', (e) => {
   if (e.target.id !== 'chart-ai-toggle') return;
   chartState.showForecast = e.target.checked;
