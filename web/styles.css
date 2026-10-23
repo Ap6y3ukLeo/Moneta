@@ -564,6 +564,7 @@ table.data th.num { text-align: right; }
 .chart-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
 .chart-ranges, .chart-horizons { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .chart-horizons span { color: var(--muted); font-size: 10.5px; margin-right: 2px; }
+.chart-horizon-note { align-self: center; color: var(--muted); font-size: 10.5px; }
 .chart-tab { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: #64748a; font-size: 11px; cursor: pointer; }
 .chart-tab.is-active { background: var(--mint); color: var(--teal-700); border-color: #bdeee2; font-weight: 600; }
 .chart-stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; overflow: hidden; user-select: none; touch-action: none; cursor: crosshair; }

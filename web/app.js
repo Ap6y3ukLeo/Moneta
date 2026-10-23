@@ -1591,11 +1591,10 @@ const chartState = {
 };
 const chartHistoryCache = new Map();
 const CHART_RANGE_LABELS = { '1d': '1Д', '7d': '7Д', '1m': '1М', '3m': '3М', '1y': '1Г', all: 'Всё' };
-const CHART_HORIZONS = [7, 30, 90];
 
 function preferredHorizon(range) {
   if (range === '1d' || range === '7d') return 7;
-  if (range === '1m' || range === '3m') return 30;
+  if (range === '1m') return 30;
   return 90;
 }
 
@@ -1631,7 +1630,7 @@ function chartToolbarHtml() {
   const ranges = chartState.kind === 'crypto' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
   return `<div class="chart-toolbar">
     <div class="chart-ranges">${ranges.map((range) => `<button class="chart-tab${chartState.range === range ? ' is-active' : ''}" type="button" data-chart-range="${range}">${CHART_RANGE_LABELS[range]}</button>`).join('')}</div>
-    <div class="chart-horizons"><span>AI:</span>${CHART_HORIZONS.map((horizon) => `<button class="chart-tab${chartState.horizon === horizon ? ' is-active' : ''}" type="button" data-forecast-horizon="${horizon}">${horizon}Д</button>`).join('')}</div>
+    <div class="chart-horizon-note">AI-горизонт: ${chartState.horizon} дн.</div>
   </div>`;
 }
 
@@ -1673,18 +1672,21 @@ function chartSvg(all) {
     forecastPoints.push({ index: boundary, c: Number(chartState.points[boundary].c) });
   }
   for (const item of fc) forecastPoints.push({ index: item.index, c: Number(item.point.c) });
-  let forecastPath = '', bandPoly = '';
+  const direction = chartState.forecast?.direction;
+  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
+  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
+  let forecastPath = '', bandPoly = '', forecastEdges = '';
   if (forecastPoints.length >= 2) {
     forecastPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c).toFixed(1)}`).join(' ');
     if (band) {
       const top = forecastPoints.map((item) => [x(item.index), y(item.c * (1 + band))]);
       const bottom = [...forecastPoints].reverse().map((item) => [x(item.index), y(item.c * (1 - band))]);
       bandPoly = [...top, ...bottom].map((point) => `${point[0].toFixed(1)},${point[1].toFixed(1)}`).join(' ');
+      const upperPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c * (1 + band)).toFixed(1)}`).join(' ');
+      const lowerPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c * (1 - band)).toFixed(1)}`).join(' ');
+      forecastEdges = `<path d="${upperPath}" fill="none" stroke="${color}" stroke-width="1.1" stroke-dasharray="2 4" opacity=".6"/><path d="${lowerPath}" fill="none" stroke="${color}" stroke-width="1.1" stroke-dasharray="2 4" opacity=".6"/>`;
     }
   }
-  const direction = chartState.forecast?.direction;
-  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
-  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
   const grid = [0.25, 0.5, 0.75].map((part) => {
     const gy = padT + part * (height - padT - padB);
     return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
@@ -1702,6 +1704,7 @@ function chartSvg(all) {
     ${histArea ? `<path d="${histArea}" fill="${fill}" opacity=".65"/>` : ''}
     ${histPath ? `<path d="${histPath}" fill="none" stroke="#40536a" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${bandPoly ? `<polygon points="${bandPoly}" fill="${color}" opacity=".14"/>` : ''}
+    ${forecastEdges}
     ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>` : ''}
     ${cross}
@@ -1971,7 +1974,7 @@ async function openChart(kind, id) {
   chartState.forecastError = '';
   if (title) title.textContent = `График · ${asset.name}`;
   if (sub) sub.textContent = 'Загружаем историю…';
-  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-legend"><span><i class="legend-line"></i>история</span><span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span><span>вертикальная линия — сегодня</span></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий</div><div id="chart-ai" class="chart-ai"></div>';
+  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-legend"><span><i class="legend-line"></i>история</span><span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span><span>вертикальная линия — сегодня</span></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий · AI-горизонт подстраивается под диапазон</div><div id="chart-ai" class="chart-ai"></div>';
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();
@@ -2017,12 +2020,6 @@ document.addEventListener('click', (e) => {
       loadChartForecast();
     }
     loadChartHistory();
-    return;
-  }
-  const horizonTrigger = e.target.closest('[data-forecast-horizon]');
-  if (horizonTrigger) {
-    chartState.horizon = Number(horizonTrigger.dataset.forecastHorizon) || 30;
-    loadChartForecast();
     return;
   }
   const chartRetry = e.target.closest('[data-chart-retry]');
