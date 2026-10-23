@@ -568,7 +568,7 @@ function homePage() {
 
     <aside class="rail">
       <div class="card">
-        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI <span class="badge" style="font-size:9.5px">AI</span></div></div>
+        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI</div></div>
         <p class="ai-greet">Коротко о рынке на основе живых данных:</p>
         <div class="ai-list">${insights.map((t) => `<div class="ai-item">${icon('shield')}<span>${t}</span></div>`).join('')}</div>
         <button class="btn btn--sm ai-open-btn" type="button" data-action="ai-open">${icon('spark')} Открыть чат</button>
