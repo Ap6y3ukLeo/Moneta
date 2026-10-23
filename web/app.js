@@ -1971,7 +1971,7 @@ async function openChart(kind, id) {
   chartState.forecastError = '';
   if (title) title.textContent = `График · ${asset.name}`;
   if (sub) sub.textContent = 'Загружаем историю…';
-  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · наведите на точку</div><div id="chart-ai" class="chart-ai"></div>';
+  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div class="chart-legend"><span><i class="legend-line"></i>история</span><span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span><span>вертикальная линия — сегодня</span></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий</div><div id="chart-ai" class="chart-ai"></div>';
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();

@@ -616,6 +616,91 @@ def _bybit_history(symbol, range_name):
     return points
 
 
+def _coingecko_history(cg_id, range_name):
+    days = {"1d": 1, "7d": 7, "1m": 30, "3m": 90, "1y": 365, "all": 365}.get(range_name, 30)
+    data = http_json(
+        f"https://api.coingecko.com/api/v3/coins/{cg_id}/market_chart"
+        f"?vs_currency=usd&days={days}&interval=daily",
+        timeout=25,
+    )
+    points = []
+    for stamp, close in data.get("prices") or []:
+        try:
+            date = datetime.fromtimestamp(float(stamp) / 1000, MSK).isoformat(timespec="seconds")
+            price = float(close)
+        except (TypeError, ValueError):
+            continue
+        if price > 0:
+            points.append({"t": date, "c": round(price, 8)})
+    return points
+
+
+def _crypto_history(cg_id, symbol, range_name):
+    try:
+        points = _bybit_history(symbol, range_name)
+    except Exception:
+        points = []
+    if not points:
+        try:
+            points = _coingecko_history(cg_id, range_name)
+        except Exception:
+            points = []
+    return points
+
+
+HISTORY_DIR = os.path.join(BUNDLED_CACHE_DIR, "history")
+
+
+def _history_snapshot(kind, asset_id):
+    path = os.path.join(HISTORY_DIR, f"{kind}_{asset_id}.json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            points = json.load(handle).get("points") or []
+    except Exception:
+        return []
+    return points
+
+
+def _slice_history(points, range_name):
+    if not points or range_name == "all":
+        return points
+    days = max(_range_days(range_name), 2)
+    cutoff = datetime.now(MSK).date() - timedelta(days=days)
+    filtered = []
+    for point in points:
+        try:
+            stamp = datetime.strptime(str(point.get("t") or "")[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        if stamp >= cutoff:
+            filtered.append(point)
+    return filtered or points[-days:]
+
+
+def _history_points(kind, asset_id, range_name):
+    snapshot_first = os.environ.get("VERCEL") and not os.environ.get("MONETKA_LIVE")
+    if snapshot_first:
+        points = _history_snapshot(kind, asset_id)
+        if points:
+            return _slice_history(points, range_name), "snapshot"
+    try:
+        if kind == "crypto":
+            coin = next((item for item in COINS if item[0] == asset_id), None)
+            points = _crypto_history(coin[0], coin[2], range_name) if coin else []
+        elif kind == "metal":
+            points = _metal_history(asset_id, range_name)
+        else:
+            points = _fx_history_points(asset_id, _range_days(range_name))
+    except Exception:
+        points = []
+    if points:
+        return points, "live"
+    points = _history_snapshot(kind, asset_id)
+    if points:
+        return _slice_history(points, range_name), "snapshot"
+    return [], "none"
+
+
 def _metal_history(asset_id, range_name):
     cbr_code = next((code for code, (ticker, _) in METALS.items() if ticker == asset_id), None)
     if not cbr_code:
@@ -658,25 +743,23 @@ def api_history(params):
         if not coin:
             raise ValueError("Актив не найден")
         _, _, symbol, name = coin
-        points = _bybit_history(symbol, range_name)
-        unit, source = "USD", "Bybit"
+        unit, base_source = "USD", "Bybit / CoinGecko"
     elif kind == "metal":
         metal = next(((ticker, title) for code, (ticker, title) in METALS.items() if ticker == asset_id), None)
         if not metal:
             raise ValueError("Актив не найден")
         symbol, name = metal
-        points = _metal_history(asset_id, range_name)
-        unit, source = "RUB/g", "ЦБ РФ"
+        unit, base_source = "RUB/g", "ЦБ РФ"
     elif kind == "fx":
         if asset_id not in FX_HISTORY_IDS:
             raise ValueError("История доступна для USD, EUR, CNY и GBP")
-        points = _fx_history_points(asset_id, _range_days(range_name))
         symbol = name = asset_id
-        unit, source = "RUB", "ЦБ РФ"
+        unit, base_source = "RUB", "ЦБ РФ"
     else:
         raise ValueError("Неизвестный тип актива")
+    points, used = _history_points(kind, asset_id, range_name)
     if not points:
-        raise RuntimeError("Не удалось загрузить историю")
+        raise RuntimeError("История временно недоступна. Попробуйте позже.")
     return {
         "kind": kind,
         "id": asset_id,
@@ -684,7 +767,7 @@ def api_history(params):
         "symbol": symbol,
         "unit": unit,
         "range": range_name,
-        "source": source,
+        "source": base_source if used == "live" else "снимок",
         "points": points,
     }
 
@@ -1884,12 +1967,9 @@ def api_forecast(payload):
                 if number and number > 0:
                     history.append(number)
             steps_per_day = 8
-        elif kind == "crypto":
-            history = [point["c"] for point in _bybit_history(symbol, "1y")]
-        elif kind == "metal":
-            history = [point["c"] for point in _metal_history(asset_id, "1y")]
         else:
-            history = [point["c"] for point in _fx_history_points(asset_id, 365)]
+            points, _ = _history_points(kind, asset_id, "1y")
+            history = [point["c"] for point in points]
     except Exception:
         history = []
     if len(history) < 5:

@@ -568,6 +568,11 @@ table.data th.num { text-align: right; }
 .chart-tab.is-active { background: var(--mint); color: var(--teal-700); border-color: #bdeee2; font-weight: 600; }
 .chart-stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: 14px; background: #fbfdfc; overflow: hidden; user-select: none; touch-action: none; cursor: crosshair; }
 .chart-stage svg.chart-svg { display: block; width: 100%; height: auto; }
+.chart-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; color: var(--muted); font-size: 10.5px; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-line { width: 18px; height: 0; border-top: 2px solid #40536a; }
+.legend-line--forecast { border-top: 2px dashed var(--teal); }
+.legend-band { width: 18px; height: 8px; border-radius: 2px; background: rgba(20, 209, 163, .16); }
 .chart-hint { color: var(--muted); font-size: 10px; text-align: right; margin-top: -6px; }
 .chart-tip { position: absolute; transform: translate(-50%, 0); background: rgba(28, 40, 74, .94); color: #fff; padding: 6px 8px; border-radius: 8px; font-size: 10.5px; line-height: 1.35; pointer-events: none; white-space: nowrap; z-index: 2; }
 .chart-loading, .chart-error, .chart-empty { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 300px; color: var(--muted); font-size: 12px; padding: 20px; }
