@@ -309,43 +309,47 @@ def _snapshot(name: str):
     return None
 
 
-def source(name: str, ttl: int, builder):
+def source(name: str, ttl: int, builder, force: bool = False):
     """Fetch with TTL cache and last-known-good fallback on disk."""
     # shortcut: на Vercel холодный live-сбор медленных источников не влезает в лимит функции,
     # поэтому отдаём снапшот из data/. Для live-сбора задайте MONETKA_LIVE=1.
-    if os.environ.get("VERCEL") and not os.environ.get("MONETKA_LIVE"):
+    if not force and os.environ.get("VERCEL") and not os.environ.get("MONETKA_LIVE"):
         snap = _snapshot(name)
         if snap:
             return snap
 
-    hit = MEM.get(name)
-    if hit and hit["exp"] > time.time():
-        return hit["value"], hit["meta"]
+    if not force:
+        hit = MEM.get(name)
+        if hit and hit["exp"] > time.time():
+            return hit["value"], hit["meta"]
 
-    path = os.path.join(CACHE_DIR, name + ".json")
-    try:
-        age = time.time() - os.path.getmtime(path)
-        if age < ttl:
-            with open(path, encoding="utf-8") as f:
-                cached = json.load(f)
-            if cached.get("value") is not None:
-                meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
-                with LOCK:
-                    MEM[name] = {"exp": time.time() + ttl - age, "value": cached["value"], "meta": meta}
-                return cached["value"], meta
-    except Exception:
-        pass
+        path = os.path.join(CACHE_DIR, name + ".json")
+        try:
+            age = time.time() - os.path.getmtime(path)
+            if age < ttl:
+                with open(path, encoding="utf-8") as f:
+                    cached = json.load(f)
+                if cached.get("value") is not None:
+                    meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
+                    with LOCK:
+                        MEM[name] = {"exp": time.time() + ttl - age, "value": cached["value"], "meta": meta}
+                    return cached["value"], meta
+        except Exception:
+            pass
 
     try:
         value = builder()
         meta = {"ok": True, "updated": now_msk(), "stale": False}
         with LOCK:
             MEM[name] = {"exp": time.time() + ttl, "value": value, "meta": meta}
-        path = os.path.join(CACHE_DIR, name + ".json")
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"value": value, "meta": meta}, f, ensure_ascii=False)
-        os.replace(tmp, path)
+        try:
+            path = os.path.join(CACHE_DIR, name + ".json")
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"value": value, "meta": meta}, f, ensure_ascii=False)
+            os.replace(tmp, path)
+        except OSError:
+            pass
         return value, meta
     except Exception as exc:  # noqa: BLE001 - любая сетевая ошибка -> кэш
         cached = None
@@ -979,15 +983,15 @@ DEPOSIT_TTL = 10800
 
 
 # ---------------------------------------------------------------- api
-def api_market():
-    crypto, crypto_meta = source("crypto", 120, build_crypto)
-    metals, metals_meta = source("metals", 1800, build_metals)
-    fx, fx_meta = source("fx", 1800, build_fx)
+def api_market(force: bool = False):
+    crypto, crypto_meta = source("crypto", 3600, build_crypto, force=force)
+    metals, metals_meta = source("metals", 3600, build_metals, force=force)
+    fx, fx_meta = source("fx", 3600, build_fx, force=force)
     key_rate, key_meta = source("key_rate", 21600, build_key_rate)
 
     if crypto_meta.get("ok") is False:
         try:
-            fallback, fb_meta = source("crypto_fallback", 300, build_crypto_fallback)
+            fallback, fb_meta = source("crypto_fallback", 3600, build_crypto_fallback, force=force)
             crypto, crypto_meta = fallback, dict(fb_meta, note="Bybit недоступен, используются данные CoinPaprika")
         except Exception:
             pass
@@ -2034,7 +2038,7 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         try:
             if path == "/api/market":
-                self.send_json(api_market())
+                self.send_json(api_market(force=True))
                 return
             if path == "/api/deposits":
                 self.send_json(api_deposits())

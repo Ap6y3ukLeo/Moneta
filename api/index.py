@@ -15,7 +15,9 @@ class handler(BaseHTTPRequestHandler):
         route = params.get("route", [""])[0]
         try:
             if route == "market":
-                payload = server.api_market()
+                # Кнопка и часовой автообновление должны получать свежие котировки,
+                # а не снапшот из репозитория.
+                payload = server.api_market(force=True)
             elif route == "deposits":
                 payload = server.api_deposits()
             elif route == "realty":

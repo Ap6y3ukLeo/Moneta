@@ -59,7 +59,12 @@ function addMonths(date, months) {
 function timeOf(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return isFinite(d) ? d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '—';
+  if (!isFinite(d)) return '—';
+  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const now = new Date();
+  return d.toDateString() === now.toDateString()
+    ? time
+    : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}, ${time}`;
 }
 function daysBetween(a, b) { return Math.max(0, (b - a) / 864e5); }
 function uid() {
@@ -187,22 +192,24 @@ async function fetchJson(url, timeout = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store', signal: controller.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
     clearTimeout(timer);
   }
 }
-async function refresh({ silent = false } = {}) {
+async function refresh({ silent = false, marketOnly = false } = {}) {
   if (S.refreshing) return;
   S.refreshing = true;
   document.body.classList.add('is-refreshing');
-  const jobs = [
-    ['market', '/api/market', 'рыночные котировки', 25000],
-    ['deposits', '/api/deposits', 'вклады банков', 35000],
-    ['realty', '/api/realty', 'недвижимость', 45000],
-  ];
+  const jobs = [['market', '/api/market?force=1', 'рыночные котировки', 30000]];
+  if (!marketOnly) {
+    jobs.push(
+      ['deposits', '/api/deposits', 'вклады банков', 35000],
+      ['realty', '/api/realty', 'недвижимость', 45000],
+    );
+  }
   const results = await Promise.all(jobs.map(async ([key, url, label, timeout]) => {
     try {
       S[key] = await fetchJson(url, timeout);
@@ -2307,9 +2314,5 @@ window.addEventListener('hashchange', onRoute);
   render();
   renderAiLog();
   await refresh({ silent: true });
-  setInterval(() => {
-    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
-      && document.activeElement.closest('#view');
-    if (!typing) refresh({ silent: true });
-  }, 180000);
+  setInterval(() => refresh({ silent: true, marketOnly: true }), 3600000);
 })();

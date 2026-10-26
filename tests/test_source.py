@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -17,6 +18,19 @@ class SourceTest(unittest.TestCase):
 
         self.assertTrue(value.get("items"))
         self.assertTrue(meta.get("stale"))
+
+    def test_force_skips_bundled_snapshot(self):
+        def builder():
+            return {"items": [{"id": "fresh"}]}
+
+        with tempfile.TemporaryDirectory() as cache, \
+                patch.dict(os.environ, {"VERCEL": "1"}, clear=True), \
+                patch.object(server, "MEM", {}), \
+                patch.object(server, "CACHE_DIR", cache):
+            value, meta = server.source("crypto", 3600, builder, force=True)
+
+        self.assertEqual(value["items"][0]["id"], "fresh")
+        self.assertFalse(meta["stale"])
 
 
 if __name__ == "__main__":
