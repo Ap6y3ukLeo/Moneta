@@ -114,7 +114,7 @@ const S = {
   portfolio: [],
   addKind: 'crypto',
   addPreset: {},
-  dep: { q: '', bank: 'all', source: 'all', sort: 'rate', limit: 40 },
+  dep: { amount: 500000, months: 12, limit: 40 },
   re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 24 },
   calc: null,
 };
@@ -172,10 +172,10 @@ const metalList = () => S.market?.metals?.items || [];
 const fxList = () => S.market?.fx?.items || [];
 const depositList = () => S.deposits?.items || [];
 const realtyList = () => S.realty?.items || [];
-function bestDeposit(amount = 500000) {
+function bestDeposit(amount = S.dep.amount) {
   return [...depositList()]
-    .filter((d) => (!d.min || d.min <= amount) && (!d.max || d.max >= amount))
-    .sort((a, b) => b.rate - a.rate)[0] || depositList()[0];
+    .filter((d) => (!d.currency || d.currency === 'RUB') && (!d.min || d.min <= amount) && (!d.max || d.max >= amount))
+    .sort((a, b) => (b.rate || 0) - (a.rate || 0))[0] || null;
 }
 const findCrypto = (id) => cryptoList().find((c) => c.id === id);
 const findMetal = (id) => metalList().find((m) => m.id === id);
@@ -474,9 +474,9 @@ function homePage() {
   <div class="home-layout">
     <div class="home-main">
       <div class="cards">
-        <article class="card">
+        <article class="card card--click" data-go="#/deposits" tabindex="0" role="link">
           <div class="card-head">
-            <div><h3>Банковские продукты</h3><div class="sub">${depositList().length} предложений · ${new Set(depositList().map((d) => d.bank)).size} банков · ${S.deposits?.sources?.filter((s) => s.count).length || 0} источника</div></div>
+            <div><h3>Банковские продукты</h3><div class="sub">${depositList().length} предложений · ${new Set(depositList().map((d) => d.bank)).size} банков</div></div>
             <span class="badge">Лучшие предложения</span>
           </div>
           <div class="metric-big">до ${topDep ? num(topDep.rate, 2) + '%' : '—'}</div>
@@ -487,7 +487,7 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/deposits">Смотреть все ${icon('arrow')}</a><a class="chev-link" href="#/deposits">${icon('chev')}</a></div>
         </article>
 
-        <article class="card">
+        <article class="card card--click" data-go="#/crypto" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Криптовалюта</h3><div class="sub">Топ активы · Bybit</div></div>
             <span class="badge">24 часа</span>
@@ -501,7 +501,7 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/crypto">Подробнее ${icon('arrow')}</a>${btc?.tradeUrl ? `<a class="link-more" href="${esc(btc.tradeUrl)}" target="_blank" rel="noopener">Купить BTC ${icon('ext')}</a>` : ''}</div>
         </article>
 
-        <article class="card">
+        <article class="card card--click" data-go="#/fx" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Валюта</h3><div class="sub">Курсы ЦБ РФ</div></div>
             <span class="badge badge--blue">${esc(fx.date || '')}</span>
@@ -515,7 +515,7 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/fx">Все курсы ${icon('arrow')}</a><a class="chev-link" href="#/fx">${icon('chev')}</a></div>
         </article>
 
-        <article class="card">
+        <article class="card card--click" data-go="#/metals" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Драгметаллы</h3><div class="sub">ЦБ РФ, ₽ за грамм</div></div>
             <span class="badge badge--gold">Стабильность</span>
@@ -530,7 +530,7 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/metals">Подробнее ${icon('arrow')}</a><a class="chev-link" href="#/metals">${icon('chev')}</a></div>
         </article>
 
-        <article class="card">
+        <article class="card card--click" data-go="#/portfolio" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Мой портфель</h3><div class="sub">${v.rows.length ? `${v.rows.length} позиции` : 'Пока пусто'}</div></div>
             <span class="badge ${v.pnl >= 0 ? '' : 'badge--gray'}">${v.rows.length ? chg(v.pnlPct) : 'Старт'}</span>
@@ -549,7 +549,7 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/portfolio">Открыть портфель ${icon('arrow')}</a></div>
         </article>
 
-        <article class="card">
+        <article class="card card--click" data-go="#/realty" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Яндекс, Авито, Циан, БН.ру</div></div>
             <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
@@ -667,7 +667,7 @@ function cryptoPage() {
         <tbody>
         ${cryptoList().map((c, i) => {
           const rubPrice = rub(c.price);
-          return `<tr>
+          return `<tr class="row-click" data-chart="crypto:${esc(c.id)}">
             <td class="muted">${i + 1}</td>
             <td><div class="asset-cell">${cryptoIcon(c)}<span class="txt"><b>${esc(c.name)}</b><small>${esc(c.symbol)} · $${price(c.price)}</small></span></div></td>
             <td class="num"><b>${money(rubPrice)}</b></td>
@@ -700,7 +700,7 @@ function metalsPage() {
     <div class="head-meta">${sourcePill('ЦБ РФ · ' + date, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="metal-cards">
-    ${metalList().map((m) => `<article class="card metal-card">
+    ${metalList().map((m) => `<article class="card metal-card row-click" data-chart="metal:${esc(m.id)}" tabindex="0" role="button" aria-label="График и информация: ${esc(m.name)}">
       <div class="top">${metalIcon(m.code)}<b>${esc(m.name)}</b><span class="badge badge--gold" style="margin-left:auto">${esc(m.code)}</span></div>
       <div class="price">${money(m.price)}<small> /г</small></div>
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
@@ -714,7 +714,7 @@ function metalsPage() {
       <table class="data">
         <thead><tr><th>Металл</th><th class="num">₽ / грамм</th><th class="num">₽ / унция</th><th class="num">$ / унция</th><th class="num">За день</th><th>Котировка</th><th></th></tr></thead>
         <tbody>
-        ${metalList().map((m) => `<tr>
+        ${metalList().map((m) => `<tr class="row-click" data-chart="metal:${esc(m.id)}">
           <td><div class="asset-cell">${metalIcon(m.code)}<span class="txt"><b>${esc(m.name)}</b><small>${esc(m.code)}</small></span></div></td>
           <td class="num"><b>${money(m.price)}</b></td>
           <td class="num">${money(m.ozRub)}</td>
@@ -745,7 +745,7 @@ function fxPage() {
       <table class="data">
         <thead><tr><th>Валюта</th><th class="num">Курс, ₽</th><th class="num">За день</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
         <tbody>
-        ${fx.items.map((f) => `<tr>
+        ${fx.items.map((f) => `<tr class="${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? 'row-click' : ''}"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
           <td><div class="asset-cell">${coin(f.code, 'coin--silver')}<span class="txt"><b>${esc(f.name || f.code)}</b><small>${esc(f.code)}</small></span></div></td>
           <td class="num"><b>${num(f.value, 4)}</b></td>
           <td class="num">${chg(f.change24h)}</td>
@@ -760,142 +760,167 @@ function fxPage() {
 }
 
 /* ------------------------------------------------------------------ pages: deposits */
+function ruPlural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  return `${n} ${m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many}`;
+}
+function depositTermText(d) {
+  if (d.termText) return d.termText;
+  if (!d.termDays) return 'срок по условиям';
+  if (d.termDays % 365 === 0) return `${d.termDays / 365} г.`;
+  if (d.termDays % 30 === 0) return `${d.termDays / 30} мес.`;
+  return `${d.termDays} дн.`;
+}
+function depositAmountText(d) {
+  const min = d.min && d.min > 1 ? `от ${money(d.min)}` : '';
+  const max = d.max && d.max < 100000000 ? `до ${money(d.max)}` : '';
+  return [min, max].filter(Boolean).join(' · ') || 'любая сумма';
+}
+function depositIncome(d, amount = S.dep.amount, months = S.dep.months) {
+  return Number(amount) * ((Number(d.rate) || 0) / 100) * (Number(months) / 12);
+}
+function depositFits(d, amount = S.dep.amount) {
+  if (d.currency && d.currency !== 'RUB') return false;
+  if (d.min && amount < d.min) return false;
+  if (d.max && amount > d.max) return false;
+  return true;
+}
+function depositMatches() {
+  return depositList()
+    .filter((d) => depositFits(d))
+    .sort((a, b) => (b.rate || 0) - (a.rate || 0));
+}
 function ensureCalc() {
   const top = bestDeposit();
-  if (!S.calc) {
-    S.calc = { amount: 500000, months: 12, rate: top ? top.rate : 14, cap: 'month' };
-  }
-  if (top && S.calc.rate == null) S.calc.rate = top.rate;
+  S.calc = { amount: S.dep.amount, months: S.dep.months, rate: top ? top.rate : 14, cap: 'month' };
   return S.calc;
 }
 
 function depositRowsHtml() {
-  let items = depositList();
-  if (S.dep.q) {
-    const q = S.dep.q.toLowerCase();
-    items = items.filter((d) => (d.name + ' ' + d.bank).toLowerCase().includes(q));
-  }
-  if (S.dep.bank !== 'all') items = items.filter((d) => d.bank === S.dep.bank);
-  if (S.dep.source !== 'all') items = items.filter((d) => d.source === S.dep.source);
-  const sort = S.dep.sort;
-  items = [...items].sort((a, b) => sort === 'min' ? (a.min || 0) - (b.min || 0)
-    : sort === 'bank' ? a.bank.localeCompare(b.bank, 'ru')
-    : sort === 'term' ? (a.termDays || 9999) - (b.termDays || 9999)
-    : b.rate - a.rate);
-  if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
+  const items = depositMatches();
+  if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Под эту сумму вкладов нет. Уменьшите сумму — покажем доступные предложения.</div>`;
   const shown = items.slice(0, S.dep.limit);
-  const html = shown.map((d) => `<div class="offer">
+  const html = shown.map((d) => `<article class="offer" data-deposit="${esc(d.id)}" tabindex="0" role="button" aria-label="Подробнее о вкладе ${esc(d.name)}">
     <div class="offer-logo"><span>${esc((d.bank || 'Б')[0])}</span>${d.logo ? `<img src="${esc(d.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
     <div class="offer-main">
-      <div class="offer-title"><b title="${esc(d.name)}">${esc(d.name)}</b><span class="offer-src">${esc(d.sourceName || '')}</span></div>
-      <span>${esc(d.bank)}${d.termDays ? ` · ${d.termDays} дн.` : ''}${d.min ? ` · от ${money(d.min)}` : ''}${d.max ? ` · до ${money(d.max)}` : ''}</span>
+      <div class="offer-title"><b title="${esc(d.name)}">${esc(d.name)}</b></div>
+      <div class="offer-bank">${esc(d.bank)}</div>
+      <div class="offer-conditions">
+        <span>${esc(depositAmountText(d))}</span>
+        <span>${esc(depositTermText(d))}</span>
+        <span>${num(d.rate, 2)}% годовых</span>
+      </div>
       ${d.note ? `<small class="offer-note">${esc(d.note)}</small>` : ''}
     </div>
-    <div class="offer-rate"><b>${num(d.rate, 2)}%</b><span>${d.rateMin && d.rateMin < d.rate ? `ставки от ${num(d.rateMin, 2)}%` : `доходность ${num(d.apr, 2)}%`}</span></div>
+    <div class="offer-rate"><b>${num(d.rate, 2)}%</b><span>≈ ${money(depositIncome(d))} за ${S.dep.months} мес.</span></div>
     <div class="offer-actions">
       <button class="icon-btn" data-add-deposit="${esc(d.id)}" title="В портфель" aria-label="Добавить вклад в портфель">${icon('plus')}</button>
-      ${ext(d.url, 'Открыть на ' + (d.sourceName || 'сайте банка'))}
+      <span class="offer-chev">${icon('chev')}</span>
     </div>
-  </div>`).join('');
+  </article>`).join('');
   const more = items.length - shown.length;
   return html + (more > 0 ? `<button class="btn btn--ghost offers-more" data-action="dep-more">Показать ещё ${Math.min(more, S.dep.limit)} из ${more}</button>` : '');
+}
+
+function calcSummaryHtml() {
+  const top = bestDeposit();
+  const amount = S.dep.amount;
+  const months = S.dep.months;
+  if (!top) return '<div class="line muted">Нет вкладов под эту сумму. Уменьшите сумму.</div>';
+  const gross = depositIncome(top, amount, months);
+  const tax = Math.max(0, gross - 1e6 * (keyRateValue() / 100)) * 0.13;
+  return `
+    <div class="line"><span>Лучшее предложение</span><b>${esc(top.bank)}</b></div>
+    <div class="line"><span>Ставка</span><b>${num(top.rate, 2)}% годовых</b></div>
+    <div class="line"><span>Доход за ${months} мес.</span><b>${money(gross)}</b></div>
+    <div class="line"><span>НДФЛ с процентов</span><b>${tax ? '−' + money(tax) : '0 ₽'}</b></div>
+    <div class="total"><span>На руки</span><b>${money(amount + gross - tax)}</b></div>`;
 }
 
 function depositsPage() {
   if (!S.deposits) return loadingView();
   ensureCalc();
-  const banks = [...new Set(depositList().map((d) => d.bank))].sort((a, b) => a.localeCompare(b, 'ru'));
-  const sources = S.deposits.sources || [];
+  const items = depositMatches();
+  const banks = new Set(items.map((d) => d.bank)).size;
   const keyRate = S.deposits.keyRate?.value;
-  const top = bestDeposit();
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Вклады банков</h1><p>${depositList().length} предложений от ${banks.length} банков с ${sources.filter((s) => s.count).length} витрин. Ставки — максимальные по продукту; итоговые условия уточняйте в банке.</p></div>
+    <div><h1>Вклады банков</h1><p>${ruPlural(items.length, 'предложение', 'предложения', 'предложений')} от ${banks} банков по вашей сумме. Укажите сумму и срок — покажем условия и доход по каждому вкладу.</p></div>
     <div class="head-meta">
       ${keyRate ? `<span class="pill pill--mint">${icon('bank')} Ключевая ставка ${num(keyRate, 2)}%</span>` : ''}
-      ${sourcePill(sources.length + ' источника', S.deposits.meta)}
       <button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button>
     </div>
   </div>
 
-  <div class="source-strip">
-    ${sources.map((s) => `<span class="source-chip ${s.meta?.ok === false ? 'is-warn' : ''}" title="${esc(s.meta?.error || s.meta?.updated || '')}">${esc(s.name)} <b>${s.count}</b></span>`).join('')}
-  </div>
-
   <div class="dep-layout">
     <div>
-      <div class="filters">
-        <input type="search" id="dep-search" placeholder="Поиск по банку или вкладу…" value="${esc(S.dep.q)}" autocomplete="off">
-        <select id="dep-source" aria-label="Источник">
-          <option value="all">Все источники</option>
-          ${sources.map((s) => `<option value="${esc(s.key)}" ${S.dep.source === s.key ? 'selected' : ''}>${esc(s.name)} · ${s.count}</option>`).join('')}
-        </select>
-        <select id="dep-bank" aria-label="Банк">
-          <option value="all">Все банки</option>
-          ${banks.map((b) => `<option value="${esc(b)}" ${S.dep.bank === b ? 'selected' : ''}>${esc(b)}</option>`).join('')}
-        </select>
-        <select id="dep-sort" aria-label="Сортировка">
-          <option value="rate" ${S.dep.sort === 'rate' ? 'selected' : ''}>Сначала высокая ставка</option>
-          <option value="min" ${S.dep.sort === 'min' ? 'selected' : ''}>Сначала низкий порог</option>
-          <option value="term" ${S.dep.sort === 'term' ? 'selected' : ''}>Сначала короткий срок</option>
-          <option value="bank" ${S.dep.sort === 'bank' ? 'selected' : ''}>По банку</option>
-        </select>
+      <div class="dep-filters">
+        <label class="dep-filter"><span>Сумма, ₽</span><input id="dep-amount" type="number" min="1000" step="1000" value="${S.dep.amount}" inputmode="numeric"></label>
+        <label class="dep-filter"><span>Срок, мес.</span><input id="dep-months" type="number" min="1" max="60" step="1" value="${S.dep.months}" inputmode="numeric"></label>
+        <span class="dep-filter-count" id="dep-count">${ruPlural(items.length, 'вклад', 'вклада', 'вкладов')}</span>
       </div>
       <div class="offers" id="dep-list">${depositRowsHtml()}</div>
-      <p class="muted" style="font-size:10.5px;margin-top:12px">Источники: ${sources.map((s) => `<a class="link-more" href="${esc({ banki: 'https://www.banki.ru/products/deposits/', bankiros: 'https://bankiros.ru/deposits', finuslugi: 'https://www.finuslugi.ru/vklady/', sravni: 'https://www.sravni.ru/vklady/' }[s.key] || '#')}" target="_blank" rel="noopener">${esc(s.name)}</a>`).join(', ')}. Ставка и доходность зависят от суммы, срока и способа выплаты процентов. Некоторые продукты доступны только новым клиентам.</p>
+      <p class="muted" style="font-size:10.5px;margin-top:12px">Ставка и доход зависят от суммы, срока и способа выплаты процентов. Некоторые продукты доступны только новым клиентам — проверьте условия в банке.</p>
     </div>
 
     <aside class="card calc-card" id="dep-calc">
-      <h3>Калькулятор вклада</h3>
-      <div class="sub">${top ? `Ставка по лучшему предложению: ${num(top.rate, 2)}%` : 'Введите параметры'}</div>
-      <div class="calc-fields">
-        <div class="field field--full"><label for="c-amount">Сумма, ₽</label><input id="c-amount" type="number" min="1000" step="1000" value="${S.calc.amount}"></div>
-        <div class="field"><label for="c-months">Срок, мес.</label><input id="c-months" type="number" min="1" max="60" step="1" value="${S.calc.months}"></div>
-        <div class="field"><label for="c-rate">Ставка, %</label><input id="c-rate" type="number" min="0" max="50" step="0.01" value="${S.calc.rate}"></div>
-        <div class="field field--full"><label for="c-cap">Капитализация</label>
-          <select id="c-cap">
-            <option value="month" ${S.calc.cap === 'month' ? 'selected' : ''}>Ежемесячно</option>
-            <option value="quarter" ${S.calc.cap === 'quarter' ? 'selected' : ''}>Ежеквартально</option>
-            <option value="none" ${S.calc.cap === 'none' ? 'selected' : ''}>Без капитализации</option>
-          </select>
-        </div>
-      </div>
-      <div class="calc-out" id="calc-result"></div>
+      <h3>Доход по лучшему вкладу</h3>
+      <div class="sub" id="calc-sub">${bestDeposit() ? `${esc(bestDeposit().bank)} · ${esc(bestDeposit().name)}` : 'Нет подходящих предложений'}</div>
+      <div class="calc-out" id="calc-result">${calcSummaryHtml()}</div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn--ghost btn--sm" style="flex:0 0 auto" data-action="calc-add">В портфель</button>
-        <span class="muted" style="font-size:10px;line-height:1.35">Ставка — из витрины. Проверьте в банке перед открытием.</span>
+        <span class="muted" style="font-size:10px;line-height:1.35">Расчёт по ставке лучшего предложения. Проверьте условия в банке.</span>
       </div>
       <p class="calc-note">НДФЛ с процентов: 13% с суммы, превышающей 1 млн ₽ × ключевую ставку ЦБ${keyRate ? ` (${num(keyRate, 2)}%)` : ''}.</p>
     </aside>
   </div>`;
 }
 
-function updateCalc() {
+function updateDepositView() {
+  const amount = parseNum($('#dep-amount')?.value);
+  const months = parseNum($('#dep-months')?.value);
+  if (amount > 0) S.dep.amount = amount;
+  if (months > 0) S.dep.months = Math.min(60, Math.round(months));
+  S.dep.limit = 40;
+  ensureCalc();
+  const list = $('#dep-list');
+  if (list) list.innerHTML = depositRowsHtml();
+  const count = $('#dep-count');
+  if (count) count.textContent = ruPlural(depositMatches().length, 'вклад', 'вклада', 'вкладов');
   const out = $('#calc-result');
-  if (!out) return;
-  const amount = parseNum($('#c-amount')?.value);
-  const months = parseNum($('#c-months')?.value);
-  const rate = parseNum($('#c-rate')?.value);
-  const cap = $('#c-cap')?.value || 'month';
-  if (!amount || amount <= 0 || !months || months <= 0 || !isFinite(rate)) {
-    out.innerHTML = '<div class="line muted">Укажите сумму, срок и ставку</div>';
-    return;
-  }
-  S.calc = { amount, months, rate, cap };
-  const n = cap === 'month' ? 12 : cap === 'quarter' ? 4 : 0;
-  const r = rate / 100;
-  const years = months / 12;
-  const gross = n ? amount * (Math.pow(1 + r / n, n * years) - 1) : amount * r * years;
-  const keyRate = keyRateValue();
-  const tax = Math.max(0, gross - 1e6 * (keyRate / 100)) * 0.13;
-  const total = amount + gross - tax;
-  const eff = years > 0 ? (Math.pow(1 + gross / amount, 1 / years) - 1) * 100 : 0;
-  out.innerHTML = `
-    <div class="line"><span>Проценты за срок</span><b>${money(gross)}</b></div>
-    <div class="line"><span>НДФЛ с процентов</span><b>${tax ? '−' + money(tax) : '0 ₽'}</b></div>
-    <div class="line"><span>Эффективная ставка</span><b>${num(eff, 2)}% годовых</b></div>
-    <div class="total"><span>На руки через ${months} мес.</span><b>${money(total)}</b></div>`;
+  if (out) out.innerHTML = calcSummaryHtml();
+  const sub = $('#calc-sub');
+  const top = bestDeposit();
+  if (sub) sub.textContent = top ? `${top.bank} · ${top.name}` : 'Нет подходящих предложений';
+}
+
+function openDeposit(id) {
+  const d = depositList().find((item) => item.id === id);
+  const dialog = $('#deposit-dialog');
+  const body = $('#deposit-body');
+  if (!d || !dialog || !body) return;
+  const income = depositIncome(d);
+  const details = [
+    ['Банк', d.bank],
+    ['Сумма', depositAmountText(d)],
+    ['Срок', depositTermText(d)],
+    ['Ставка', `${num(d.rate, 2)}% годовых`],
+    [`Доход за ${S.dep.months} мес.`, `≈ ${money(income)} до налога`],
+  ].filter(([, value]) => value);
+  $('#deposit-title').textContent = d.name;
+  $('#deposit-sub').textContent = d.bank || 'Вклад';
+  body.innerHTML = `
+    <div class="deposit-detail-rate"><b>${num(d.rate, 2)}%</b><span>годовых</span></div>
+    <div class="deposit-detail-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
+    ${d.note ? `<p class="deposit-note">${esc(d.note)}</p>` : ''}
+    <div class="dialog-actions deposit-actions">
+      <button class="btn" type="button" data-add-deposit="${esc(d.id)}">В портфель</button>
+      ${d.url ? `<a class="btn btn--ghost" href="${esc(d.url)}" target="_blank" rel="noopener">Условия ${icon('ext')}</a>` : ''}
+      <button class="btn btn--ghost" type="button" data-action="close-deposit">Закрыть</button>
+    </div>
+    <p class="dialog-hint">Ставка и доход зависят от условий банка. Проверьте сумму, срок и способ выплаты процентов перед открытием.</p>`;
+  if (!dialog.open) dialog.showModal();
 }
 
 /* ------------------------------------------------------------------ pages: realty */
@@ -916,17 +941,71 @@ function realtyRowsHtml() {
     : a.price - b.price);
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
-  const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card">
-    <button class="re-img" type="button" data-realty="${esc(r.id)}" aria-label="Подробнее: ${esc(r.title)}">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></button>
+  const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
+    <div class="re-img">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
       <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
-      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span><button class="re-more" type="button" data-realty="${esc(r.id)}">Подробнее</button>${ext(r.url, 'Открыть объявление')}</div>
+      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
     </div>
   </article>`).join('')}</div>`;
   const more = items.length - shown.length;
   return html + (more > 0 ? `<button class="btn btn--ghost offers-more" data-action="re-more">Показать ещё ${Math.min(more, S.re.limit)} из ${more}</button>` : '');
+}
+
+function realtyCities() {
+  const counts = new Map();
+  realtyList().forEach((r) => { if (r.city) counts.set(r.city, (counts.get(r.city) || 0) + 1); });
+  const pinned = ['Москва', 'Санкт-Петербург'];
+  const rest = [...counts.keys()].filter((city) => !pinned.includes(city)).sort((a, b) => a.localeCompare(b, 'ru'));
+  return [
+    ...pinned.filter((city) => counts.has(city)).map((city) => ({ city, count: counts.get(city), pinned: true })),
+    ...rest.map((city) => ({ city, count: counts.get(city), pinned: false })),
+  ];
+}
+
+function cityPickerHtml() {
+  const cities = realtyCities();
+  const option = (city, count, pinned) => `<button type="button" class="city-option${S.re.city === city ? ' is-active' : ''}${pinned ? ' is-pinned' : ''}" data-city-option="${esc(city)}" role="option" aria-selected="${S.re.city === city ? 'true' : 'false'}"><span>${esc(city)}</span><small>${num(count, 0)}</small></button>`;
+  return `<div class="city-select" id="re-city-select">
+    <button type="button" class="city-select-btn" id="re-city-btn" aria-haspopup="listbox" aria-expanded="false"><span class="city-select-label">${S.re.city === 'all' ? 'Все города' : esc(S.re.city)}</span>${icon('chev')}</button>
+    <div class="city-pop" id="re-city-pop" hidden>
+      <input type="search" id="re-city-q" placeholder="Найти город…" autocomplete="off">
+      <div class="city-list" id="re-city-list" role="listbox">
+        <button type="button" class="city-option${S.re.city === 'all' ? ' is-active' : ''}" data-city-option="all" role="option" aria-selected="${S.re.city === 'all' ? 'true' : 'false'}"><span>Все города</span><small>${num(realtyList().length, 0)}</small></button>
+        ${cities.map((c) => option(c.city, c.count, c.pinned)).join('')}
+      </div>
+    </div>
+  </div>`;
+}
+
+function closeCityPicker() {
+  const pop = $('#re-city-pop');
+  if (pop) pop.hidden = true;
+  $('#re-city-btn')?.setAttribute('aria-expanded', 'false');
+}
+
+function setRealtyCity(city) {
+  S.re.city = city;
+  S.re.limit = 24;
+  const label = $('#re-city-btn .city-select-label');
+  if (label) label.textContent = city === 'all' ? 'Все города' : city;
+  $$('#re-city-list .city-option').forEach((btn) => {
+    const active = btn.dataset.cityOption === city;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  closeCityPicker();
+  const list = $('#re-list');
+  if (list) list.innerHTML = realtyRowsHtml();
+}
+
+function filterCityOptions(query) {
+  const q = query.trim().toLowerCase();
+  $$('#re-city-list .city-option').forEach((btn) => {
+    btn.hidden = !!q && !(btn.querySelector('span')?.textContent || '').toLowerCase().includes(q);
+  });
 }
 
 function realtyPage() {
@@ -934,9 +1013,6 @@ function realtyPage() {
   const msk = S.realty.stats?.moscow;
   const russia = S.realty.stats?.russia;
   const sources = S.realty.sources || [];
-  const cities = [...new Set(realtyList().map((r) => r.city).filter(Boolean))]
-    .map((city) => ({ city, count: realtyList().filter((r) => r.city === city).length }))
-    .sort((a, b) => b.count - a.count || a.city.localeCompare(b.city, 'ru'));
   return `
   ${sourceWarning()}
   <div class="page-head">
@@ -969,10 +1045,7 @@ function realtyPage() {
 
   <div class="filters">
     <input type="search" id="re-search" placeholder="Город, район, метро или адрес…" value="${esc(S.re.q)}" autocomplete="off">
-    <select id="re-city" aria-label="Город">
-      <option value="all" ${S.re.city === 'all' ? 'selected' : ''}>Все города</option>
-      ${cities.map((c) => `<option value="${esc(c.city)}" ${S.re.city === c.city ? 'selected' : ''}>${esc(c.city)} · ${c.count}</option>`).join('')}
-    </select>
+    ${cityPickerHtml()}
     <select id="re-source" aria-label="Источник">
       <option value="all" ${S.re.source === 'all' ? 'selected' : ''}>Все источники</option>
       ${sources.filter((s) => s.key !== 'moscow').map((s) => `<option value="${esc(s.name)}" ${S.re.source === s.name ? 'selected' : ''}>${esc(s.name)}${s.scope ? ` · ${esc(s.scope)}` : ''} · ${s.count}</option>`).join('')}
@@ -1317,9 +1390,8 @@ function render() {
   if (page === 'deposits' && params.get('calc')) navKey = 'calc';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
 
-  if (page === 'deposits') {
-    updateCalc();
-    if (params.get('calc')) setTimeout(() => $('#dep-calc')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
+  if (page === 'deposits' && params.get('calc')) {
+    setTimeout(() => $('#dep-calc')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
   }
   if (page === 'search') {
     const q = params.get('q') || '';
@@ -1342,7 +1414,7 @@ function updateSideStatus() {
   const ok = m && m.crypto?.meta?.ok !== false && m.fx?.meta?.ok !== false;
   const t = timeOf(m?.fx?.meta?.updated || m?.crypto?.meta?.updated);
   el.textContent = S.loading ? 'Загрузка котировок…'
-    : `${ok ? 'Котировки онлайн' : 'Котировки из кэша'} · ${t}${S.deposits ? ' · вклады ' + (S.deposits.sources?.length || '') : ''}${S.realty ? ' · недвижимость' : ''}`;
+    : `${ok ? 'Котировки онлайн' : 'Котировки из кэша'} · ${t}${S.deposits ? ' · вклады' : ''}${S.realty ? ' · недвижимость' : ''}`;
 }
 
 /* ------------------------------------------------------------------ add position dialog */
@@ -2019,6 +2091,26 @@ document.addEventListener('click', (e) => {
   const nav = e.target.closest('[data-nav]');
   if (nav) document.body.classList.remove('menu-open');
 
+  const cityBtn = e.target.closest('#re-city-btn');
+  if (cityBtn) {
+    const pop = $('#re-city-pop');
+    if (pop) {
+      pop.hidden = !pop.hidden;
+      cityBtn.setAttribute('aria-expanded', pop.hidden ? 'false' : 'true');
+      if (!pop.hidden) {
+        const q = $('#re-city-q');
+        if (q) { q.value = ''; filterCityOptions(''); q.focus(); }
+      }
+    }
+    return;
+  }
+  const cityOption = e.target.closest('[data-city-option]');
+  if (cityOption) { setRealtyCity(cityOption.dataset.cityOption); return; }
+  if (!e.target.closest('#re-city-select')) closeCityPicker();
+
+  const go = e.target.closest('[data-go]');
+  if (go && !e.target.closest('a,button')) { location.hash = go.dataset.go; return; }
+
   const addCrypto = e.target.closest('[data-add-crypto]');
   if (addCrypto) { openAdd('crypto', { assetId: addCrypto.dataset.addCrypto }); return; }
   const addMetal = e.target.closest('[data-add-metal]');
@@ -2027,8 +2119,14 @@ document.addEventListener('click', (e) => {
   if (addFx) { openAdd('fx', { assetId: addFx.dataset.addFx }); return; }
   const addDep = e.target.closest('[data-add-deposit]');
   if (addDep) {
+    if ($('#deposit-dialog')?.open) $('#deposit-dialog').close();
     const offer = depositList().find((d) => d.id === addDep.dataset.addDeposit);
     openAdd('deposit', offer ? { offerId: offer.id, rate: offer.rate, name: offer.name, amount: S.calc?.amount || 300000, months: S.calc?.months || 12 } : {});
+    return;
+  }
+  const depositCard = e.target.closest('[data-deposit]');
+  if (depositCard) {
+    openDeposit(depositCard.dataset.deposit);
     return;
   }
   const realtyPhoto = e.target.closest('[data-realty-photo]');
@@ -2039,11 +2137,14 @@ document.addEventListener('click', (e) => {
   }
   const realtyCard = e.target.closest('[data-realty]');
   if (realtyCard) {
+    if (e.target.closest('a')) return;
     openRealty(realtyCard.dataset.realty);
     return;
   }
   const chartTrigger = e.target.closest('[data-chart], [data-forecast]');
   if (chartTrigger) {
+    const inner = e.target.closest('a,button');
+    if (inner && inner !== chartTrigger && !inner.matches('[data-chart], [data-forecast]')) return;
     const [kind, id] = (chartTrigger.dataset.chart || chartTrigger.dataset.forecast || '').split(':');
     if (kind && id) openChart(kind, id);
     return;
@@ -2097,6 +2198,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'close-profile') $('#profile-dialog').close();
   else if (action === 'close-forecast') $('#forecast-dialog').close();
   else if (action === 'close-realty') $('#realty-dialog').close();
+  else if (action === 'close-deposit') $('#deposit-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();
@@ -2145,27 +2247,19 @@ document.addEventListener('change', (e) => {
       $('#f-name').value = offer.name;
     }
   }
-  if (e.target.id === 'dep-bank') { S.dep.bank = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
-  if (e.target.id === 'dep-source') { S.dep.source = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
-  if (e.target.id === 'dep-sort') { S.dep.sort = e.target.value; S.dep.limit = 40; $('#dep-list').innerHTML = depositRowsHtml(); }
   if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
-  if (e.target.id === 're-city') { S.re.city = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
 });
 
 document.addEventListener('input', (e) => {
-  if (e.target.id === 'dep-search') {
-    S.dep.q = e.target.value;
-    S.dep.limit = 40;
-    $('#dep-list').innerHTML = depositRowsHtml();
-  }
+  if (e.target.id === 'dep-amount' || e.target.id === 'dep-months') updateDepositView();
   if (e.target.id === 're-search') {
     S.re.q = e.target.value;
     S.re.limit = 24;
     $('#re-list').innerHTML = realtyRowsHtml();
   }
-  if (['c-amount', 'c-months', 'c-rate', 'c-cap'].includes(e.target.id)) updateCalc();
+  if (e.target.id === 're-city-q') filterCityOptions(e.target.value);
 });
 
 $('#search-form').addEventListener('submit', (e) => {
@@ -2181,6 +2275,9 @@ $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent 
 $('#realty-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });
+$('#deposit-dialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+});
 document.addEventListener('change', (e) => {
   if (e.target.id !== 'chart-ai-toggle') return;
   chartState.showForecast = e.target.checked;
@@ -2193,7 +2290,14 @@ document.addEventListener('change', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.body.classList.remove('menu-open');
+    closeCityPicker();
     openAi(false);
+  }
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const card = e.target.closest('[data-deposit][role="button"], [data-realty][role="button"], [data-go][role="link"]');
+  if (card && e.target === card) {
+    e.preventDefault();
+    card.click();
   }
 });
 window.addEventListener('hashchange', onRoute);

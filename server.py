@@ -1026,7 +1026,164 @@ def _bank_key(name: str) -> str:
     return re.sub(r"[^а-яёa-z0-9]", "", (name or "").lower().replace("банк", ""))
 
 
+def _direct_term(text):
+    value = _clean(text).strip(" ,.")
+    return (value.replace("месяцев", "мес.").replace("месяца", "мес.")
+            .replace("месяц", "мес.").replace("года", "г.").replace("год", "г.").replace("лет", "г."))
+
+
+def _direct_term_days(text):
+    return None if re.search(r"[-–—]", text or "") else parse_term_days(text)
+
+
+def _parse_vtb_deposits(html):
+    rows, seen = [], set()
+    for chunk in html.split("card-layout-gridstyles__Item-chips")[1:]:
+        link = re.search(r'<a[^>]*class="[^"]*TitleLinkWrapper[^"]*"[^>]*>(.*?)</a>', chunk, re.S)
+        if not link:
+            continue
+        name = _clean(link.group(1))
+        href = re.search(r'href="([^"]+)"', link.group(0))
+        text = _clean(chunk)
+        rates = re.findall(r"(?:До\s*)?([\d]+(?:[.,]\d+)?)\s*%\s*(Доходность|Ставка), годовых", text)
+        rate = next((_num(value) for value, label in rates if label == "Ставка"), None)
+        if rate is None and rates:
+            rate = _num(rates[0][0])
+        min_match = re.search(r"От\s*([\d\s]+)\s*₽", text)
+        if not name or name in seen or not _deposit_ok(rate) or not min_match:
+            continue
+        term = ""
+        term_match = re.search(r"([^А-Яа-я]{0,15}\d[\d\s,.:-]*\s*(?:мес|год|лет|дн)[^А-Яа-я]{0,10})\s*(?:Срок|Период)", text)
+        if term_match:
+            term = _direct_term(term_match.group(1))
+        elif "Бессрочно" in text:
+            term = "бессрочно"
+        seen.add(name)
+        rows.append((name, rate, _num(min_match.group(1)), term, "https://www.vtb.ru" + href.group(1) if href else "https://www.vtb.ru/personal/vklady-i-scheta/"))
+    return rows
+
+
+def _parse_gazprom_deposits(html):
+    text = _clean(html)
+    start = text.find("Вклад года")
+    if start < 0:
+        start = text.find("Все вклады")
+    text = text[max(0, start):]
+    pattern = re.compile(r"Вклад «([^»]+)»\s+Вклад «[^»]+»\s+.*?\s+до\s+([\d]+(?:[.,]\d+)?)% годовых\s+от\s+([\d\s,.]+)\s*(тыс\.?|млн)?\s*₽,\s*(?:от|на)\s+([^,]+?)\s+(?:Открыть|Подробнее)")
+    rows, seen = [], set()
+    for match in pattern.finditer(text):
+        name, rate, amount, unit, term = match.groups()
+        if name in seen:
+            continue
+        multiplier = 1000 if unit and unit.startswith("тыс") else 1000000 if unit and unit.startswith("млн") else 1
+        seen.add(name)
+        rows.append((name, _num(rate), (_num(amount) or 0) * multiplier, _direct_term(term), "https://www.gazprombank.ru/personal/deposits/"))
+    return rows
+
+
+def _parse_rshb_deposits(html):
+    text = _clean(html)
+    start = text.find("Вклады и накопительные счета")
+    end = text.find("Другие вклады и счета", max(0, start))
+    text = text[start:end] if start >= 0 and end > start else text
+    names = list(re.finditer(r"(Вклад «[^»]+»|Социальный банковский вклад|Накопительный счёт «[^»]+»)", text))
+    rows, seen = [], set()
+    for index, match in enumerate(names):
+        name = match.group(1)
+        if name in seen:
+            continue
+        chunk = text[match.end():names[index + 1].start() if index + 1 < len(names) else len(text)]
+        rate = re.search(r"До\s*([\d]+(?:[.,]\d+)?)%\s*(?:ставка|ставка по)", chunk)
+        term = re.search(r"([^А-Яа-я]{0,15}(?:\d[\d\s,.-]*(?:мес|год|лет|дн)[^А-Яа-я]{0,10})|Бессрочно)\s*срок", chunk)
+        min_match = re.search(r"От\s*([\d\s,.]+)\s*(тыс\.?|млн)?\s*₽", chunk)
+        if not rate or not min_match:
+            continue
+        multiplier = 1000 if min_match.group(2) and min_match.group(2).startswith("тыс") else 1000000 if min_match.group(2) and min_match.group(2).startswith("млн") else 1
+        seen.add(name)
+        rows.append((name, _num(rate.group(1)), (_num(min_match.group(1)) or 0) * multiplier, _direct_term(term.group(1)) if term else "", "https://www.rshb.ru/natural/deposits/"))
+    return rows
+
+
+def _parse_tbank_deposits(html):
+    text = _clean(html.replace("&nbsp;", " "))
+    if "Вклад со ставкой" not in text:
+        text = _clean(html)
+    rows = []
+    rate = re.search(r"Вклад со\s*ставкой до\s*([\d]+(?:[.,]\d+)?)%", text)
+    min_match = re.search(r"От\s*([\d]+)\s*до\s*([\d]+)\s*месяцев,\s*от\s*([\d\s]+)\s*₽", text)
+    if rate and min_match:
+        rows.append(("Вклад", _num(rate.group(1)), _num(min_match.group(3)), f"от {min_match.group(1)} до {min_match.group(2)} мес.", "https://www.tbank.ru/deposits/"))
+    saving = re.search(r"Накопительный счет со\s*ставкой до\s*([\d]+(?:[.,]\d+)?)%", text)
+    if saving:
+        rows.append(("Накопительный счёт", _num(saving.group(1)), 1, "бессрочно", "https://www.tbank.ru/deposits/"))
+    return rows
+
+
+def _parse_domrf_deposits(html):
+    text = _clean(html)
+    rate = re.search(r"Ставка до ([\d]+(?:[.,]\d+)?)%", text)
+    min_match = re.search(r"Сумма от ([\d\s]+)\s*₽", text)
+    term = re.search(r"Срок от (.+?)\s+до\s+(.+?)(?=\s+[А-ЯЁ]|$)", text)
+    if not rate or not min_match:
+        return []
+    term_text = f"от {_direct_term(term.group(1))} до {_direct_term(term.group(2))}" if term else ""
+    return [("Мой Дом", _num(rate.group(1)), _num(min_match.group(1)), term_text, "https://domrfbank.ru/deposits/")]
+
+
+DIRECT_BANKS = [
+    ("vtb", "ВТБ", "https://www.vtb.ru/personal/vklady-i-scheta/", _parse_vtb_deposits),
+    ("gazprom", "Газпромбанк", "https://www.gazprombank.ru/personal/deposits/", _parse_gazprom_deposits),
+    ("rshb", "Россельхозбанк", "https://www.rshb.ru/natural/deposits/", _parse_rshb_deposits),
+    ("tbank", "Т-Банк", "https://www.tbank.ru/deposits/", _parse_tbank_deposits),
+    ("domrf", "Банк ДОМ.РФ", "https://domrfbank.ru/deposits/", _parse_domrf_deposits),
+]
+
+
+def build_direct_banks():
+    items, errors = [], []
+    for key, bank, url, parser in DIRECT_BANKS:
+        try:
+            rows = parser(http_text(url, timeout=45))
+        except Exception as exc:  # noqa: BLE001 - один банк не должен ронять выдачу
+            errors.append(f"{bank}: {exc}")
+            continue
+        for index, (name, rate, min_amount, term_text, link) in enumerate(rows):
+            if not _deposit_ok(rate):
+                continue
+            min_amount = None if min_amount is not None and min_amount < 1 else min_amount
+            items.append({
+                "id": f"direct:{key}:{index}",
+                "source": "direct",
+                "sourceName": bank,
+                "name": name,
+                "bank": bank,
+                "url": link,
+                "logo": "",
+                "rate": float(rate),
+                "rateMin": None,
+                "apr": float(rate),
+                "min": min_amount,
+                "max": None,
+                "currency": "RUB",
+                "termDays": _direct_term_days(term_text),
+                "termText": term_text,
+                "note": "",
+            })
+    if not items:
+        raise RuntimeError("Прямые сайты банков: " + ("; ".join(errors) or "нет данных"))
+    return items
+
+
+DIRECT_BANK_ALIASES = {"тинькофф": "т", "тбанк": "т", "дом": "домрф"}
+
+
+def _is_direct_bank(name: str) -> str:
+    key = _bank_key(name)
+    return DIRECT_BANK_ALIASES.get(key, key)
+
+
 DEPOSIT_SOURCES = [
+    ("direct", "Банки", build_direct_banks, 10800),
     ("banki", "Банки.ру", build_banki, 10800),
     ("bankiros", "Банкирос", build_bankiros, 10800),
     ("finuslugi", "Финуслуги", build_finuslugi, 10800),
@@ -1088,6 +1245,10 @@ def api_deposits():
 
     if not items:
         raise RuntimeError("Ни один источник вкладов недоступен")
+
+    direct_banks = {_is_direct_bank(item.get("bank")) for item in items if item.get("source") == "direct"}
+    if direct_banks:
+        items = [item for item in items if item.get("source") == "direct" or _is_direct_bank(item.get("bank")) not in direct_banks]
 
     logos = {}
     for item in items:
