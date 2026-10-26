@@ -59,6 +59,26 @@ COINS = [
 METALS = {"1": ("XAU", "Золото"), "2": ("XAG", "Серебро"), "3": ("XPT", "Платина"), "4": ("XPD", "Палладий")}
 FX_CODES = ["USD", "EUR", "CNY", "GBP", "CHF", "JPY", "TRY", "KZT", "BYN", "AED"]
 FX_HISTORY_IDS = {"USD": "R01235", "EUR": "R01239", "CNY": "R01375", "GBP": "R01010"}
+MOEX_FX = {
+    "USDRUB_TOM": "USD",
+    "EURRUB_TOM": "EUR",
+    "CNYRUB_TOM": "CNY",
+    "GBPRUB_TOM": "GBP",
+    "CHFRUB_TOM": "CHF",
+    "JPYRUB_TOM": "JPY",
+    "TRYRUB_TOM": "TRY",
+    "KZTRUB_TOM": "KZT",
+    "BYNRUB_TOM": "BYN",
+    "AEDRUB_TOM": "AED",
+}
+YAHOO_FX = {
+    "USD": "USDRUB=X",
+    "EUR": "EURRUB=X",
+    "CNY": "CNYRUB=X",
+    "GBP": "GBPRUB=X",
+    "CHF": "CHFRUB=X",
+    "JPY": "JPYRUB=X",
+}
 SPB_DISTRICTS = (
     "адмиралтейский", "василеостровский", "выборгский", "калининский", "кировский",
     "колпинский", "красногвардейский", "красносельский", "кронштадтский", "курортный",
@@ -510,10 +530,10 @@ def build_metals():
 # ---------------------------------------------------------------- fx (ЦБ РФ)
 def build_fx():
     try:
-        data = http_json("https://www.cbr-xml-daily.ru/daily_json.js", timeout=20)
+        data = http_json("https://www.cbr-xml-daily.ru/daily_json.js", timeout=8)
         vals, d = data["Valute"], data["Date"][:10]
     except Exception:
-        xml = http_text("https://www.cbr.ru/scripts/XML_daily.asp", "cp1251")
+        xml = http_text("https://www.cbr.ru/scripts/XML_daily.asp", "cp1251", timeout=8)
         d = datetime.now(MSK).strftime("%Y-%m-%d")
         vals = {}
         for block in re.findall(r"<Valute\b.*?</Valute>", xml, re.S):
@@ -547,9 +567,122 @@ def build_fx():
                 "change24h": (value / prev - 1) * 100 if prev else 0,
             }
         )
+    live = build_fx_live()
+    for item in items:
+        item["live"] = live.get(item["code"])
+    live_updated = max((rate["updated"] for rate in live.values() if rate.get("updated")), default=None)
     if not items:
         raise RuntimeError("Нет курсов ЦБ РФ")
-    return {"items": items, "date": d, "provider": "ЦБ РФ"}
+    return {"items": items, "date": d, "provider": "ЦБ РФ", "liveUpdated": live_updated}
+
+
+def _moex_iso(value):
+    match = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})", str(value or ""))
+    return f"{match.group(1)}T{match.group(2)}+03:00" if match else None
+
+
+def _parse_moex_rates(payload):
+    securities = payload.get("securities") or {}
+    marketdata = payload.get("marketdata") or {}
+    scols, mcols = securities.get("columns") or [], marketdata.get("columns") or []
+    if not scols or not mcols:
+        return {}
+    si = {name: index for index, name in enumerate(scols)}
+    mi = {name: index for index, name in enumerate(mcols)}
+    names, previous, face = {}, {}, {}
+    for row in securities.get("data") or []:
+        secid = row[si["SECID"]]
+        names[secid] = row[si["SHORTNAME"]]
+        if "PREVPRICE" in si and row[si["PREVPRICE"]] is not None:
+            previous[secid] = row[si["PREVPRICE"]]
+        if "FACEVALUE" in si and row[si["FACEVALUE"]] is not None:
+            face[secid] = row[si["FACEVALUE"]]
+
+    rates = {}
+    for row in marketdata.get("data") or []:
+        secid = row[mi["SECID"]]
+        code = MOEX_FX.get(names.get(secid))
+        if not code:
+            continue
+        last = row[mi["LAST"]] if "LAST" in mi else None
+        price = last or row[mi["MARKETPRICE"]] or row[mi["WAPRICE"]]
+        if not price:
+            continue
+        updated = _moex_iso(row[mi["SYSTIME"]]) if "SYSTIME" in mi else None
+        if updated and code in rates and rates[code]["updated"] and updated < rates[code]["updated"]:
+            continue
+        nominal = float(face.get(secid) or 1)
+        value = float(price) / nominal
+        prev = previous.get(secid)
+        prev = float(prev) / nominal if prev else None
+        rates[code] = {
+            "value": value,
+            "prev": prev,
+            "change24h": (value / prev - 1) * 100 if last and prev else None,
+            "updated": updated,
+            "source": "MOEX",
+            "traded": bool(last),
+        }
+    return rates
+
+
+def _yahoo_rate(code):
+    symbol = YAHOO_FX.get(code)
+    if not symbol:
+        return None
+    data = http_json(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=1d",
+        timeout=8,
+    )
+    meta = ((data.get("chart") or {}).get("result") or [{}])[0].get("meta") or {}
+    price = meta.get("regularMarketPrice")
+    if not price:
+        return None
+    prev = meta.get("previousClose") or meta.get("chartPreviousClose")
+    stamp = meta.get("regularMarketTime")
+    updated = (
+        datetime.fromtimestamp(stamp, timezone.utc).astimezone(MSK).isoformat(timespec="seconds")
+        if stamp else now_msk()
+    )
+    change = meta.get("regularMarketChangePercent")
+    return {
+        "value": float(price),
+        "prev": float(prev) if prev else None,
+        "change24h": float(change) if change is not None else None,
+        "updated": updated,
+        "source": "Yahoo",
+        "traded": True,
+    }
+
+
+def build_fx_live():
+    rates = {}
+    try:
+        payload = http_json(
+            "https://iss.moex.com/iss/engines/currency/markets/selt/securities.json"
+            "?iss.meta=off&iss.only=securities,marketdata",
+            timeout=8,
+        )
+        rates = _parse_moex_rates(payload)
+    except Exception:
+        pass
+    missing = [code for code, rate in rates.items() if not rate.get("traded")]
+    for code in missing:
+        rates.pop(code, None)
+    missing += [code for code in YAHOO_FX if code not in rates]
+    if missing:
+        with ThreadPoolExecutor(max_workers=min(6, len(missing))) as pool:
+            futures = {pool.submit(_yahoo_rate, code): code for code in missing}
+            for future in as_completed(futures):
+                try:
+                    rate = future.result()
+                except Exception:
+                    continue
+                if rate:
+                    rates[futures[future]] = rate
+    for rate in rates.values():
+        rate.pop("traded", None)
+    return rates
 
 
 def _fx_history_points(code, days=365):
@@ -983,11 +1116,29 @@ DEPOSIT_TTL = 10800
 
 
 # ---------------------------------------------------------------- api
-def api_market(force: bool = False):
-    crypto, crypto_meta = source("crypto", 3600, build_crypto, force=force)
-    metals, metals_meta = source("metals", 3600, build_metals, force=force)
-    fx, fx_meta = source("fx", 3600, build_fx, force=force)
-    key_rate, key_meta = source("key_rate", 21600, build_key_rate)
+def _fx_block(fx, meta):
+    return {
+        "items": (fx or {}).get("items", []),
+        "date": (fx or {}).get("date"),
+        "liveUpdated": (fx or {}).get("liveUpdated"),
+        "meta": meta,
+    }
+
+
+def api_market(force: bool = False, fx_only: bool = False):
+    if fx_only:
+        fx, fx_meta = source("fx", 900, build_fx, force=force)
+        return {"fx": _fx_block(fx, fx_meta), "serverTime": now_msk()}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        crypto_future = pool.submit(source, "crypto", 3600, build_crypto, force)
+        metals_future = pool.submit(source, "metals", 3600, build_metals, force)
+        fx_future = pool.submit(source, "fx", 900, build_fx, force)
+        key_future = pool.submit(source, "key_rate", 21600, build_key_rate)
+        crypto, crypto_meta = crypto_future.result()
+        metals, metals_meta = metals_future.result()
+        fx, fx_meta = fx_future.result()
+        key_rate, key_meta = key_future.result()
 
     if crypto_meta.get("ok") is False:
         try:
@@ -1009,11 +1160,7 @@ def api_market(force: bool = False):
             "meta": crypto_meta,
         },
         "metals": {"items": (metals or {}).get("items", []), "meta": metals_meta},
-        "fx": {
-            "items": (fx or {}).get("items", []),
-            "date": (fx or {}).get("date"),
-            "meta": fx_meta,
-        },
+        "fx": _fx_block(fx, fx_meta),
         "keyRate": {"value": (key_rate or {}).get("value"), "date": (key_rate or {}).get("date"), "meta": key_meta},
         "serverTime": now_msk(),
     }
@@ -2038,7 +2185,9 @@ class Handler(SimpleHTTPRequestHandler):
         path = self.path.split("?")[0]
         try:
             if path == "/api/market":
-                self.send_json(api_market(force=True))
+                query = parse_qs(self.path.partition("?")[2])
+                fx_only = str((query.get("fx") or ["0"])[0]).lower() in ("1", "true", "yes")
+                self.send_json(api_market(force=True, fx_only=fx_only))
                 return
             if path == "/api/deposits":
                 self.send_json(api_deposits())

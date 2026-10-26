@@ -241,6 +241,21 @@ async function refresh({ silent = false, marketOnly = false } = {}) {
   }
 }
 
+async function refreshFx() {
+  if (!S.market || S.refreshing) return;
+  try {
+    const data = await fetchJson('/api/market?force=1&fx=1', 20000);
+    if (!data.fx) return;
+    S.market.fx = data.fx;
+    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
+      && document.activeElement.closest('#view');
+    if (!typing) render();
+    updateSideStatus();
+  } catch {
+    // тихо: при следующем обновлении попробуем снова
+  }
+}
+
 /* ------------------------------------------------------------------ money math */
 function depositCalc(p, at = new Date()) {
   const start = parseDate(p.date);
@@ -741,20 +756,21 @@ function metalsPage() {
 function fxPage() {
   if (!S.market) return loadingView();
   const fx = S.market.fx;
+  const liveMeta = fx.liveUpdated ? { ...fx.meta, updated: fx.liveUpdated } : fx.meta;
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ на ${esc(fx.date || '')}. Используются для пересчёта криптовалют и металлов в портфеле. AI-прогноз доступен для основных валют.</p></div>
-    <div class="head-meta">${sourcePill('ЦБ РФ', fx.meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
+    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ на ${esc(fx.date || '')} и биржевые котировки. Биржа обновляется каждые 15 минут; для портфеля используются курсы ЦБ. AI-прогноз доступен для основных валют.</p></div>
+    <div class="head-meta">${sourcePill(fx.liveUpdated ? 'ЦБ РФ · биржа' : 'ЦБ РФ', liveMeta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Валюта</th><th class="num">Курс, ₽</th><th class="num">За день</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
+        <thead><tr><th>Валюта</th><th class="num">Курс ЦБ, ₽</th><th class="num">За день</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
         <tbody>
         ${fx.items.map((f) => `<tr class="${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? 'row-click' : ''}"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
           <td><div class="asset-cell">${coin(f.code, 'coin--silver')}<span class="txt"><b>${esc(f.name || f.code)}</b><small>${esc(f.code)}</small></span></div></td>
-          <td class="num"><b>${num(f.value, 4)}</b></td>
+          <td class="num"><b>${num(f.value, 4)}</b>${f.live ? `<small class="fx-live">биржа ${num(f.live.value, 4)} · ${chg(f.live.change24h)}</small>` : ''}</td>
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
@@ -763,7 +779,8 @@ function fxPage() {
         </tbody>
       </table>
     </div>
-  </div>`;
+  </div>
+  <p class="muted" style="font-size:11px;margin-top:12px">Курс ЦБ РФ — официальный, обновляется по рабочим дням. Биржевой курс — справочная котировка MOEX/Yahoo, обновляется каждые 15 минут. В расчётах портфеля используется курс ЦБ.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: deposits */
@@ -2315,4 +2332,7 @@ window.addEventListener('hashchange', onRoute);
   renderAiLog();
   await refresh({ silent: true });
   setInterval(() => refresh({ silent: true, marketOnly: true }), 3600000);
+  setInterval(() => {
+    if (!document.hidden) refreshFx();
+  }, 900000);
 })();
