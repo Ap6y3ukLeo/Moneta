@@ -12,9 +12,12 @@ class DirectDepositsTest(unittest.TestCase):
         self.assertIsNone(server._direct_term_days("2-36 мес."))
         self.assertEqual(server._direct_term_days("3 мес."), 90)
 
-    def test_bank_aliases(self):
-        self.assertEqual(server._is_direct_bank("Тинькофф Банк"), "т")
-        self.assertEqual(server._is_direct_bank("Банк ДОМ.РФ"), "домрф")
+    def test_bank_logos_exist(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for key, path in server.DIRECT_BANK_LOGOS.items():
+            with self.subTest(key=key):
+                with open(os.path.join(root, "web", path.lstrip("/")), "rb") as logo:
+                    self.assertGreater(len(logo.read()), 500)
 
     def test_tbank_html(self):
         html = (

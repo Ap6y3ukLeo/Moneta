@@ -200,7 +200,7 @@ async function refresh({ silent = false } = {}) {
   document.body.classList.add('is-refreshing');
   const jobs = [
     ['market', '/api/market', 'рыночные котировки', 25000],
-    ['deposits', '/api/deposits', 'витрина вкладов', 35000],
+    ['deposits', '/api/deposits', 'вклады банков', 35000],
     ['realty', '/api/realty', 'недвижимость', 45000],
   ];
   const results = await Promise.all(jobs.map(async ([key, url, label, timeout]) => {
@@ -394,7 +394,7 @@ function loadingView() {
   if (!S.loading) {
     return `<div class="empty-state">
       <h3>Не удалось загрузить данные</h3>
-      <p>Проверьте интернет-соединение и попробуйте снова. Курсы ЦБ РФ и Bybit доступны без ключей; вклады и недвижимость парсятся с публичных витрин.</p>
+      <p>Проверьте интернет-соединение и попробуйте снова. Курсы ЦБ РФ и Bybit доступны без ключей; вклады и недвижимость парсятся с сайтов банков и площадок объявлений.</p>
       <button class="btn" data-action="refresh">Повторить</button>
     </div>`;
   }
@@ -596,7 +596,7 @@ function homePage() {
           ${dataStatusLine('Криптовалюта', crypto.meta)}
           ${dataStatusLine('Драгметаллы', metals.meta)}
           ${dataStatusLine('Курсы валют', fx.meta)}
-          ${dataStatusLine(`Вклады · ${S.deposits?.sources?.length || 0} источника`, S.deposits?.meta)}
+          ${dataStatusLine(`Вклады · ${new Set((S.deposits?.items || []).map((d) => d.bank)).size} банков`, S.deposits?.meta)}
           ${dataStatusLine('Недвижимость', S.realty?.meta)}
         </div>
       </div>
@@ -801,7 +801,7 @@ function depositRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Под эту сумму вкладов нет. Уменьшите сумму — покажем доступные предложения.</div>`;
   const shown = items.slice(0, S.dep.limit);
   const html = shown.map((d) => `<article class="offer" data-deposit="${esc(d.id)}" tabindex="0" role="button" aria-label="Подробнее о вкладе ${esc(d.name)}">
-    <div class="offer-logo"><span>${esc((d.bank || 'Б')[0])}</span>${d.logo ? `<img src="${esc(d.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
+    <div class="offer-logo"><span>${esc((d.bank || 'Б')[0])}</span>${d.logo ? `<img src="${esc(d.logo)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
     <div class="offer-main">
       <div class="offer-title"><b title="${esc(d.name)}">${esc(d.name)}</b></div>
       <div class="offer-bank">${esc(d.bank)}</div>
@@ -1460,7 +1460,7 @@ function renderAddFields() {
     const top = offers[0];
     const selected = preset.offerId || (top ? top.id : '');
     box.innerHTML = `
-      ${fieldHtml('Вклад из витрины', `<select id="f-offer"><option value="">Свой вклад</option>${offers.map((d) => `<option value="${esc(d.id)}" ${d.id === selected ? 'selected' : ''}>${esc(d.bank)} — ${esc(d.name)} (${num(d.rate, 2)}%)</option>`).join('')}</select>`, true)}
+      ${fieldHtml('Вклад из подборки', `<select id="f-offer"><option value="">Свой вклад</option>${offers.map((d) => `<option value="${esc(d.id)}" ${d.id === selected ? 'selected' : ''}>${esc(d.bank)} — ${esc(d.name)} (${num(d.rate, 2)}%)</option>`).join('')}</select>`, true)}
       ${fieldHtml('Название', `<input id="f-name" type="text" maxlength="80" value="${esc(preset.name || (top ? `${top.name}` : ''))}" placeholder="Например, Мой вклад">`, true)}
       ${fieldHtml('Сумма, ₽', `<input id="f-amount" type="number" min="1000" step="1000" value="${preset.amount || 300000}">`)}
       ${fieldHtml('Ставка, %', `<input id="f-rate" type="number" min="0" max="50" step="0.01" value="${preset.rate ?? (top ? top.rate : 14)}">`)}

@@ -786,18 +786,7 @@ def build_key_rate():
     return {"value": float(row.group(2).replace(",", ".")), "date": row.group(1)}
 
 
-# ---------------------------------------------------------------- deposits (4 источника)
-def _walk_ld(obj, out):
-    if isinstance(obj, dict):
-        if obj.get("@type") in ("InvestmentOrDeposit", "DepositAccount", "BankAccount"):
-            out.append(obj)
-        for v in obj.values():
-            _walk_ld(v, out)
-    elif isinstance(obj, list):
-        for v in obj:
-            _walk_ld(v, out)
-
-
+# ---------------------------------------------------------------- deposits (только сайты банков)
 def _num(value):
     if value is None:
         return None
@@ -828,202 +817,6 @@ def _clean(text: str) -> str:
 
 def _deposit_ok(rate) -> bool:
     return bool(rate) and 0 < rate <= 40
-
-
-def build_banki():
-    html = http_text("https://www.banki.ru/products/deposits/", timeout=45)
-    found: list = []
-    for block in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
-        try:
-            _walk_ld(json.loads(block), found)
-        except Exception:
-            continue
-    items, seen = [], set()
-    for o in found:
-        try:
-            oid = str(o["identifier"])
-            if oid in seen:
-                continue
-            provider = o.get("provider") or {}
-            bank = provider.get("name") or "Банк"
-            ir = _num((o.get("interestRate") or {}).get("maxValue"))
-            apr = _num((o.get("annualPercentageRate") or {}).get("maxValue"))
-            amount = o.get("amount") or {}
-            name = _clean(o.get("name"))
-            if not name or not _deposit_ok(ir or apr):
-                continue
-            seen.add(oid)
-            items.append({
-                "id": "banki:" + oid,
-                "source": "banki",
-                "sourceName": "Банки.ру",
-                "name": name,
-                "bank": bank,
-                "url": o.get("url") or "",
-                "logo": provider.get("logo") or (o.get("provider") or {}).get("image") or o.get("logo") or "",
-                "rate": float(ir or apr),
-                "rateMin": None,
-                "apr": float(apr or ir),
-                "min": _num(amount.get("minValue")),
-                "max": _num(amount.get("maxValue")),
-                "currency": amount.get("currency") or "RUB",
-                "termDays": parse_term_days(name),
-                "note": "",
-            })
-        except Exception:
-            continue
-    if not items:
-        raise RuntimeError("banki.ru: не удалось разобрать витрину")
-    return items
-
-
-def build_bankiros():
-    html = http_text("https://bankiros.ru/deposits", timeout=45)
-    found: list = []
-    for block in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
-        try:
-            _walk_ld(json.loads(block), found)
-        except Exception:
-            continue
-    items, seen = [], set()
-    for o in found:
-        try:
-            if o.get("@type") != "DepositAccount":
-                continue
-            oid = str(o.get("url") or o.get("name"))
-            if oid in seen:
-                continue
-            provider = o.get("provider") or {}
-            ir = o.get("interestRate") or {}
-            rate = _num(ir.get("maxValue")) or _num(ir.get("minValue"))
-            amount = o.get("amount") or {}
-            name = _clean(o.get("name"))
-            if not name or not _deposit_ok(rate):
-                continue
-            seen.add(oid)
-            items.append({
-                "id": "bankiros:" + oid,
-                "source": "bankiros",
-                "sourceName": "Банкирос",
-                "name": name,
-                "bank": _clean(provider.get("name")) or "Банк",
-                "url": o.get("url") or "",
-                "logo": provider.get("image") or "",
-                "rate": float(rate),
-                "rateMin": _num(ir.get("minValue")),
-                "apr": float(rate),
-                "min": _num(amount.get("minValue")),
-                "max": _num(amount.get("maxValue")),
-                "currency": (amount.get("currency") or "RUB").upper(),
-                "termDays": parse_term_days(name),
-                "note": "",
-            })
-        except Exception:
-            continue
-    if not items:
-        raise RuntimeError("bankiros.ru: не удалось разобрать витрину")
-    return items
-
-
-def build_finuslugi():
-    html = http_text("https://www.finuslugi.ru/vklady/", timeout=45)
-    found: list = []
-    for block in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
-        try:
-            _walk_ld(json.loads(block), found)
-        except Exception:
-            continue
-    items, seen = [], set()
-    for o in found:
-        try:
-            if o.get("@type") != "InvestmentOrDeposit":
-                continue
-            amount = o.get("amount") or {}
-            bank = _clean((o.get("provider") or {}).get("name")) or "Банк"
-            name = _clean(o.get("name"))
-            if name.startswith(bank + "."):
-                name = name[len(bank) + 1:].strip()
-            name = name.replace("Вклад ", "").strip() or name
-            rate = _num(o.get("annualPercentageRate"))
-            url = o.get("url") or ""
-            if not name or not _deposit_ok(rate) or not url or url in seen:
-                continue
-            seen.add(url)
-            items.append({
-                "id": "finuslugi:" + url.rstrip("/").rsplit("-", 1)[-1],
-                "source": "finuslugi",
-                "sourceName": "Финуслуги",
-                "name": name,
-                "bank": bank,
-                "url": url,
-                "logo": "",
-                "rate": float(rate),
-                "rateMin": None,
-                "apr": float(rate),
-                "min": _num(amount.get("value")),
-                "max": None,
-                "currency": amount.get("currency") or "RUB",
-                "termDays": parse_term_days(name),
-                "note": "",
-            })
-        except Exception:
-            continue
-    if not items:
-        raise RuntimeError("finuslugi.ru: не удалось разобрать витрину")
-    return items
-
-
-def build_sravni():
-    html = http_text("https://www.sravni.ru/vklady/", timeout=45)
-    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
-    if not m:
-        raise RuntimeError("sravni.ru: не найден NEXT_DATA")
-    state = json.loads(m.group(1)).get("props", {}).get("initialReduxState", {})
-    rows = []
-    for q in (state.get("api", {}).get("queries", {}) or {}).values():
-        data = (q or {}).get("data") or {}
-        if isinstance(data, dict) and isinstance(data.get("data"), list):
-            rows.extend(data["data"])
-    items, seen = [], set()
-    for row in rows:
-        try:
-            prod = row.get("product") or {}
-            bank_data = row.get("bankDetail") or {}
-            pid = str(prod.get("id") or "")
-            if not pid or pid in seen:
-                continue
-            rates = [_num(d.get("value")) for d in prod.get("details", []) if d.get("type") == "rate"]
-            rates = [r for r in rates if _deposit_ok(r)]
-            if not rates:
-                continue
-            seen.add(pid)
-            logos = bank_data.get("logotypes") or {}
-            items.append({
-                "id": "sravni:" + pid,
-                "source": "sravni",
-                "sourceName": "Сравни.ру",
-                "name": _clean(prod.get("name")) or "Вклад",
-                "bank": _clean(bank_data.get("bankName")) or "Банк",
-                "url": prod.get("linkToProduct") or "",
-                "logo": logos.get("web") or logos.get("square") or "",
-                "rate": float(max(rates)),
-                "rateMin": float(min(rates)) if len(rates) > 1 else None,
-                "apr": float(max(rates)),
-                "min": None,
-                "max": None,
-                "currency": "RUB",
-                "termDays": prod.get("seedPeriodDays"),
-                "note": "Ставка для суммы 300 000 ₽",
-            })
-        except Exception:
-            continue
-    if not items:
-        raise RuntimeError("sravni.ru: не найдены вклады")
-    return items
-
-
-def _bank_key(name: str) -> str:
-    return re.sub(r"[^а-яёa-z0-9]", "", (name or "").lower().replace("банк", ""))
 
 
 def _direct_term(text):
@@ -1138,6 +931,14 @@ DIRECT_BANKS = [
     ("domrf", "Банк ДОМ.РФ", "https://domrfbank.ru/deposits/", _parse_domrf_deposits),
 ]
 
+DIRECT_BANK_LOGOS = {
+    "vtb": "/logos/vtb.svg",
+    "gazprom": "/logos/gazprombank.svg",
+    "rshb": "/logos/rshb.svg",
+    "tbank": "/logos/tbank.svg",
+    "domrf": "/logos/domrf.png",
+}
+
 
 def build_direct_banks():
     items, errors = [], []
@@ -1158,7 +959,7 @@ def build_direct_banks():
                 "name": name,
                 "bank": bank,
                 "url": link,
-                "logo": "",
+                "logo": DIRECT_BANK_LOGOS.get(key, ""),
                 "rate": float(rate),
                 "rateMin": None,
                 "apr": float(rate),
@@ -1174,21 +975,7 @@ def build_direct_banks():
     return items
 
 
-DIRECT_BANK_ALIASES = {"тинькофф": "т", "тбанк": "т", "дом": "домрф"}
-
-
-def _is_direct_bank(name: str) -> str:
-    key = _bank_key(name)
-    return DIRECT_BANK_ALIASES.get(key, key)
-
-
-DEPOSIT_SOURCES = [
-    ("direct", "Банки", build_direct_banks, 10800),
-    ("banki", "Банки.ру", build_banki, 10800),
-    ("bankiros", "Банкирос", build_bankiros, 10800),
-    ("finuslugi", "Финуслуги", build_finuslugi, 10800),
-    ("sravni", "Сравни.ру", build_sravni, 10800),
-]
+DEPOSIT_TTL = 10800
 
 
 # ---------------------------------------------------------------- api
@@ -1236,37 +1023,16 @@ def _safe_source(name, ttl, builder):
 
 
 def api_deposits():
-    items, sources = [], []
-    for key, label, builder, ttl in DEPOSIT_SOURCES:
-        data, meta = _safe_source("dep_" + key, ttl, builder)
-        data = data or []
-        items.extend(data)
-        sources.append({"key": key, "name": label, "count": len(data), "meta": meta})
-
+    data, meta = _safe_source("dep_direct", DEPOSIT_TTL, build_direct_banks)
+    items = data or []
     if not items:
-        raise RuntimeError("Ни один источник вкладов недоступен")
-
-    direct_banks = {_is_direct_bank(item.get("bank")) for item in items if item.get("source") == "direct"}
-    if direct_banks:
-        items = [item for item in items if item.get("source") == "direct" or _is_direct_bank(item.get("bank")) not in direct_banks]
-
-    logos = {}
-    for item in items:
-        if item.get("logo"):
-            logos.setdefault(_bank_key(item.get("bank")), item["logo"])
-    for item in items:
-        if not item.get("logo"):
-            item["logo"] = logos.get(_bank_key(item.get("bank")), "")
-
+        raise RuntimeError("Сайты банков: вклады недоступны")
     items.sort(key=lambda x: (-(x.get("rate") or 0), x.get("bank") or ""))
-    ok_meta = [s["meta"] for s in sources if s["meta"].get("ok")] or [s["meta"] for s in sources]
-    updated = max((m.get("updated") or "" for m in ok_meta), default=None)
-    stale = any(m.get("stale") for m in ok_meta)
     key_rate, key_meta = _safe_source("key_rate", 21600, build_key_rate)
     return {
         "items": items,
-        "sources": sources,
-        "meta": {"ok": any(s["meta"].get("ok") for s in sources), "stale": stale, "updated": updated},
+        "sources": [{"key": "direct", "name": "Банки", "count": len(items), "meta": meta}],
+        "meta": {"ok": meta.get("ok"), "stale": meta.get("stale"), "updated": meta.get("updated")},
         "keyRate": {"value": (key_rate or {}).get("value"), "date": (key_rate or {}).get("date"), "meta": key_meta},
         "serverTime": now_msk(),
     }
