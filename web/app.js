@@ -770,7 +770,7 @@ function fxPage() {
         <tbody>
         ${fx.items.map((f) => `<tr class="${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? 'row-click' : ''}"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
           <td><div class="asset-cell">${coin(f.code, 'coin--silver')}<span class="txt"><b>${esc(f.name || f.code)}</b><small>${esc(f.code)}</small></span></div></td>
-          <td class="num"><b>${num(f.value, 4)}</b>${f.live ? `<small class="fx-live">биржа ${num(f.live.value, 4)} · ${chg(f.live.change24h)}</small>` : ''}</td>
+          <td class="num"><b>${num(f.value, 4)}</b>${f.live ? `<small class="fx-live">${esc(f.live.source || 'биржа')} ${num(f.live.value, 4)}${f.live.change24h != null ? ` · ${chg(f.live.change24h)}` : ''}</small>` : ''}</td>
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
@@ -780,7 +780,7 @@ function fxPage() {
       </table>
     </div>
   </div>
-  <p class="muted" style="font-size:11px;margin-top:12px">Курс ЦБ РФ — официальный, обновляется по рабочим дням. Биржевой курс — справочная котировка MOEX/Yahoo, обновляется каждые 15 минут. В расчётах портфеля используется курс ЦБ.</p>`;
+  <p class="muted" style="font-size:11px;margin-top:12px">Курс ЦБ РФ — официальный, обновляется по рабочим дням. Биржевой курс — справочная котировка MOEX (для EUR и других пар, которых нет на MOEX, — Coinbase), обновляется каждые 15 минут. В расчётах портфеля используется курс ЦБ.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: deposits */

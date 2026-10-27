@@ -71,14 +71,9 @@ MOEX_FX = {
     "BYNRUB_TOM": "BYN",
     "AEDRUB_TOM": "AED",
 }
-YAHOO_FX = {
-    "USD": "USDRUB=X",
-    "EUR": "EURRUB=X",
-    "CNY": "CNYRUB=X",
-    "GBP": "GBPRUB=X",
-    "CHF": "CHFRUB=X",
-    "JPY": "JPYRUB=X",
-}
+# Пары, которых нет на MOEX: EUR не торгуется с 2024 года, курс берём у Coinbase.
+LIVE_FX_FALLBACK = ["USD", "EUR", "CNY", "GBP", "CHF", "JPY"]
+
 SPB_DISTRICTS = (
     "адмиралтейский", "василеостровский", "выборгский", "калининский", "кировский",
     "колпинский", "красногвардейский", "красносельский", "кронштадтский", "курортный",
@@ -626,33 +621,38 @@ def _parse_moex_rates(payload):
     return rates
 
 
-def _yahoo_rate(code):
-    symbol = YAHOO_FX.get(code)
-    if not symbol:
-        return None
+def _coinbase_rate(code):
+    # MOEX не торгует EUR с 2024 года, Yahoo из РФ недоступен.
     data = http_json(
-        f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=5m&range=1d",
+        f"https://api.coinbase.com/v2/exchange-rates?currency={code}",
         timeout=8,
     )
-    meta = ((data.get("chart") or {}).get("result") or [{}])[0].get("meta") or {}
-    price = meta.get("regularMarketPrice")
+    price = ((data.get("data") or {}).get("rates") or {}).get("RUB")
     if not price:
         return None
-    prev = meta.get("previousClose") or meta.get("chartPreviousClose")
-    stamp = meta.get("regularMarketTime")
-    updated = (
-        datetime.fromtimestamp(stamp, timezone.utc).astimezone(MSK).isoformat(timespec="seconds")
-        if stamp else now_msk()
-    )
-    change = meta.get("regularMarketChangePercent")
     return {
         "value": float(price),
-        "prev": float(prev) if prev else None,
-        "change24h": float(change) if change is not None else None,
-        "updated": updated,
-        "source": "Yahoo",
-        "traded": True,
+        "prev": None,
+        "change24h": None,
+        "updated": now_msk(),
+        "source": "Coinbase",
     }
+
+
+def _fetch_many(fn, codes):
+    if not codes:
+        return {}
+    found = {}
+    with ThreadPoolExecutor(max_workers=min(6, len(codes))) as pool:
+        futures = {pool.submit(fn, code): code for code in codes}
+        for future in as_completed(futures):
+            try:
+                rate = future.result()
+            except Exception:
+                continue
+            if rate:
+                found[futures[future]] = rate
+    return found
 
 
 def build_fx_live():
@@ -666,20 +666,9 @@ def build_fx_live():
         rates = _parse_moex_rates(payload)
     except Exception:
         pass
-    missing = [code for code, rate in rates.items() if not rate.get("traded")]
-    for code in missing:
+    for code in [code for code, rate in rates.items() if not rate.get("traded")]:
         rates.pop(code, None)
-    missing += [code for code in YAHOO_FX if code not in rates]
-    if missing:
-        with ThreadPoolExecutor(max_workers=min(6, len(missing))) as pool:
-            futures = {pool.submit(_yahoo_rate, code): code for code in missing}
-            for future in as_completed(futures):
-                try:
-                    rate = future.result()
-                except Exception:
-                    continue
-                if rate:
-                    rates[futures[future]] = rate
+    rates.update(_fetch_many(_coinbase_rate, [code for code in LIVE_FX_FALLBACK if code not in rates]))
     for rate in rates.values():
         rate.pop("traded", None)
     return rates

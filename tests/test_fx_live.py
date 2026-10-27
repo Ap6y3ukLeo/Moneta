@@ -36,6 +36,24 @@ class FxLiveTest(unittest.TestCase):
         self.assertFalse(rates["EUR"]["traded"])
         self.assertAlmostEqual(rates["KZT"]["value"], 0.184)
 
+    def test_live_falls_back_to_coinbase(self):
+        original = server.http_json
+
+        def fake(url, timeout=10):
+            if "coinbase" in url:
+                return {"data": {"currency": "EUR", "rates": {"RUB": "90.5"}}}
+            raise RuntimeError("no network")
+
+        server.http_json = fake
+        try:
+            rates = server.build_fx_live()
+        finally:
+            server.http_json = original
+
+        self.assertEqual(rates["EUR"]["value"], 90.5)
+        self.assertEqual(rates["EUR"]["source"], "Coinbase")
+        self.assertEqual(set(rates), set(server.LIVE_FX_FALLBACK))
+
 
 if __name__ == "__main__":
     unittest.main()
