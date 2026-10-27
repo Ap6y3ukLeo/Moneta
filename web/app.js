@@ -206,7 +206,7 @@ async function refresh({ silent = false, marketOnly = false } = {}) {
   const jobs = [['market', '/api/market?force=1', 'рыночные котировки', 30000]];
   if (!marketOnly) {
     jobs.push(
-      ['deposits', '/api/deposits', 'вклады банков', 35000],
+      ['deposits', '/api/deposits', 'вклады банков', 60000],
       ['realty', '/api/realty', 'недвижимость', 45000],
     );
   }

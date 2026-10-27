@@ -37,6 +37,7 @@ CACHE_DIR = os.environ.get("MONETKA_CACHE_DIR") or ("/tmp/monetka" if os.environ
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36 Monetka/1.0"
+BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 MSK = timezone(timedelta(hours=3))
 LOCK = threading.Lock()
 MEM: dict[str, dict] = {}
@@ -212,7 +213,7 @@ def _cdp_call(sock: socket.socket, msg_id: int, method: str, params: dict | None
             return data
 
 
-def browser_json_many(urls, expression: str, waits):
+def browser_json_many(urls, expression: str, waits, stealth: bool = False):
     """Открывает несколько URL в одном Chrome и возвращает JSON с каждой страницы."""
     if os.environ.get("VERCEL"):
         raise RuntimeError("Авито/Циан недоступны на Vercel: нужен локальный Chrome")
@@ -225,12 +226,16 @@ def browser_json_many(urls, expression: str, waits):
         flags = 0
         if os.name == "nt":
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        args = [
+            chrome, "--headless=new", "--disable-gpu", "--no-first-run",
+            "--no-default-browser-check", "--window-size=1400,1000",
+            f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "about:blank",
+        ]
+        if stealth:
+            # Банки отсекают headless-браузер по UA и AutomationControlled.
+            args += ["--disable-blink-features=AutomationControlled", f"--user-agent={BROWSER_UA}"]
         proc = subprocess.Popen(
-            [
-                chrome, "--headless=new", "--disable-gpu", "--no-first-run",
-                "--no-default-browser-check", "--window-size=1400,1000",
-                f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "about:blank",
-            ],
+            args,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags,
         )
         try:
@@ -1035,6 +1040,12 @@ def _parse_tbank_deposits(html):
     saving = re.search(r"Накопительный счет со\s*ставкой до\s*([\d]+(?:[.,]\d+)?)%", text)
     if saving:
         rows.append(("Накопительный счёт", _num(saving.group(1)), 1, "бессрочно", "https://www.tbank.ru/deposits/"))
+    if not rows:
+        # Промо-лендинг («Хоккейный вклад») отдаёт ставку и сумму отдельными строками.
+        rate = re.search(r"Ставка до\s*([\d]+(?:[.,]\d+)?)\s*%", text)
+        min_match = re.search(r"Минимальная сумма\s*[—–-]\s*([\d\s]+)\s*₽", text)
+        if rate and min_match:
+            rows.append(("Вклад", _num(rate.group(1)), _num(min_match.group(1)), "", "https://www.tbank.ru/deposits/"))
     return rows
 
 
@@ -1049,13 +1060,64 @@ def _parse_domrf_deposits(html):
     return [("Мой Дом", _num(rate.group(1)), _num(min_match.group(1)), term_text, "https://domrfbank.ru/deposits/")]
 
 
+def _is_alfa_deposit(line):
+    return line == "Социальный вклад" or (line.startswith("Альфа") and "Вклад" in line)
+
+
+def _is_otp_deposit(line):
+    return line.startswith("Вклад «")
+
+
+def _parse_rendered_deposits(text, is_name, link):
+    """Разбирает видимый текст страницы банка: карточки идут строками."""
+    text = re.sub(r"[\u00a0\u2009\u202f]", " ", text or "")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    starts = [index for index, line in enumerate(lines) if is_name(line)]
+    rows = []
+    for position, start in enumerate(starts):
+        chunk = lines[start:starts[position + 1] if position + 1 < len(starts) else len(lines)]
+        rate = next(
+            (
+                _num(match.group(1))
+                for line in chunk
+                if (match := re.match(r"^(?:До\s*)?(\d+(?:[.,]\d+)?)\s*%\s*(?:годовых)?$", line))
+            ),
+            None,
+        )
+        if not _deposit_ok(rate):
+            continue
+        amount = next(
+            (_num(match.group(1)) for line in chunk if (match := re.match(r"^От\s+([\d\s]+)\s*₽$", line))),
+            None,
+        )
+        term = next(
+            (chunk[index] for index in range(len(chunk) - 1) if chunk[index + 1] in ("срок", "Срок оформления")),
+            "",
+        )
+        rows.append((chunk[0], rate, amount, _direct_term(term), link))
+    return rows
+
+
+def _parse_alfa_deposits(text):
+    return _parse_rendered_deposits(text, _is_alfa_deposit, "https://alfabank.ru/make-money/deposits/")
+
+
+def _parse_otp_deposits(text):
+    return _parse_rendered_deposits(text, _is_otp_deposit, "https://www.otpbank.ru/retail/deposit/")
+
+
 DIRECT_BANKS = [
     ("vtb", "ВТБ", "https://www.vtb.ru/personal/vklady-i-scheta/", _parse_vtb_deposits),
     ("gazprom", "Газпромбанк", "https://www.gazprombank.ru/personal/deposits/", _parse_gazprom_deposits),
     ("rshb", "Россельхозбанк", "https://www.rshb.ru/natural/deposits/", _parse_rshb_deposits),
     ("tbank", "Т-Банк", "https://www.tbank.ru/deposits/", _parse_tbank_deposits),
     ("domrf", "Банк ДОМ.РФ", "https://domrfbank.ru/deposits/", _parse_domrf_deposits),
+    ("alfa", "Альфа-Банк", "https://alfabank.ru/make-money/deposits/", _parse_alfa_deposits),
+    ("otp", "ОТП Банк", "https://www.otpbank.ru/retail/deposit/", _parse_otp_deposits),
 ]
+
+# Ставки этих банков видны только после выполнения JS, поэтому тянем DOM через Chrome.
+BROWSER_BANK_KEYS = {"alfa", "otp", "tbank"}
 
 DIRECT_BANK_LOGOS = {
     "vtb": "/logos/vtb.svg",
@@ -1063,14 +1125,39 @@ DIRECT_BANK_LOGOS = {
     "rshb": "/logos/rshb.svg",
     "tbank": "/logos/tbank.svg",
     "domrf": "/logos/domrf.png",
+    "alfa": "/logos/alfa.ico",
+    "otp": "/logos/otp.png",
 }
+
+
+def _render_deposit_pages(keys):
+    urls = {key: url for key, bank, url, parser in DIRECT_BANKS if key in keys}
+    pages = browser_json_many(
+        [urls[key] for key in keys],
+        "JSON.stringify(document.body.innerText)",
+        [10] * len(keys),
+        stealth=True,
+    )
+    return dict(zip(keys, pages))
 
 
 def build_direct_banks():
     items, errors = [], []
+    browser_keys = [key for key, *_ in DIRECT_BANKS if key in BROWSER_BANK_KEYS]
+    rendered = {}
+    if browser_keys and not os.environ.get("VERCEL"):
+        try:
+            rendered = _render_deposit_pages(browser_keys)
+        except Exception as exc:  # noqa: BLE001 - без браузера просто меньше банков
+            errors.append(f"браузер: {exc}")
     for key, bank, url, parser in DIRECT_BANKS:
         try:
-            rows = parser(http_text(url, timeout=45))
+            if key in BROWSER_BANK_KEYS:
+                if not rendered.get(key):
+                    raise RuntimeError("нужен локальный Chrome")
+                rows = parser(rendered[key])
+            else:
+                rows = parser(http_text(url, timeout=45))
         except Exception as exc:  # noqa: BLE001 - один банк не должен ронять выдачу
             errors.append(f"{bank}: {exc}")
             continue
