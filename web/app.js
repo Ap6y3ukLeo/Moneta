@@ -3,7 +3,7 @@
 /* ------------------------------------------------------------------ utils */
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
-const PALETTE = ['#14d1a3', '#3d7bff', '#ffd54f', '#8b5cf6', '#ff7a59', '#1c284a', '#2dc7d9', '#a3e635'];
+const PALETTE = ['#1e5a44', '#8c6a3f', '#2f4a6b', '#8a4b3a', '#6b6a5e', '#3e5c58', '#a8874f', '#7a6a8a'];
 const YEAR = 365.25 * 864e5;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
@@ -100,6 +100,7 @@ const cryptoIcon = (c) => {
 };
 const metalIcon = (code) => coin(code === 'XAU' ? 'Au' : code === 'XAG' ? 'Ag' : code === 'XPT' ? 'Pt' : 'Pd',
   code === 'XAU' ? 'coin--gold' : code === 'XAG' ? 'coin--silver' : 'coin--platinum');
+const stockIcon = (s) => `<span class="coin coin--logo">${esc(String(s?.ticker || '?').slice(0, 4))}${s?.logo ? `<img src="${esc(s.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
 const ext = (url, label = '', cls = 'icon-btn') => url
   ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(label || 'Открыть источник')}" aria-label="${esc(label || 'Открыть источник')}">${icon('ext')}</a>`
   : '';
@@ -121,6 +122,7 @@ const S = {
   addPreset: {},
   dep: { amount: 500000, months: 12, limit: 40 },
   re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 24 },
+  stocks: { q: '', sort: 'turnover' },
   calc: null,
 };
 S.portfolio = loadPortfolio(S.profiles.active);
@@ -174,6 +176,7 @@ function rub(usd) {
 }
 const cryptoList = () => S.market?.crypto?.items || [];
 const metalList = () => S.market?.metals?.items || [];
+const stockList = () => S.market?.stocks?.items || [];
 const fxList = () => S.market?.fx?.items || [];
 const depositList = () => S.deposits?.items || [];
 const realtyList = () => S.realty?.items || [];
@@ -183,6 +186,7 @@ function bestDeposit(amount = S.dep.amount) {
     .sort((a, b) => (b.rate || 0) - (a.rate || 0))[0] || null;
 }
 const findCrypto = (id) => cryptoList().find((c) => c.id === id);
+const findStock = (id) => stockList().find((s) => s.id === id);
 const findMetal = (id) => metalList().find((m) => m.id === id);
 const findFx = (code) => fxList().find((f) => f.code === code);
 const keyRateValue = () => S.market?.keyRate?.value ?? S.deposits?.keyRate?.value ?? 0;
@@ -405,6 +409,7 @@ function sourceWarning() {
   if (m) {
     if (m.crypto?.meta?.ok === false) bad.push('криптовалюта');
     if (m.metals?.meta?.ok === false) bad.push('драгметаллы');
+    if (m.stocks?.meta?.ok === false) bad.push('акции');
     if (m.fx?.meta?.ok === false) bad.push('курсы валют');
   }
   if (S.deposits?.meta?.ok === false) bad.push('вклады');
@@ -471,16 +476,37 @@ function homePage() {
   ${sourceWarning()}
   <section class="hero">
     <div class="hero-copy">
-      <span class="eyebrow">Добро пожаловать, ${esc(activeProfile().name)}!</span>
-      <h1>Умные решения<br>для твоего капитала</h1>
-      <p>Аналитика по всем ключевым рынкам в одном месте. Выбирай, что важно именно тебе.</p>
+      <span class="eyebrow">Сводка · ${timeOf(fx.meta?.updated || crypto.meta?.updated)}</span>
+      <h1>Курс, ставка и цена метра — <em>на одном экране</em></h1>
+      <p>Пять рынков в одном расчёте: крипта и валюта по бирже, металлы и ставка ЦБ, вклады банков и объявления по всей России. Данные обновляются автоматически.</p>
       <div class="hero-actions">
-        <a class="btn" href="#/portfolio">Перейти к анализу ${icon('arrow')}</a>
-        <a class="btn btn--ghost" href="#/deposits">Вклады</a>
+        <a class="btn" href="#/portfolio">Открыть портфель ${icon('arrow')}</a>
+        <a class="btn btn--ghost" href="#/deposits">Сравнить вклады</a>
       </div>
-      <div class="hero-source">${icon('shield')} ЦБ РФ · Bybit · банки и недвижимость — обновлено ${timeOf(fx.meta?.updated || crypto.meta?.updated)}</div>
+      <div class="hero-source">${icon('shield')} ЦБ РФ · Bybit · MOEX · банки · Яндекс и Авито</div>
     </div>
-    <div class="hero-art" aria-hidden="true">${heroArt()}</div>
+    <div class="hero-figures">
+      ${btc ? `<a class="hero-figure" href="#/crypto">
+        <span class="fig-label">BTC · Bybit</span>
+        <span class="fig-value">${money(rub(btc.price))}</span>
+        <span class="fig-meta">${chg(btc.change24h)} за сутки</span>
+      </a>` : ''}
+      ${usd ? `<a class="hero-figure" href="#/fx">
+        <span class="fig-label">USD · ЦБ РФ</span>
+        <span class="fig-value">${num(usd.value, 2)} ₽</span>
+        <span class="fig-meta">${chg(usd.change24h)} за день</span>
+      </a>` : ''}
+      ${topDep ? `<a class="hero-figure" href="#/deposits">
+        <span class="fig-label">Вклад · ${esc(topDep.bank)}</span>
+        <span class="fig-value">${num(topDep.rate, 2)}%</span>
+        <span class="fig-meta">${esc(topDep.termDays ? depositTermText(topDep) : 'годовых')}</span>
+      </a>` : ''}
+      ${msk ? `<a class="hero-figure" href="#/realty">
+        <span class="fig-label">Москва · м²</span>
+        <span class="fig-value">${money(msk.avgM2)}</span>
+        <span class="fig-meta">квартира ${money(msk.avgPrice)}</span>
+      </a>` : ''}
+    </div>
   </section>
 
   <div class="chips">
@@ -498,8 +524,7 @@ function homePage() {
       <div class="cards">
         <article class="card card--click" data-go="#/deposits" tabindex="0" role="link">
           <div class="card-head">
-            <div><h3>Банковские продукты</h3><div class="sub">${depositList().length} предложений · ${new Set(depositList().map((d) => d.bank)).size} банков</div></div>
-            <span class="badge">Лучшие предложения</span>
+            <div><h3>Вклады банков</h3><div class="sub">${depositList().length} предложений · ${new Set(depositList().map((d) => d.bank)).size} банков</div></div>
           </div>
           <div class="metric-big">до ${topDep ? num(topDep.rate, 2) + '%' : '—'}</div>
           <div class="muted" style="font-size:11.5px">по вкладам в рублях</div>
@@ -512,14 +537,13 @@ function homePage() {
         <article class="card card--click" data-go="#/crypto" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Криптовалюта</h3><div class="sub">Топ активы · Bybit</div></div>
-            <span class="badge">24 часа</span>
           </div>
           ${btc ? `<div style="display:flex;align-items:baseline;gap:8px">
               <div class="metric-big">${money(rub(btc.price))}</div>
               ${chg(btc.change24h)}
             </div>
             <div class="muted" style="font-size:11px">BTC · $${price(btc.price)}</div>
-            <div class="spark-wrap">${sparkline(btc.spark, btc.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 48)}</div>` : '<div class="muted">Нет данных</div>'}
+            <div class="spark-wrap">${sparkline(btc.spark, btc.change24h >= 0 ? '#1e6e4e' : '#b4453a', 220, 48)}</div>` : '<div class="muted">Нет данных</div>'}
           <div class="card-foot"><a class="link-more" href="#/crypto">Подробнее ${icon('arrow')}</a>${btc?.tradeUrl ? `<a class="link-more" href="${esc(btc.tradeUrl)}" target="_blank" rel="noopener">Купить BTC ${icon('ext')}</a>` : ''}</div>
         </article>
 
@@ -540,7 +564,7 @@ function homePage() {
         <article class="card card--click" data-go="#/metals" tabindex="0" role="link">
           <div class="card-head">
             <div><h3>Драгметаллы</h3><div class="sub">ЦБ РФ, ₽ за грамм</div></div>
-            <span class="badge badge--gold">Стабильность</span>
+            <span class="badge badge--gold">ЦБ РФ</span>
           </div>
           <div class="mini-rows">
             ${[[xau, 'Au'], [xag, 'Ag'], [xpt, 'Pt']].map(([m]) => m ? `<div class="mini-row">
@@ -548,7 +572,7 @@ function homePage() {
                 <span class="price">${money(m.price)}</span><span class="chg">${chg(m.change24h)}</span>
               </div>` : '').join('')}
           </div>
-          <div class="spark-wrap">${xau ? sparkline(xau.spark, xau.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 42) : ''}</div>
+          <div class="spark-wrap">${xau ? sparkline(xau.spark, xau.change24h >= 0 ? '#1e6e4e' : '#b4453a', 220, 42) : ''}</div>
           <div class="card-foot"><a class="link-more" href="#/metals">Подробнее ${icon('arrow')}</a><a class="chev-link" href="#/metals">${icon('chev')}</a></div>
         </article>
 
@@ -560,7 +584,7 @@ function homePage() {
           ${v.rows.length ? `
             <div class="metric-big">${money(v.value)}</div>
             <div class="muted" style="font-size:11.5px">вложено ${money(v.invested)} · ${chg(v.changePct)} за сутки</div>
-            <div style="display:flex;height:8px;border-radius:99px;overflow:hidden;margin:12px 0 8px;background:#eef4f3">
+            <div style="display:flex;height:6px;border-radius:0;overflow:hidden;margin:12px 0 8px;background:#e7e5dd">
               ${v.rows.slice(0, 5).map((r, i) => `<span style="width:${(r.cur / (v.value || 1)) * 100}%;background:${PALETTE[i % PALETTE.length]}"></span>`).join('')}
             </div>
             <div class="mini-rows">${v.rows.slice(0, 2).map((r) => `<div class="mini-row"><span class="name">${esc(r.name)}</span><span class="price">${money(r.cur)}</span><span class="chg">${chg(r.pnlPct)}</span></div>`).join('')}</div>
@@ -585,17 +609,12 @@ function homePage() {
           <div class="card-foot"><a class="link-more" href="#/realty">Смотреть объявления ${icon('arrow')}</a><a class="chev-link" href="#/realty">${icon('chev')}</a></div>
         </article>
       </div>
-
-      <div class="banner">
-        <div><h3>Вместе к финансовой свободе</h3><p>Монетка — ваш надёжный помощник в мире инвестиций и финансов.</p></div>
-        <a class="btn btn--ghost" href="#/portfolio">Начать анализ ${icon('arrow')}</a>
-      </div>
     </div>
 
     <aside class="rail">
       <div class="card">
-        <div class="ai-head"><div class="ai-title">${icon('spark')} Монета AI</div></div>
-        <p class="ai-greet">Коротко о рынке на основе живых данных:</p>
+        <div class="ai-head"><div class="ai-title">${icon('spark')} Сводка по рынку</div></div>
+        <p class="ai-greet">Три факта из текущих данных:</p>
         <div class="ai-list">${insights.map((t) => `<div class="ai-item">${icon('shield')}<span>${t}</span></div>`).join('')}</div>
         <button class="btn btn--sm ai-open-btn" type="button" data-action="ai-open">${icon('spark')} Открыть чат</button>
         <div class="ai-chips"><a href="#/deposits">Вклады</a><a href="#/crypto">Крипта</a><a href="#/metals">Металлы</a><a href="#/fx">Валюты</a></div>
@@ -631,46 +650,6 @@ function dataStatusLine(label, meta) {
   return `<div><span>${label}</span><span class="${ok ? 'ok' : 'warn'}">${ok ? 'онлайн' : 'кэш'} · ${timeOf(meta?.updated)}</span></div>`;
 }
 
-function heroArt() {
-  return `<svg viewBox="0 0 520 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="chart" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#14d1a3" stop-opacity=".05"/><stop offset="1" stop-color="#14d1a3" stop-opacity=".32"/></linearGradient>
-      <linearGradient id="arrow" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#0fb98f"/><stop offset="1" stop-color="#2fe3b5"/></linearGradient>
-      <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffe38a"/><stop offset="1" stop-color="#f2b21f"/></linearGradient>
-    </defs>
-    <circle cx="424" cy="64" r="52" fill="#fff" opacity=".55"/>
-    <circle cx="424" cy="64" r="34" fill="url(#arrow)"/>
-    <text x="424" y="74" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-size="26" font-weight="700" fill="#fff">₿</text>
-    <circle cx="366" cy="118" r="24" fill="#fff" opacity=".85"/>
-    <text x="366" y="126" text-anchor="middle" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700" fill="#3d7bff">%</text>
-    <g transform="rotate(-7 250 170)">
-      <rect x="118" y="72" width="262" height="184" rx="22" fill="#fff" opacity=".55" stroke="#fff"/>
-      <rect x="118" y="72" width="262" height="184" rx="22" fill="url(#chart)" opacity=".55"/>
-      <path d="M146 206c22-6 29-36 50-38s25 22 46 8 26-48 50-52 30 20 56 6" stroke="#0fb98f" stroke-width="3" stroke-linecap="round"/>
-      <path d="M146 206c22-6 29-36 50-38s25 22 46 8 26-48 50-52 30 20 56 6" stroke="url(#arrow)" stroke-width="3" stroke-linecap="round"/>
-      <path d="M326 108l24 4-6 23" stroke="#0fb98f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="142" y="92" width="64" height="8" rx="4" fill="#fff" opacity=".9"/>
-      <rect x="142" y="106" width="40" height="6" rx="3" fill="#fff" opacity=".7"/>
-    </g>
-    <g transform="rotate(9 420 200)">
-      <rect x="356" y="148" width="122" height="86" rx="18" fill="#fff" opacity=".92"/>
-      <text x="374" y="178" font-family="Inter, Segoe UI, sans-serif" font-size="11" fill="#7c899b">Золото, ₽/г</text>
-      <text x="374" y="200" font-family="Inter, Segoe UI, sans-serif" font-size="16" font-weight="700" fill="#1c284a">10 870</text>
-      <path d="M374 216h60" stroke="#e7efee" stroke-width="6" stroke-linecap="round"/>
-      <path d="M374 216h34" stroke="#14d1a3" stroke-width="6" stroke-linecap="round"/>
-    </g>
-    <g transform="translate(176 238)">
-      <ellipse cx="34" cy="26" rx="26" ry="8" fill="#0a9875" opacity=".18"/>
-      <rect x="18" y="10" width="16" height="8" rx="3" fill="url(#gold)"/>
-      <rect x="8" y="18" width="16" height="8" rx="3" fill="url(#gold)"/>
-      <rect x="28" y="18" width="16" height="8" rx="3" fill="url(#gold)"/>
-      <rect x="0" y="26" width="16" height="8" rx="3" fill="url(#gold)"/>
-      <rect x="20" y="26" width="16" height="8" rx="3" fill="url(#gold)"/>
-      <rect x="40" y="26" width="16" height="8" rx="3" fill="url(#gold)"/>
-    </g>
-  </svg>`;
-}
-
 /* ------------------------------------------------------------------ pages: crypto */
 function cryptoPage() {
   if (!S.market) return loadingView();
@@ -679,7 +658,7 @@ function cryptoPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Криптовалюта</h1><p>Цены с Bybit, пересчёт в рубли по курсу ЦБ РФ, динамика за 24 часа и 7 дней. AI-прогноз строит сценарий по истории цены. Кнопка «Купить» ведёт на спотовую пару выбранной монеты.</p></div>
+    <div><h1>Криптовалюта</h1><p>Цены Bybit в рублях по курсу ЦБ РФ. Нажмите на строку — откроются график, история и сценарий. «Купить» ведёт на спотовую пару.</p></div>
     <div class="head-meta">${sourcePill(provider, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -694,7 +673,7 @@ function cryptoPage() {
             <td><div class="asset-cell">${cryptoIcon(c)}<span class="txt"><b>${esc(c.name)}</b><small>${esc(c.symbol)} · $${price(c.price)}</small></span></div></td>
             <td class="num"><b>${money(rubPrice)}</b></td>
             <td class="num">${chg(c.change24h)}</td>
-            <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button></td>
+            <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#1e6e4e' : '#b4453a', 120, 34)}</button></td>
             <td class="num muted">${money(c.volume ? rub(c.volume) : null, 0)}</td>
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
@@ -718,7 +697,7 @@ function metalsPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Драгметаллы</h1><p>Официальные котировки ЦБ РФ: рубли за грамм, унция и динамика за день. AI-прогноз строит сценарий по истории цены. Металлы торгуются в банках и на бирже — сравнивайте спред.</p></div>
+    <div><h1>Драгметаллы</h1><p>Учётные цены ЦБ РФ: рубли за грамм, унция и динамика за день. Нажмите на карточку — откроются график и сценарий.</p></div>
     <div class="head-meta">${sourcePill('ЦБ РФ · ' + date, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="metal-cards">
@@ -727,7 +706,7 @@ function metalsPage() {
       <div class="price">${money(m.price)}<small> /г</small></div>
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
       <div class="chg">${chg(m.change24h)} <span class="muted">за день</span></div>
-      <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}</button>
+      <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#1e6e4e' : '#b4453a', 240, 38)}</button>
       <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-chart="metal:${esc(m.id)}" style="border:0;background:none;padding:0">График ${icon('chart')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
     </article>`).join('')}
   </div>
@@ -752,6 +731,69 @@ function metalsPage() {
   <p class="muted" style="font-size:11px;margin-top:12px">ЦБ РФ публикует учётные цены на драгметаллы ежедневно. В банке цена покупки/продажи отличается от учётной — уточняйте в отделении.</p>`;
 }
 
+/* ------------------------------------------------------------------ pages: stocks */
+const STOCK_SORTS = {
+  turnover: (a, b) => (b.turnover || 0) - (a.turnover || 0),
+  change: (a, b) => (b.change24h || 0) - (a.change24h || 0),
+  price: (a, b) => a.price - b.price,
+  name: (a, b) => a.name.localeCompare(b.name, 'ru'),
+};
+
+function stockBuyMenu(s) {
+  const links = s.buyLinks || [];
+  if (!links.length) return '<span class="muted">—</span>';
+  return `<div class="buy-links">${links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}${icon('ext')}</a>`).join('')}</div>`;
+}
+
+function stockRowsHtml() {
+  const q = S.stocks.q.trim().toLowerCase();
+  const items = stockList()
+    .filter((s) => !q || `${s.name} ${s.ticker}`.toLowerCase().includes(q))
+    .sort(STOCK_SORTS[S.stocks.sort] || STOCK_SORTS.turnover);
+  if (!items.length) return '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
+  return items.map((s, i) => `<tr class="row-click" data-chart="stock:${esc(s.id)}">
+    <td class="muted">${i + 1}</td>
+    <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · MOEX</small></span></div></td>
+    <td class="num"><b>${money(s.price)}</b></td>
+    <td class="num">${chg(s.change24h)}</td>
+    <td class="num muted">${s.turnover ? money(s.turnover, 0) : '—'}</td>
+    <td>${stockBuyMenu(s)}</td>
+  </tr>`).join('');
+}
+
+function stocksPage() {
+  if (!S.market) return loadingView();
+  const block = S.market.stocks || {};
+  const meta = block.meta;
+  const provider = meta?.provider || block.provider || 'MOEX';
+  const items = stockList();
+  return `
+  ${sourceWarning()}
+  <div class="page-head">
+    <div><h1>Акции</h1><p>Акции Московской биржи (TQBR): цена, изменение за день и оборот. Нажмите на строку — откроются график и брокеры, где можно купить бумагу.</p></div>
+    <div class="head-meta">${sourcePill(provider, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
+  </div>
+  ${items.length ? `<div class="filters">
+    <input type="search" id="stocks-q" placeholder="Название или тикер, например SBER" value="${esc(S.stocks.q)}" autocomplete="off">
+    <select id="stocks-sort" aria-label="Сортировка">
+      <option value="turnover" ${S.stocks.sort === 'turnover' ? 'selected' : ''}>По обороту</option>
+      <option value="change" ${S.stocks.sort === 'change' ? 'selected' : ''}>По изменению за день</option>
+      <option value="price" ${S.stocks.sort === 'price' ? 'selected' : ''}>По цене</option>
+      <option value="name" ${S.stocks.sort === 'name' ? 'selected' : ''}>По названию</option>
+    </select>
+    <span class="muted" style="align-self:center;font-size:12px">${items.length} бумаг</span>
+  </div>
+  <div class="card table-card">
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th class="num">Оборот</th><th>Купить</th></tr></thead>
+        <tbody id="stocks-rows">${stockRowsHtml()}</tbody>
+      </table>
+    </div>
+  </div>` : `<div class="empty-state"><h3>Котировки акций недоступны</h3><p>MOEX не ответил. Попробуйте обновить данные.</p><button class="btn" data-action="refresh">Повторить</button></div>`}
+  <p class="muted" style="font-size:11px;margin-top:12px">Цены MOEX — справочные, могут отставать от биржи в реальном времени. Логотипы есть у крупнейших компаний, у остальных — тикер. Ссылки ведут на страницы бумаг у брокеров; комиссии и доступность сделки уточняйте в приложении брокера. Это не инвестиционная рекомендация.</p>`;
+}
+
 /* ------------------------------------------------------------------ pages: fx */
 function fxPage() {
   if (!S.market) return loadingView();
@@ -760,7 +802,7 @@ function fxPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ на ${esc(fx.date || '')} и биржевые котировки. Биржа обновляется каждые 15 минут; для портфеля используются курсы ЦБ. AI-прогноз доступен для основных валют.</p></div>
+    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ и биржевые котировки. Биржа обновляется каждые 15 минут, портфель считается по курсу ЦБ.</p></div>
     <div class="head-meta">${sourcePill(fx.liveUpdated ? 'ЦБ РФ · биржа' : 'ЦБ РФ', liveMeta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -1040,7 +1082,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Выберите город или введите адрес — ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Фильтруйте по городу и комнатности, ссылки ведут на первоисточник.</p></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -1232,7 +1274,7 @@ function portfolioPage() {
     <div class="card alloc">
       <div class="rail-title"><h3>Структура</h3><span class="pill pill--mint">${v.rows.length} поз.</span></div>
       <div class="donut-wrap">
-        <div class="donut" style="background:conic-gradient(${stops || '#eef4f3 0 100%'})"></div>
+        <div class="donut" style="background:conic-gradient(${stops || '#e7e5dd 0 100%'})"></div>
         <div class="donut-center"><b>${money(v.value)}</b><span>всего</span></div>
       </div>
       <div class="legend">
@@ -1401,6 +1443,7 @@ function render() {
 
   if (page === 'home') html = homePage();
   else if (page === 'crypto') html = cryptoPage();
+  else if (page === 'stocks') html = stocksPage();
   else if (page === 'metals') html = metalsPage();
   else if (page === 'fx') html = fxPage();
   else if (page === 'deposits') html = depositsPage();
@@ -1428,7 +1471,7 @@ function render() {
 }
 
 function pageTitle(page) {
-  return { home: 'Главная', crypto: 'Криптовалюта', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', realty: 'Недвижимость', portfolio: 'Портфель', search: 'Поиск' }[page] || 'Монетка';
+  return { home: 'Главная', crypto: 'Криптовалюта', stocks: 'Акции', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', realty: 'Недвижимость', portfolio: 'Портфель', search: 'Поиск' }[page] || 'Монетка';
 }
 
 function updateSideStatus() {
@@ -1795,7 +1838,7 @@ function chartAllPoints() {
 }
 
 function chartToolbarHtml() {
-  const ranges = chartState.kind === 'crypto' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
+  const ranges = chartState.kind === 'crypto' || chartState.kind === 'stock' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
   return `<div class="chart-toolbar">
     <div class="chart-ranges">${ranges.map((range) => `<button class="chart-tab${chartState.range === range ? ' is-active' : ''}" type="button" data-chart-range="${range}">${CHART_RANGE_LABELS[range]}</button>`).join('')}</div>
     <div class="chart-ai-controls"><label class="chart-toggle"><input id="chart-ai-toggle" type="checkbox"${chartState.showForecast ? ' checked' : ''}><span>AI-прогноз</span></label><span class="chart-horizon-note">${chartState.horizon} дн.</span></div>
@@ -1853,8 +1896,8 @@ function chartSvg(all) {
   }
   for (const item of fc) forecastPoints.push({ index: item.index, c: Number(item.point.c) });
   const direction = chartState.forecast?.direction;
-  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#1c284a';
-  const fill = direction === 'down' ? '#fdeceb' : direction === 'up' ? '#e8faf5' : '#eef2f8';
+  const color = direction === 'down' ? '#b4453a' : direction === 'up' ? '#1e6e4e' : '#17181a';
+  const fill = direction === 'down' ? '#fbf0ed' : direction === 'up' ? '#e9efe8' : '#e9ecef';
   let forecastPath = '', bandPoly = '', forecastEdges = '';
   if (forecastPoints.length >= 2) {
     forecastPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c).toFixed(1)}`).join(' ');
@@ -1869,24 +1912,24 @@ function chartSvg(all) {
   }
   const grid = [0.25, 0.5, 0.75].map((part) => {
     const gy = padT + part * (height - padT - padB);
-    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
+    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e1ded5"/>`;
   }).join('');
   let cross = '', tip = '';
   if (chartState.hover != null && chartState.hover >= start && chartState.hover <= end && all[chartState.hover]) {
     const hover = all[chartState.hover];
     const hx = x(chartState.hover);
     const hy = y(Number(hover.c));
-    cross = `<line x1="${hx.toFixed(1)}" y1="${padT}" x2="${hx.toFixed(1)}" y2="${height - padB}" stroke="#9fb0c3" stroke-dasharray="3 4"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" fill="${hover.forecast ? color : '#40536a'}"/>`;
+    cross = `<line x1="${hx.toFixed(1)}" y1="${padT}" x2="${hx.toFixed(1)}" y2="${height - padB}" stroke="#8a887f" stroke-dasharray="3 4"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" fill="${hover.forecast ? color : '#3f3f3b'}"/>`;
     tip = `<div class="chart-tip" style="left:${(hx / width * 100).toFixed(2)}%;top:8px">${esc(chartLongDate(hover.t))}<br>${esc(fmtForecast(hover.c, chartState.unit))} · ${hover.forecast ? 'прогноз' : 'история'}</div>`;
   }
   return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Интерактивный график ${esc(chartState.name)}">
     ${grid}
     ${histArea ? `<path d="${histArea}" fill="${fill}" opacity=".65"/>` : ''}
-    ${histPath ? `<path d="${histPath}" fill="none" stroke="#40536a" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+    ${histPath ? `<path d="${histPath}" fill="none" stroke="#3f3f3b" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${bandPoly ? `<polygon points="${bandPoly}" fill="${color}" opacity=".14"/>` : ''}
     ${forecastEdges}
     ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-    ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>` : ''}
+    ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#d8d5cb" stroke-dasharray="3 4"/>` : ''}
     ${cross}
     <text x="${padL - 8}" y="${padT}" text-anchor="end" class="chart-label">${esc(fmtForecast(max, chartState.unit))}</text>
     <text x="${padL - 8}" y="${height - padB}" text-anchor="end" class="chart-label">${esc(fmtForecast(min, chartState.unit))}</text>
@@ -2077,7 +2120,7 @@ async function openChart(kind, id) {
   const title = $('#forecast-title');
   const sub = $('#forecast-sub');
   if (!dialog || !body) return;
-  const asset = kind === 'crypto' ? findCrypto(id) : kind === 'metal' ? findMetal(id) : findFx(id);
+  const asset = kind === 'crypto' ? findCrypto(id) : kind === 'stock' ? findStock(id) : kind === 'metal' ? findMetal(id) : findFx(id);
   if (!asset) { toast('Актив не найден', true); return; }
   chartState.seq += 1;
   chartState.kind = kind;
@@ -2274,6 +2317,7 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 'stocks-sort') { S.stocks.sort = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); }
 });
 
 document.addEventListener('input', (e) => {
@@ -2284,6 +2328,7 @@ document.addEventListener('input', (e) => {
     $('#re-list').innerHTML = realtyRowsHtml();
   }
   if (e.target.id === 're-city-q') filterCityOptions(e.target.value);
+  if (e.target.id === 'stocks-q') { S.stocks.q = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); }
 });
 
 $('#search-form').addEventListener('submit', (e) => {

@@ -75,6 +75,28 @@ MOEX_FX = {
 # Пары, которых нет на MOEX: EUR не торгуется с 2024 года, курс берём у Coinbase.
 LIVE_FX_FALLBACK = ["USD", "EUR", "CNY", "GBP", "CHF", "JPY"]
 
+# Берём весь рынок акций TQBR. SECTYPE 1 — обыкновенные, 2 — привилегированные.
+MOEX_SHARE_TYPES = ("1", "2")
+# Домены нужны только для логотипов (favicon-сервис Google), котировки берём с MOEX.
+STOCK_DOMAINS = {
+    "SBER": "sberbank.ru", "SBERP": "sberbank.ru", "GAZP": "gazprom.ru",
+    "LKOH": "lukoil.ru", "GMKN": "nornickel.ru", "ROSN": "rosneft.ru",
+    "NVTK": "novatek.ru", "TATN": "tatneft.ru", "YDEX": "yandex.ru",
+    "VTBR": "vtb.ru", "MOEX": "moex.com", "ALRS": "alrosa.ru",
+    "MTSS": "mts.ru", "MGNT": "magnit.com", "PLZL": "polyus.com",
+    "CHMF": "severstal.com", "SNGS": "gazprom-neft.ru", "AFLT": "aeroflot.ru",
+    "IRAO": "interrao.ru", "PHOR": "phosagro.ru", "FEES": "rosseti.ru",
+    "RUAL": "rusal.ru", "NLMK": "nlmk.com", "MAGN": "mmk.ru",
+    "T": "tbank.ru", "OZON": "ozon.ru", "VKCO": "vk.com",
+    "POSI": "positive-technologies.com",
+}
+STOCK_BROKERS = (
+    ("Т-Банк", "https://www.tbank.ru/invest/stocks/{}/"),
+    ("Финам", "https://www.finam.ru/quote/moex/{}/"),
+    ("БКС", "https://bcs-express.ru/kotirovki-i-grafiki/{}"),
+    ("ВТБ", "https://www.vtb.ru/personal/investicii/"),
+)
+
 SPB_DISTRICTS = (
     "адмиралтейский", "василеостровский", "выборгский", "калининский", "кировский",
     "колпинский", "красногвардейский", "красносельский", "кронштадтский", "курортный",
@@ -527,6 +549,63 @@ def build_metals():
     return {"items": items, "provider": "ЦБ РФ"}
 
 
+# ---------------------------------------------------------------- stocks (MOEX)
+MOEX_SHARES = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json"
+MOEX_CANDLES = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{}/candles.json"
+
+
+def _stock_logo(ticker):
+    domain = STOCK_DOMAINS.get(ticker)
+    # shortcut: favicon-сервис Google, своего CDN с логотипами у MOEX нет
+    return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else None
+
+
+def build_stocks():
+    data = http_json(f"{MOEX_SHARES}?iss.meta=off&iss.only=securities,marketdata", timeout=25)
+    sec_cols = data["securities"]["columns"]
+    mkt_cols = data["marketdata"]["columns"]
+    mkt = {row[mkt_cols.index("SECID")]: dict(zip(mkt_cols, row)) for row in data["marketdata"]["data"]}
+    items = []
+    for row in data["securities"]["data"]:
+        s = dict(zip(sec_cols, row))
+        # 1 — обыкновенные, 2 — привилегированные; остальное — паи, ETF и расписки.
+        if str(s.get("SECTYPE")) not in MOEX_SHARE_TYPES:
+            continue
+        ticker = s.get("SECID")
+        if not ticker:
+            continue
+        m = mkt.get(ticker) or {}
+        prev = _num(s.get("PREVPRICE"))
+        price = _num(m.get("LAST")) or _num(m.get("LCURRENTPRICE")) or _num(m.get("MARKETPRICE")) or prev
+        if not price:
+            continue
+        change = _num(m.get("LASTTOPREVPRICE"))
+        if change is None and prev:
+            change = (price / prev - 1) * 100
+        items.append(
+            {
+                "id": ticker,
+                "ticker": ticker,
+                "symbol": ticker,
+                "name": s.get("SHORTNAME") or ticker,
+                "price": price,
+                "prev": prev,
+                "change24h": change,
+                "turnover": _num(m.get("VALTODAY")),
+                "lot": _num(s.get("LOTSIZE")) or 1,
+                "logo": _stock_logo(ticker),
+                "buyLinks": [
+                    {"label": label, "url": url.format(ticker.lower())}
+                    for label, url in STOCK_BROKERS
+                ],
+            }
+        )
+    if not items:
+        raise RuntimeError("MOEX не вернул котировки акций")
+    items.sort(key=lambda x: x.get("turnover") or 0, reverse=True)
+    return {"items": items, "provider": "MOEX"}
+
+
 # ---------------------------------------------------------------- fx (ЦБ РФ)
 def build_fx():
     try:
@@ -780,6 +859,40 @@ def _crypto_history(cg_id, symbol, range_name):
     return points
 
 
+def _stock_history(ticker, range_name):
+    interval = {"1d": 10, "7d": 60}.get(range_name, 24)
+    fetch_days = 3 if interval == 10 else 10 if interval == 60 else _range_days(range_name) + 5
+    today = datetime.now(MSK).date()
+    start = today - timedelta(days=fetch_days)
+    rows = []
+    # MOEX отдаёт максимум 500 свечей от начала окна — для длинных диапазонов дочитываем страницами.
+    for _ in range(4):
+        data = http_json(
+            f"{MOEX_CANDLES.format(ticker)}?iss.meta=off&interval={interval}&from={start:%Y-%m-%d}",
+            timeout=25,
+        )
+        chunk = data.get("candles", {}).get("data") or []
+        rows.extend(chunk)
+        if len(chunk) < 500:
+            break
+        last_day = str(chunk[-1][6])[:10]
+        start = datetime.strptime(last_day, "%Y-%m-%d").date() + timedelta(days=1)
+        if start >= today:
+            break
+    points = []
+    for row in rows:
+        try:
+            stamp = str(row[6]).replace(" ", "T")
+            close = float(row[1])
+        except (TypeError, ValueError, IndexError):
+            continue
+        if close > 0:
+            points.append({"t": stamp, "c": round(close, 2)})
+    if range_name in ("1d", "7d"):
+        points = _slice_history(points, range_name)
+    return points
+
+
 HISTORY_DIR = os.path.join(BUNDLED_CACHE_DIR, "history")
 
 
@@ -819,6 +932,8 @@ def _history_points(kind, asset_id, range_name):
         if kind == "crypto":
             coin = next((item for item in COINS if item[0] == asset_id), None)
             points = _crypto_history(coin[0], coin[2], range_name) if coin else []
+        elif kind == "stock":
+            points = _stock_history(asset_id, range_name)
         elif kind == "metal":
             points = _metal_history(asset_id, range_name)
         else:
@@ -887,6 +1002,14 @@ def api_history(params):
             raise ValueError("История доступна для USD, EUR, CNY и GBP")
         symbol = name = asset_id
         unit, base_source = "RUB", "ЦБ РФ"
+    elif kind == "stock":
+        stocks, _ = _safe_source("stocks", 900, build_stocks)
+        item = next((x for x in (stocks or {}).get("items", []) if x["id"] == asset_id), None)
+        if not item:
+            raise ValueError("Актив не найден")
+        symbol = asset_id
+        name = (item or {}).get("name") or asset_id
+        unit, base_source = "RUB", "MOEX"
     else:
         raise ValueError("Неизвестный тип актива")
     points, used = _history_points(kind, asset_id, range_name)
@@ -1206,15 +1329,17 @@ def api_market(force: bool = False, fx_only: bool = False):
         fx, fx_meta = source("fx", 900, build_fx, force=force)
         return {"fx": _fx_block(fx, fx_meta), "serverTime": now_msk()}
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         crypto_future = pool.submit(source, "crypto", 3600, build_crypto, force)
         metals_future = pool.submit(source, "metals", 3600, build_metals, force)
         fx_future = pool.submit(source, "fx", 900, build_fx, force)
         key_future = pool.submit(source, "key_rate", 21600, build_key_rate)
+        stocks_future = pool.submit(_safe_source, "stocks", 900, build_stocks, force)
         crypto, crypto_meta = crypto_future.result()
         metals, metals_meta = metals_future.result()
         fx, fx_meta = fx_future.result()
         key_rate, key_meta = key_future.result()
+        stocks, stocks_meta = stocks_future.result()
 
     if crypto_meta.get("ok") is False:
         try:
@@ -1236,15 +1361,20 @@ def api_market(force: bool = False, fx_only: bool = False):
             "meta": crypto_meta,
         },
         "metals": {"items": (metals or {}).get("items", []), "meta": metals_meta},
+        "stocks": {
+            "items": (stocks or {}).get("items", []),
+            "provider": (stocks or {}).get("provider"),
+            "meta": stocks_meta,
+        },
         "fx": _fx_block(fx, fx_meta),
         "keyRate": {"value": (key_rate or {}).get("value"), "date": (key_rate or {}).get("date"), "meta": key_meta},
         "serverTime": now_msk(),
     }
 
 
-def _safe_source(name, ttl, builder):
+def _safe_source(name, ttl, builder, force=False):
     try:
-        return source(name, ttl, builder)
+        return source(name, ttl, builder, force=force)
     except Exception as exc:  # noqa: BLE001 - один источник не должен ронять выдачу
         return None, {"ok": False, "error": str(exc)[:300], "stale": False, "updated": None}
 
@@ -2088,6 +2218,11 @@ def _forecast_factors(market, kind, item):
         gold = next((_num_or_none(x.get("price")) for x in metals if x.get("code") == "XAU"), None)
         silver = next((_num_or_none(x.get("price")) for x in metals if x.get("code") == "XAG"), None)
         factors["goldSilverRatio"] = round(gold / silver, 2) if gold and silver else None
+    elif kind == "stock":
+        stocks = (market.get("stocks") or {}).get("items") or []
+        breadth = [_num_or_none(x.get("change24h")) for x in stocks]
+        breadth = [value for value in breadth if value is not None]
+        factors["marketBreadthPct"] = round(_mean(breadth), 2) if breadth else None
     else:
         cross = [
             _num_or_none(x.get("change24h"))
@@ -2104,7 +2239,7 @@ def _factor_text(factors):
         "keyRate": ("ключевая ставка", "%"),
         "usdRub": ("USD/RUB", ""),
         "change24hPct": ("изменение за 24ч", "%"),
-        "marketBreadthPct": ("средняя динамика крипторынка", "%"),
+        "marketBreadthPct": ("средняя динамика рынка", "%"),
         "btcChange24hPct": ("BTC за 24ч", "%"),
         "volumeUsd": ("объём 24ч", "usd"),
         "goldSilverRatio": ("золото/серебро", ""),
@@ -2133,8 +2268,8 @@ def api_forecast(payload):
         raise ValueError("Некорректный запрос")
     kind = str(payload.get("kind") or "").strip()
     asset_id = str(payload.get("id") or "").strip()
-    if kind not in ("crypto", "metal", "fx"):
-        raise ValueError("Прогноз доступен для криптовалют, драгметаллов и валют")
+    if kind not in ("crypto", "metal", "fx", "stock"):
+        raise ValueError("Прогноз доступен для криптовалют, драгметаллов, валют и акций")
     if not asset_id:
         raise ValueError("Не выбран актив")
     market = api_market()
@@ -2151,11 +2286,17 @@ def api_forecast(payload):
         name = item.get("name") if item else None
         symbol = item.get("code") if item else None
         default_horizon = 30
-    else:
+    elif kind == "fx":
         item = next((x for x in market["fx"]["items"] if str(x.get("code")) == asset_id), None)
         unit = "RUB"
         name = item.get("name") if item else None
         symbol = item.get("code") if item else None
+        default_horizon = 30
+    else:
+        item = next((x for x in market["stocks"]["items"] if str(x.get("id")) == asset_id), None)
+        unit = "RUB"
+        name = item.get("name") if item else None
+        symbol = item.get("symbol") if item else None
         default_horizon = 30
     if not item:
         raise ValueError("Актив не найден")
