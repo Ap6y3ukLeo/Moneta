@@ -1931,6 +1931,20 @@ def api_realty():
     }
 
 
+REALTY_IMAGES = None
+
+
+def _local_offer_images(item_id):
+    global REALTY_IMAGES
+    if REALTY_IMAGES is None:
+        try:
+            with open(os.path.join(BUNDLED_CACHE_DIR, "realty_images.json"), encoding="utf-8") as fh:
+                REALTY_IMAGES = json.load(fh)
+        except Exception:
+            REALTY_IMAGES = {}
+    return REALTY_IMAGES.get(item_id) or []
+
+
 def _yandex_offer_images(offer_id):
     html = http_text(f"https://realty.yandex.ru/offer/{offer_id}/", timeout=35)
     marker = "window.INITIAL_STATE = "
@@ -1956,15 +1970,15 @@ def _yandex_offer_images(offer_id):
 
 def api_realty_photos(params):
     item_id = str((params or {}).get("id") or "").strip()
-    if not item_id.startswith("yandex:"):
-        return {"id": item_id, "images": []}
     hit = PHOTOS_MEM.get(item_id)
     if hit and hit["exp"] > time.time():
         return hit["value"]
-    try:
-        images = _yandex_offer_images(item_id.split(":", 1)[1])
-    except Exception:
-        images = []
+    images = _local_offer_images(item_id)
+    if not images and item_id.startswith("yandex:"):
+        try:
+            images = _yandex_offer_images(item_id.split(":", 1)[1])
+        except Exception:
+            images = []
     value = {"id": item_id, "images": images}
     if images:
         with LOCK:

@@ -1324,7 +1324,7 @@ function openRealty(id) {
   const sub = $('#realty-sub');
   if (!item || !dialog || !body) return;
   const rooms = item.rooms === 'Студия' ? 'Студия' : item.rooms ? `${item.rooms}-комн.` : 'Квартира';
-  realtyGallery = { id: item.id, images: item.img ? [realtyHiRes(item.img)] : [], index: 0 };
+  realtyGallery = { id: item.id, images: (Array.isArray(item.images) && item.images.length ? item.images : (item.img ? [item.img] : [])).map(realtyHiRes), index: 0 };
   if (title) title.textContent = item.title || rooms;
   if (sub) sub.textContent = [item.city, item.source].filter(Boolean).join(' · ');
   const details = [
@@ -1358,7 +1358,7 @@ function openRealty(id) {
     </div>`;
   if (!dialog.open) dialog.showModal();
   hydrateRealtyGeo(item);
-  if (item.id.startsWith('yandex:')) {
+  if (item.id.startsWith('yandex:') && realtyGallery.images.length < 2) {
     fetch(`/api/realty-photos?id=${encodeURIComponent(item.id)}`)
       .then((res) => res.json().catch(() => ({})))
       .then((data) => {

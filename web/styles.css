@@ -551,8 +551,6 @@ table.data th.num { text-align: right; }
 .re-img { display: block; position: relative; width: 100%; height: 148px; overflow: hidden; border: 0; padding: 0; text-align: left; cursor: pointer; background: linear-gradient(135deg, #e8faf5, #d7efe9); }
 .re-img img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s; }
 .re-card:hover .re-img img { transform: scale(1.03); }
-.re-img::after { content: '╨Я╨╛╨┤╤А╨╛╨▒╨╜╨╡╨╡'; position: absolute; z-index: 2; left: 50%; bottom: 10px; transform: translate(-50%, 4px); padding: 4px 9px; border-radius: 7px; background: rgba(28,40,74,.88); color: #fff; font-size: 9.5px; font-weight: 600; opacity: 0; transition: opacity .15s, transform .15s; }
-.re-img:hover::after, .re-img:focus-visible::after { opacity: 1; transform: translate(-50%, 0); }
 .re-city {
   position: absolute; top: 10px; left: 10px; padding: 3px 8px; border-radius: 7px;
   background: rgba(255,255,255,.93); font-size: 9px; font-weight: 700; color: var(--navy);
@@ -1087,7 +1085,7 @@ body:has(dialog[open]) { overflow: hidden; }
 .realty-photo-wrap { cursor: zoom-in; }
 .geo-map-wrap { position: relative; }
 .geo-expand {
-  position: absolute; right: 12px; top: 12px; z-index: 3;
+  position: absolute; left: 12px; bottom: 36px; z-index: 3;
   display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px;
   border: 1px solid rgba(255, 255, 255, .9); border-radius: 10px;
   background: rgba(255, 255, 255, .92); color: var(--navy);
