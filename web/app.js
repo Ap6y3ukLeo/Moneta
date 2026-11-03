@@ -3,7 +3,7 @@
 /* ------------------------------------------------------------------ utils */
 const $ = (sel, el = document) => el.querySelector(sel);
 const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
-const PALETTE = ['#1e5a44', '#8c6a3f', '#2f4a6b', '#8a4b3a', '#6b6a5e', '#3e5c58', '#a8874f', '#7a6a8a'];
+const PALETTE = ['#14d1a3', '#3d7bff', '#ffd54f', '#8b5cf6', '#ff7a59', '#1c284a', '#2dc7d9', '#a3e635'];
 const YEAR = 365.25 * 864e5;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icon = (name, cls = '') => `<svg class="ic ${cls}"><use href="#i-${name}"/></svg>`;
@@ -543,7 +543,7 @@ function homePage() {
               ${chg(btc.change24h)}
             </div>
             <div class="muted" style="font-size:11px">BTC · $${price(btc.price)}</div>
-            <div class="spark-wrap">${sparkline(btc.spark, btc.change24h >= 0 ? '#1e6e4e' : '#b4453a', 220, 48)}</div>` : '<div class="muted">Нет данных</div>'}
+            <div class="spark-wrap">${sparkline(btc.spark, btc.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 48)}</div>` : '<div class="muted">Нет данных</div>'}
           <div class="card-foot"><a class="link-more" href="#/crypto">Подробнее ${icon('arrow')}</a>${btc?.tradeUrl ? `<a class="link-more" href="${esc(btc.tradeUrl)}" target="_blank" rel="noopener">Купить BTC ${icon('ext')}</a>` : ''}</div>
         </article>
 
@@ -572,7 +572,7 @@ function homePage() {
                 <span class="price">${money(m.price)}</span><span class="chg">${chg(m.change24h)}</span>
               </div>` : '').join('')}
           </div>
-          <div class="spark-wrap">${xau ? sparkline(xau.spark, xau.change24h >= 0 ? '#1e6e4e' : '#b4453a', 220, 42) : ''}</div>
+          <div class="spark-wrap">${xau ? sparkline(xau.spark, xau.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 42) : ''}</div>
           <div class="card-foot"><a class="link-more" href="#/metals">Подробнее ${icon('arrow')}</a><a class="chev-link" href="#/metals">${icon('chev')}</a></div>
         </article>
 
@@ -584,7 +584,7 @@ function homePage() {
           ${v.rows.length ? `
             <div class="metric-big">${money(v.value)}</div>
             <div class="muted" style="font-size:11.5px">вложено ${money(v.invested)} · ${chg(v.changePct)} за сутки</div>
-            <div style="display:flex;height:6px;border-radius:0;overflow:hidden;margin:12px 0 8px;background:#e7e5dd">
+            <div style="display:flex;height:6px;border-radius:0;overflow:hidden;margin:12px 0 8px;background:#eef4f3">
               ${v.rows.slice(0, 5).map((r, i) => `<span style="width:${(r.cur / (v.value || 1)) * 100}%;background:${PALETTE[i % PALETTE.length]}"></span>`).join('')}
             </div>
             <div class="mini-rows">${v.rows.slice(0, 2).map((r) => `<div class="mini-row"><span class="name">${esc(r.name)}</span><span class="price">${money(r.cur)}</span><span class="chg">${chg(r.pnlPct)}</span></div>`).join('')}</div>
@@ -673,7 +673,7 @@ function cryptoPage() {
             <td><div class="asset-cell">${cryptoIcon(c)}<span class="txt"><b>${esc(c.name)}</b><small>${esc(c.symbol)} · $${price(c.price)}</small></span></div></td>
             <td class="num"><b>${money(rubPrice)}</b></td>
             <td class="num">${chg(c.change24h)}</td>
-            <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#1e6e4e' : '#b4453a', 120, 34)}</button></td>
+            <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button></td>
             <td class="num muted">${money(c.volume ? rub(c.volume) : null, 0)}</td>
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
@@ -706,7 +706,7 @@ function metalsPage() {
       <div class="price">${money(m.price)}<small> /г</small></div>
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
       <div class="chg">${chg(m.change24h)} <span class="muted">за день</span></div>
-      <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#1e6e4e' : '#b4453a', 240, 38)}</button>
+      <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}</button>
       <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-chart="metal:${esc(m.id)}" style="border:0;background:none;padding:0">График ${icon('chart')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
     </article>`).join('')}
   </div>
@@ -1274,7 +1274,7 @@ function portfolioPage() {
     <div class="card alloc">
       <div class="rail-title"><h3>Структура</h3><span class="pill pill--mint">${v.rows.length} поз.</span></div>
       <div class="donut-wrap">
-        <div class="donut" style="background:conic-gradient(${stops || '#e7e5dd 0 100%'})"></div>
+        <div class="donut" style="background:conic-gradient(${stops || '#eef4f3 0 100%'})"></div>
         <div class="donut-center"><b>${money(v.value)}</b><span>всего</span></div>
       </div>
       <div class="legend">
@@ -1896,8 +1896,8 @@ function chartSvg(all) {
   }
   for (const item of fc) forecastPoints.push({ index: item.index, c: Number(item.point.c) });
   const direction = chartState.forecast?.direction;
-  const color = direction === 'down' ? '#b4453a' : direction === 'up' ? '#1e6e4e' : '#17181a';
-  const fill = direction === 'down' ? '#fbf0ed' : direction === 'up' ? '#e9efe8' : '#e9ecef';
+  const color = direction === 'down' ? '#e8564b' : direction === 'up' ? '#0fa97d' : '#17181a';
+  const fill = direction === 'down' ? '#fbf0ed' : direction === 'up' ? '#e8faf5' : '#eef2f8';
   let forecastPath = '', bandPoly = '', forecastEdges = '';
   if (forecastPoints.length >= 2) {
     forecastPath = forecastPoints.map((item, index) => `${index ? 'L' : 'M'}${x(item.index).toFixed(1)} ${y(item.c).toFixed(1)}`).join(' ');
@@ -1912,24 +1912,24 @@ function chartSvg(all) {
   }
   const grid = [0.25, 0.5, 0.75].map((part) => {
     const gy = padT + part * (height - padT - padB);
-    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e1ded5"/>`;
+    return `<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${width - padR}" y2="${gy.toFixed(1)}" stroke="#e7eef1"/>`;
   }).join('');
   let cross = '', tip = '';
   if (chartState.hover != null && chartState.hover >= start && chartState.hover <= end && all[chartState.hover]) {
     const hover = all[chartState.hover];
     const hx = x(chartState.hover);
     const hy = y(Number(hover.c));
-    cross = `<line x1="${hx.toFixed(1)}" y1="${padT}" x2="${hx.toFixed(1)}" y2="${height - padB}" stroke="#8a887f" stroke-dasharray="3 4"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" fill="${hover.forecast ? color : '#3f3f3b'}"/>`;
+    cross = `<line x1="${hx.toFixed(1)}" y1="${padT}" x2="${hx.toFixed(1)}" y2="${height - padB}" stroke="#9fb0c3" stroke-dasharray="3 4"/><circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="3.5" fill="${hover.forecast ? color : '#40536a'}"/>`;
     tip = `<div class="chart-tip" style="left:${(hx / width * 100).toFixed(2)}%;top:8px">${esc(chartLongDate(hover.t))}<br>${esc(fmtForecast(hover.c, chartState.unit))} · ${hover.forecast ? 'прогноз' : 'история'}</div>`;
   }
   return `<svg class="chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Интерактивный график ${esc(chartState.name)}">
     ${grid}
     ${histArea ? `<path d="${histArea}" fill="${fill}" opacity=".65"/>` : ''}
-    ${histPath ? `<path d="${histPath}" fill="none" stroke="#3f3f3b" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+    ${histPath ? `<path d="${histPath}" fill="none" stroke="#40536a" stroke-width="2.1" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
     ${bandPoly ? `<polygon points="${bandPoly}" fill="${color}" opacity=".14"/>` : ''}
     ${forecastEdges}
     ${forecastPath ? `<path d="${forecastPath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-    ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#d8d5cb" stroke-dasharray="3 4"/>` : ''}
+    ${boundaryVisible ? `<line x1="${x(boundary)}" y1="${padT}" x2="${x(boundary)}" y2="${height - padB}" stroke="#cfd8e3" stroke-dasharray="3 4"/>` : ''}
     ${cross}
     <text x="${padL - 8}" y="${padT}" text-anchor="end" class="chart-label">${esc(fmtForecast(max, chartState.unit))}</text>
     <text x="${padL - 8}" y="${height - padB}" text-anchor="end" class="chart-label">${esc(fmtForecast(min, chartState.unit))}</text>
