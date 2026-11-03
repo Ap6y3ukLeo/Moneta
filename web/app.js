@@ -914,16 +914,98 @@ function openDeposit(id) {
     <div class="deposit-detail-rate"><b>${num(d.rate, 2)}%</b><span>годовых</span></div>
     <div class="deposit-detail-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
     ${d.note ? `<p class="deposit-note">${esc(d.note)}</p>` : ''}
-    <div class="dialog-actions deposit-actions">
-      <button class="btn" type="button" data-add-deposit="${esc(d.id)}">В портфель</button>
-      ${d.url ? `<a class="btn btn--ghost" href="${esc(d.url)}" target="_blank" rel="noopener">Условия ${icon('ext')}</a>` : ''}
-      <button class="btn btn--ghost" type="button" data-action="close-deposit">Закрыть</button>
+    <div class="dialog-actions dialog-actions--single">
+      ${d.url
+        ? `<a class="btn btn--block" href="${esc(d.url)}" target="_blank" rel="noopener">Оформить вклад ${icon('ext')}</a>`
+        : `<button class="btn btn--block" type="button" data-add-deposit="${esc(d.id)}">Добавить в портфель</button>`}
     </div>
     <p class="dialog-hint">Ставка и доход зависят от условий банка. Проверьте сумму, срок и способ выплаты процентов перед открытием.</p>`;
   if (!dialog.open) dialog.showModal();
 }
 
 /* ------------------------------------------------------------------ pages: realty */
+const GEO_CACHE_KEY = 'monetka:geo:v1';
+let geoMemory = (() => {
+  try { return JSON.parse(localStorage.getItem(GEO_CACHE_KEY)) || {}; } catch { return {}; }
+})();
+
+async function geocode(query) {
+  const key = String(query || '').toLowerCase().trim();
+  if (!key) return null;
+  if (geoMemory[key]) return geoMemory[key];
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7000);
+    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const point = data.features?.[0]?.geometry?.coordinates;
+    if (!Array.isArray(point)) return null;
+    const value = { lat: point[1], lon: point[0] };
+    geoMemory[key] = value;
+    try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(geoMemory)); } catch {}
+    return value;
+  } catch { return null; }
+}
+
+function distanceKm(a, b) {
+  if (!a || !b) return null;
+  const rad = (v) => (v * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(h));
+}
+
+function realtyFloor(title) {
+  const match = String(title || '').match(/(\d+)\s*\/\s*(\d+)\s*эт/);
+  return match ? `${match[1]}/${match[2]}` : '';
+}
+
+function hasStreetAddress(address, city) {
+  const value = String(address || '').replace(String(city || ''), '').trim();
+  return /\d|ул\.|улица|пр-т|просп|переулок|шоссе|бульвар|наб\.|площад|проезд/i.test(value);
+}
+
+function geoBlockHtml(item, point, center, exact) {
+  if (!point) {
+    return `<div class="geo-empty">Не удалось определить адрес на карте. <a href="${esc(item.url || '#')}" target="_blank" rel="noopener">Открыть источник ${icon('ext')}</a></div>`;
+  }
+  const padLat = 0.006;
+  const padLon = 0.01;
+  const bbox = [point.lon - padLon, point.lat - padLat, point.lon + padLon, point.lat + padLat].join('%2C');
+  const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${point.lat}%2C${point.lon}`;
+  const km = exact && center ? distanceKm(point, center) : null;
+  const minutes = km == null ? null : Math.max(5, Math.round((8 + (km / 18) * 60) / 5) * 5);
+  const route = km == null ? '' : `https://yandex.ru/maps/?rtext=${point.lat}%2C${point.lon}~${center.lat}%2C${center.lon}&rtt=mt`;
+  return `
+    <iframe class="geo-map" src="${src}" title="Карта: ${esc(item.address || item.city || 'объявление')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    <div class="geo-bar">
+      <div><span>До центра</span><b>${minutes == null ? '—' : `≈ ${minutes} мин`}</b></div>
+      <div><span>По прямой</span><b>${km == null ? '—' : `${num(km, 1)} км`}</b></div>
+      ${route ? `<a href="${route}" target="_blank" rel="noopener">Маршрут ${icon('ext')}</a>` : ''}
+    </div>
+    <p class="geo-note">${exact ? 'Время в пути — оценка для общественного транспорта, без пробок.' : 'В объявлении нет точного адреса — показан центр города.'}</p>`;
+}
+
+async function hydrateRealtyGeo(item) {
+  const box = $('#realty-geo');
+  if (!box) return;
+  const city = item.city || '';
+  const address = item.address || '';
+  const exact = hasStreetAddress(address, city);
+  const propertyQuery = exact
+    ? (city && !address.includes(city) ? `${address}, ${city}, Россия` : `${address}, Россия`)
+    : `${city || address}, Россия`;
+  const [point, center] = await Promise.all([
+    geocode(propertyQuery),
+    geocode(`${city || address}, Россия`),
+  ]);
+  if (realtyGeoId !== item.id || !box.isConnected) return;
+  box.innerHTML = geoBlockHtml(item, point, center, exact);
+}
+
 function realtyRowsHtml() {
   let items = realtyList();
   if (S.re.q) {
@@ -944,9 +1026,9 @@ function realtyRowsHtml() {
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
     <div class="re-img">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
-      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}</b><span class="re-price">${money(r.price)}</span></div>
+      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
-      <div class="re-meta">${[r.metro, r.district].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
+      <div class="re-meta">${[r.metro, r.district, r.sub].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
       <div class="re-foot"><span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
     </div>
   </article>`).join('')}</div>`;
@@ -1070,6 +1152,7 @@ function realtyPage() {
 }
 
 let realtyGallery = { id: '', images: [], index: 0 };
+let realtyGeoId = '';
 
 function realtyHiRes(url) {
   return String(url || '')
@@ -1112,8 +1195,11 @@ function openRealty(id) {
     ['Метро', item.metro],
     ['Комнат', item.rooms === 'Студия' ? 'Студия' : item.rooms],
     ['Площадь', item.area ? `${num(item.area, 1)} м²` : ''],
+    ['Этаж', realtyFloor(item.title)],
     ['Тип', item.sub],
+    ['Источник', item.source],
   ].filter(([, value]) => value && value !== '—');
+  realtyGeoId = item.id;
   body.innerHTML = `
     <div id="realty-gallery">${realtyGalleryHtml()}</div>
     <div class="realty-price-row">
@@ -1121,13 +1207,14 @@ function openRealty(id) {
       <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
     </div>
     <div class="realty-address">${esc(item.address || item.city || '')}</div>
+    <div id="realty-geo" class="realty-geo"><div class="geo-loading"><span class="loader"></span>Определяем адрес на карте…</div></div>
     <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
-    <div class="realty-actions">
-      ${item.url ? `<a class="btn btn--ghost btn--sm" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
-      <button class="btn btn--sm" type="button" data-action="close-realty">Закрыть</button>
+    <div class="realty-actions realty-actions--single">
+      ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
     </div>
     <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>`;
   if (!dialog.open) dialog.showModal();
+  hydrateRealtyGeo(item);
   if (item.id.startsWith('yandex:')) {
     fetch(`/api/realty-photos?id=${encodeURIComponent(item.id)}`)
       .then((res) => res.json().catch(() => ({})))
