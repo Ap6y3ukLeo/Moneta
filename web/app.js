@@ -169,6 +169,57 @@ function savePortfolio() {
 function saveProfiles() {
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(S.profiles)); } catch { /* ignore */ }
 }
+
+const HOME_CARDS = {
+  deposits: { label: 'Вклады' },
+  portfolio: { label: 'Портфель' },
+  crypto: { label: 'Криптовалюта' },
+  realty: { label: 'Недвижимость' },
+  metals: { label: 'Драгметаллы' },
+  fx: { label: 'Валюта' },
+  stocks: { label: 'Акции' },
+  summary: { label: 'Сводка' },
+};
+const DEFAULT_HOME = ['deposits', 'portfolio', 'crypto', 'realty', 'summary'];
+const HOME_PREFIX = 'monetka:home:v1:';
+
+function homeSlots() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(HOME_PREFIX + activeProfile().id) || 'null'); } catch { saved = null; }
+  if (!Array.isArray(saved)) return [...DEFAULT_HOME];
+  return [...new Set(saved.filter((id) => HOME_CARDS[id]))];
+}
+
+function saveHomeSlots(list) {
+  try { localStorage.setItem(HOME_PREFIX + activeProfile().id, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
+function renderHomeTools() {
+  const menu = $('#home-add-menu');
+  if (!menu) return;
+  const active = homeSlots();
+  const missing = Object.entries(HOME_CARDS).filter(([id]) => !active.includes(id));
+  menu.innerHTML = (missing.length
+    ? missing.map(([id, card]) => `<button type="button" data-add-home="${id}">${icon('plus')} ${card.label}</button>`).join('')
+    : '<span class="add-card-empty">Все карточки уже на главной</span>')
+    + '<button type="button" class="add-card-reset" data-home-reset>Вернуть стандартный набор</button>';
+}
+
+function applyHomeLayout() {
+  const bento = $('.bento');
+  if (!bento) return;
+  const cards = new Map([...bento.querySelectorAll('[data-home-card]')].map((card) => [card.dataset.homeCard, card]));
+  const active = homeSlots().filter((id) => cards.has(id));
+  cards.forEach((card) => { card.hidden = true; });
+  active.forEach((id) => {
+    const card = cards.get(id);
+    card.hidden = false;
+    bento.appendChild(card);
+  });
+  bento.classList.toggle('is-empty', !active.length);
+  renderHomeTools();
+}
+
 function usdRate() {
   return (S.market?.fx?.items || []).find((i) => i.code === 'USD')?.value || 0;
 }
@@ -439,11 +490,15 @@ function homePage() {
   const { crypto, metals, fx } = S.market;
   const usd = fx.items.find((i) => i.code === 'USD');
   const eur = fx.items.find((i) => i.code === 'EUR');
+  const cny = fx.items.find((i) => i.code === 'CNY');
   const xau = metals.items.find((m) => m.code === 'XAU');
+  const xag = metals.items.find((m) => m.code === 'XAG');
+  const xpt = metals.items.find((m) => m.code === 'XPT');
   const keyRate = S.deposits?.keyRate?.value;
   const btc = crypto.items[0];
   const eth = crypto.items.find((c) => c.symbol === 'ETH');
   const sol = crypto.items.find((c) => c.symbol === 'SOL');
+  const topStocks = [...stockList()].sort((a, b) => (b.turnover || 0) - (a.turnover || 0)).slice(0, 2);
   const topDep = bestDeposit();
   const depP = topDep ? Math.max(8, Math.min(100, (topDep.rate / 30) * 100)) : 0;
   const msk = S.realty?.stats?.moscow;
@@ -455,6 +510,10 @@ function homePage() {
   if (xau) aiNotes.push(`Золото ${chg(xau.change24h)} за день, <b>${money(xau.price)}</b>/г.`);
   if (btc) aiNotes.push(`BTC ${chg(btc.change24h)} за сутки, <b>${money(rub(btc.price))}</b>.`);
   if (!aiNotes.length && bestCrypto) aiNotes.push(`Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`);
+  const tools = `<div class="bento-tools">
+    <button class="bento-grip" type="button" data-home-drag aria-label="Перетащить карточку" title="Перетащить">⠿</button>
+    <button class="bento-remove" type="button" data-remove-home aria-label="Убрать карточку" title="Убрать">${icon('close')}</button>
+  </div>`;
 
   return `
   ${sourceWarning()}
@@ -493,8 +552,17 @@ function homePage() {
     </div>
   </section>
 
+  <div class="home-tools">
+    <span class="home-tools-hint">Перетащите карточки за ⠿ — набор сохраняется</span>
+    <details class="add-card">
+      <summary class="btn btn--ghost btn--sm">${icon('plus')} Карточка</summary>
+      <div class="add-card-menu" id="home-add-menu"></div>
+    </details>
+  </div>
+
   <section class="bento" aria-label="Главное на рынках">
-    <a class="bento-card bento-card--deposit card" href="#/deposits">
+    <article class="bento-card bento-card--deposit card card--click" data-home-card="deposits" data-go="#/deposits" tabindex="0" role="link">
+      ${tools}
       <header class="bento-head">
         <span class="bento-label">${icon('bank')} Вклады</span>
         <span class="bento-meta">${ruPlural(depositList().length, 'предложение', 'предложения', 'предложений')}</span>
@@ -515,9 +583,10 @@ function homePage() {
         </div>
       </div>
       <footer class="bento-foot"><span>Сравнить все</span>${icon('arrow')}</footer>
-    </a>
+    </article>
 
-    <a class="bento-card bento-card--portfolio card" href="#/portfolio">
+    <article class="bento-card bento-card--portfolio card card--click" data-home-card="portfolio" data-go="#/portfolio" tabindex="0" role="link">
+      ${tools}
       <header class="bento-head">
         <span class="bento-label">${icon('wallet')} Портфель</span>
         <span class="bento-meta">${v.rows.length ? ruPlural(v.rows.length, 'позиция', 'позиции', 'позиций') : 'не создан'}</span>
@@ -535,9 +604,10 @@ function homePage() {
         <div class="bento-note">Вклады, металлы, валюта и крипта — в одном расчёте</div>
       `}
       <footer class="bento-foot"><span>${v.rows.length ? 'Открыть портфель' : 'Собрать портфель'}</span>${icon('arrow')}</footer>
-    </a>
+    </article>
 
-    <a class="bento-card bento-card--crypto card" href="#/crypto">
+    <article class="bento-card bento-card--crypto card card--click" data-home-card="crypto" data-go="#/crypto" tabindex="0" role="link">
+      ${tools}
       <header class="bento-head">
         <span class="bento-label">${icon('crypto')} Криптовалюта</span>
         <span class="bento-meta">Bybit · 24ч</span>
@@ -554,9 +624,10 @@ function homePage() {
         </div>
       ` : '<div class="bento-delta muted">Нет данных</div>'}
       <footer class="bento-foot"><span>Все активы</span>${icon('arrow')}</footer>
-    </a>
+    </article>
 
-    <a class="bento-card bento-card--realty card" href="#/realty">
+    <article class="bento-card bento-card--realty card card--click" data-home-card="realty" data-go="#/realty" tabindex="0" role="link">
+      ${tools}
       <header class="bento-head">
         <span class="bento-label">${icon('building')} Недвижимость</span>
         <span class="bento-meta">${realtyList().length ? num(realtyList().length, 0) + ' объявл.' : 'Рынок'}</span>
@@ -568,18 +639,54 @@ function homePage() {
         ${russia ? `<div class="bento-note">Россия · медиана ${money(russia.median)} · ${num(russia.cities, 0)} городов</div>` : ''}
       ` : '<div class="bento-delta muted">Загружаем цены…</div>'}
       <footer class="bento-foot"><span>Смотреть объявления</span>${icon('arrow')}</footer>
-    </a>
+    </article>
 
-    <article class="bento-card bento-card--ai card">
+    <article class="bento-card bento-card--metals card card--click" data-home-card="metals" data-go="#/metals" tabindex="0" role="link">
+      ${tools}
       <header class="bento-head">
-        <span class="bento-label">${icon('spark')} AI-сводка</span>
+        <span class="bento-label">${icon('gold')} Драгметаллы</span>
+        <span class="bento-meta">ЦБ РФ · ₽/г</span>
+      </header>
+      <div class="mini-rows">
+        ${[[xau, 'Au'], [xag, 'Ag'], [xpt, 'Pt']].map(([m]) => m ? `<div class="mini-row">${metalIcon(m.code)}<span class="name">${esc(m.name)}</span><span class="price">${money(m.price)}</span><span class="chg">${chg(m.change24h)}</span></div>` : '').join('')}
+      </div>
+      <footer class="bento-foot"><span>Все металлы</span>${icon('arrow')}</footer>
+    </article>
+
+    <article class="bento-card bento-card--fx card card--click" data-home-card="fx" data-go="#/fx" tabindex="0" role="link">
+      ${tools}
+      <header class="bento-head">
+        <span class="bento-label">${icon('fx')} Валюта</span>
+        <span class="bento-meta">ЦБ РФ</span>
+      </header>
+      <div class="mini-rows">
+        ${[['USD', usd, '$'], ['EUR', eur, '€'], ['CNY', cny, '¥']].map(([code, f, sym]) => f ? `<div class="mini-row">${coin(sym, 'coin--silver')}<span class="name">${code}</span><span class="price">${num(f.value, 2)} ₽</span><span class="chg">${chg(f.change24h)}</span></div>` : '').join('')}
+      </div>
+      <footer class="bento-foot"><span>Все курсы</span>${icon('arrow')}</footer>
+    </article>
+
+    <article class="bento-card bento-card--stocks card card--click" data-home-card="stocks" data-go="#/stocks" tabindex="0" role="link">
+      ${tools}
+      <header class="bento-head">
+        <span class="bento-label">${icon('chart')} Акции</span>
+        <span class="bento-meta">MOEX · сегодня</span>
+      </header>
+      <div class="mini-rows">
+        ${topStocks.map((s) => `<div class="mini-row">${stockIcon(s)}<span class="name">${esc(s.name)}</span><span class="price">${money(s.price)}</span><span class="chg">${chg(s.change24h)}</span></div>`).join('') || '<div class="muted">Нет данных</div>'}
+      </div>
+      <footer class="bento-foot"><span>Все бумаги</span>${icon('arrow')}</footer>
+    </article>
+
+    <article class="bento-card bento-card--ai card" data-home-card="summary">
+      ${tools}
+      <header class="bento-head">
+        <span class="bento-label">${icon('spark')} Сводка</span>
         <span class="bento-meta">live</span>
       </header>
-      <div class="ai-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
       <div class="ai-notes">
         ${aiNotes.map((n) => `<div class="ai-note">${icon('spark')}<span>${n}</span></div>`).join('')}
       </div>
-      <footer class="bento-foot"><button class="link-more" type="button" data-action="ai-open">Спросить нейросеть ${icon('arrow')}</button></footer>
+      <footer class="bento-foot"><button class="link-more" type="button" data-action="ai-open">Спросить ${icon('arrow')}</button></footer>
     </article>
   </section>`;
 }
@@ -592,7 +699,7 @@ function cryptoPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Криптовалюта</h1><p>Цены Bybit в рублях по курсу ЦБ РФ. Нажмите на строку — откроются график, история и сценарий. «Купить» ведёт на спотовую пару.</p></div>
+    <div><h1>Криптовалюта</h1></div>
     <div class="head-meta">${sourcePill(provider, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -612,7 +719,7 @@ function cryptoPage() {
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
               <button class="icon-btn" data-add-crypto="${esc(c.id)}" title="В портфель" aria-label="Добавить ${esc(c.name)} в портфель">${icon('plus')}</button>
-              <button class="icon-btn" data-chart="crypto:${esc(c.id)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(c.name)}">${icon('chart')}</button>
+              <button class="icon-btn" data-chart="crypto:${esc(c.id)}" title="График" aria-label="График ${esc(c.name)}">${icon('chart')}</button>
             </div></td>
           </tr>`;
         }).join('')}
@@ -631,7 +738,7 @@ function metalsPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Драгметаллы</h1><p>Учётные цены ЦБ РФ: рубли за грамм, унция и динамика за день. Нажмите на карточку — откроются график и сценарий.</p></div>
+    <div><h1>Драгметаллы</h1></div>
     <div class="head-meta">${sourcePill('ЦБ РФ · ' + date, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="metal-cards">
@@ -656,7 +763,7 @@ function metalsPage() {
           <td class="num">$${num(m.ozUsd, 2)}</td>
           <td class="num">${chg(m.change24h)}</td>
           <td class="muted">ЦБ РФ, ${esc(m.date)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-chart="metal:${esc(m.id)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(m.name)}">${icon('chart')}</button></div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-chart="metal:${esc(m.id)}" title="График" aria-label="График ${esc(m.name)}">${icon('chart')}</button></div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -704,7 +811,7 @@ function stocksPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Акции</h1><p>Акции Московской биржи (TQBR): цена, изменение за день и оборот. Нажмите на строку — откроются график и брокеры, где можно купить бумагу.</p></div>
+    <div><h1>Акции</h1></div>
     <div class="head-meta">${sourcePill(provider, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   ${items.length ? `<div class="filters">
@@ -736,7 +843,7 @@ function fxPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Валюта</h1><p>Официальные курсы ЦБ РФ и биржевые котировки. Биржа обновляется каждые 15 минут, портфель считается по курсу ЦБ.</p></div>
+    <div><h1>Валюта</h1></div>
     <div class="head-meta">${sourcePill(fx.liveUpdated ? 'ЦБ РФ · биржа' : 'ЦБ РФ', liveMeta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
@@ -750,7 +857,7 @@ function fxPage() {
           <td class="num">${chg(f.change24h)}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График и AI-анализ" aria-label="График и AI-анализ ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График" aria-label="График ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -846,7 +953,7 @@ function depositsPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Вклады банков</h1><p>${ruPlural(items.length, 'предложение', 'предложения', 'предложений')} от ${banks} банков по вашей сумме. Укажите сумму и срок — покажем условия и доход по каждому вкладу.</p></div>
+    <div><h1>Вклады банков</h1></div>
     <div class="head-meta">
       ${keyRate ? `<span class="pill pill--mint">${icon('bank')} Ключевая ставка ${num(keyRate, 2)}%</span>` : ''}
       <button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button>
@@ -1024,7 +1131,7 @@ function realtyRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
-    <div class="re-img">${r.img ? `<img src="${esc(realtyThumb(r.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
+    <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
@@ -1098,7 +1205,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1><p>Средние цены по Москве и объявления со всей России: Яндекс.Недвижимость, Авито, Циан и БН.ру. Фильтруйте по городу и комнатности, ссылки ведут на первоисточник.</p></div>
+    <div><h1>Недвижимость</h1></div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 
@@ -1245,7 +1352,7 @@ function portfolioPage() {
   const v = valuation();
   if (!v.rows.length) {
     return `${sourceWarning()}
-    <div class="page-head"><div><h1>Портфель</h1><p>Один расчёт по крипте, валютам, металлам и вкладам — с пересчётом в рубли и доходностью.</p></div>
+    <div class="page-head"><div><h1>Портфель</h1></div>
       <div class="head-meta"><button class="btn" data-action="open-add">${icon('plus')} Добавить позицию</button><button class="btn btn--ghost" data-action="demo">Демо-портфель</button></div></div>
     <div class="card empty-card">
       <h3>Пока пусто</h3>
@@ -1271,7 +1378,7 @@ function portfolioPage() {
 
   return `${sourceWarning()}
   <div class="page-head">
-    <div><h1>Портфель</h1><p>Стоимость пересчитывается по текущим котировкам. Вклады — с капитализацией и налогом на проценты; валюта — по курсу ЦБ.</p></div>
+    <div><h1>Портфель</h1></div>
     <div class="head-meta">
       <button class="btn" data-action="open-add">${icon('plus')} Добавить</button>
       <button class="btn btn--ghost btn--sm" data-action="demo">Демо</button>
@@ -1344,7 +1451,7 @@ function portfolioPage() {
 function searchPage(params) {
   const q = (params.get('q') || '').trim();
   $('#search-input').value = q;
-  if (!q) return `<div class="page-head"><div><h1>Поиск</h1><p>Введите название актива, банка или валюты. Например: «биткоин», «золото», «Альфа», «USD».</p></div></div>`;
+  if (!q) return `<div class="page-head"><div><h1>Поиск</h1></div></div>`;
   const needle = q.toLowerCase();
   const found = [];
   cryptoList().forEach((c) => {
@@ -1364,7 +1471,7 @@ function searchPage(params) {
   });
 
   return `${sourceWarning()}
-  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1><p>Найдено ${found.length} ${found.length === 1 ? 'совпадение' : 'совпадений'} по всем рынкам.</p></div></div>
+  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1></div></div>
   <div class="card table-card">
     ${found.length ? `
     <div class="pos-row pos-row--head"><div>Инструмент</div><div class="num">Цена</div><div class="num">Изменение</div><div></div></div>
@@ -1514,6 +1621,7 @@ function render() {
 
   view.innerHTML = html;
   enhanceMotion();
+  if (page === 'home') applyHomeLayout();
 
   if (page === 'deposits' && params.get('calc')) navKey = 'calc';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
@@ -1857,7 +1965,7 @@ function fmtForecast(value, unit) {
 /* ------------------------------------------------------------------ interactive chart */
 const chartState = {
   seq: 0, kind: '', id: '', name: '', symbol: '', unit: '',
-  range: '1m', horizon: 30, points: [], forecast: null, showForecast: true,
+  range: '1m', horizon: 30, points: [], forecast: null, showForecast: false,
   view: { start: 0, end: 0 }, hover: null, dragging: false, drag: null,
   historyLoading: false, historyError: '', forecastLoading: false, forecastError: '',
 };
@@ -1902,19 +2010,13 @@ function chartToolbarHtml() {
   const ranges = chartState.kind === 'crypto' || chartState.kind === 'stock' ? ['1d', '7d', '1m', '3m', '1y', 'all'] : ['7d', '1m', '3m', '1y', 'all'];
   return `<div class="chart-toolbar">
     <div class="chart-ranges">${ranges.map((range) => `<button class="chart-tab${chartState.range === range ? ' is-active' : ''}" type="button" data-chart-range="${range}">${CHART_RANGE_LABELS[range]}</button>`).join('')}</div>
-    <div class="chart-ai-controls"><label class="chart-toggle"><input id="chart-ai-toggle" type="checkbox"${chartState.showForecast ? ' checked' : ''}><span>AI-прогноз</span></label><span class="chart-horizon-note">${chartState.horizon} дн.</span></div>
   </div>`;
 }
 
 function renderChartLegend() {
   const box = $('#chart-legend');
   if (!box) return;
-  let ai = '';
-  if (!chartState.showForecast) ai = '<span>AI-прогноз выключен</span>';
-  else if (chartState.forecastLoading) ai = '<span>AI-прогноз загружается…</span>';
-  else if (chartState.forecastError) ai = '<span>AI-прогноз недоступен</span>';
-  else if (chartState.forecast) ai = '<span><i class="legend-line legend-line--forecast"></i>базовый прогноз</span><span><i class="legend-band"></i>диапазон</span>';
-  box.innerHTML = `<span><i class="legend-line"></i>история</span>${ai}<span>вертикальная линия — сегодня</span>`;
+  box.innerHTML = '<span><i class="legend-line"></i>история</span>';
 }
 
 function renderChartToolbar() {
@@ -2021,9 +2123,8 @@ function updateChartSub() {
   if (!sub) return;
   const last = chartState.points[chartState.points.length - 1];
   const label = CHART_RANGE_LABELS[chartState.range] || chartState.range;
-  const ai = !chartState.showForecast ? 'AI выкл.' : chartState.forecastLoading ? 'AI загрузка…' : chartState.forecastError ? 'AI недоступен' : `AI ${chartState.horizon} дн.`;
   sub.textContent = last
-    ? `${label} · ${fmtForecast(last.c, chartState.unit)} · ${chartState.points.length} точек · ${ai}`
+    ? `${label} · ${fmtForecast(last.c, chartState.unit)} · ${chartState.points.length} точек`
     : 'Загружаем историю…';
 }
 
@@ -2193,20 +2294,20 @@ async function openChart(kind, id) {
   chartState.horizon = preferredHorizon('1m');
   chartState.points = [];
   chartState.forecast = null;
-  chartState.showForecast = true;
+  chartState.showForecast = false;
   chartState.view = { start: 0, end: 0 };
   chartState.hover = null;
   chartState.historyLoading = true;
   chartState.historyError = '';
-  chartState.forecastLoading = true;
+  chartState.forecastLoading = false;
   chartState.forecastError = '';
   if (title) title.textContent = `График · ${asset.name}`;
   if (sub) sub.textContent = 'Загружаем историю…';
-  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг · пунктир — сценарий</div>';
+  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг</div>';
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();
-  await Promise.allSettled([loadChartHistory(), loadChartForecast()]);
+  await loadChartHistory();
 }
 
 /* ------------------------------------------------------------------ events */
@@ -2235,6 +2336,38 @@ document.addEventListener('click', (e) => {
   const cityOption = e.target.closest('[data-city-option]');
   if (cityOption) { setRealtyCity(cityOption.dataset.cityOption); return; }
   if (!e.target.closest('#re-city-select')) closeCityPicker();
+
+  const addHome = e.target.closest('[data-add-home]');
+  if (addHome) {
+    const id = addHome.dataset.addHome;
+    const list = homeSlots();
+    if (HOME_CARDS[id] && !list.includes(id)) {
+      list.push(id);
+      saveHomeSlots(list);
+      applyHomeLayout();
+    }
+    const details = addHome.closest('details');
+    if (details) details.open = false;
+    return;
+  }
+  const removeHome = e.target.closest('[data-remove-home]');
+  if (removeHome) {
+    e.preventDefault();
+    e.stopPropagation();
+    const card = removeHome.closest('[data-home-card]');
+    if (card) saveHomeSlots(homeSlots().filter((id) => id !== card.dataset.homeCard));
+    applyHomeLayout();
+    return;
+  }
+  const resetHome = e.target.closest('[data-home-reset]');
+  if (resetHome) {
+    e.preventDefault();
+    saveHomeSlots(DEFAULT_HOME);
+    applyHomeLayout();
+    const details = resetHome.closest('details');
+    if (details) details.open = false;
+    return;
+  }
 
   const go = e.target.closest('[data-go]');
   if (go && !e.target.closest('a,button')) { location.hash = go.dataset.go; return; }
@@ -2279,20 +2412,9 @@ document.addEventListener('click', (e) => {
   }
   const rangeTrigger = e.target.closest('[data-chart-range]');
   if (rangeTrigger) {
-    const nextHorizon = preferredHorizon(rangeTrigger.dataset.chartRange);
-    const needsForecast = nextHorizon !== chartState.horizon || !chartState.forecast;
     chartState.range = rangeTrigger.dataset.chartRange;
-    chartState.horizon = nextHorizon;
-    if (needsForecast) {
-      chartState.forecast = null;
-      loadChartForecast();
-    }
+    chartState.horizon = preferredHorizon(rangeTrigger.dataset.chartRange);
     loadChartHistory();
-    return;
-  }
-  const chartRetry = e.target.closest('[data-chart-retry]');
-  if (chartRetry) {
-    loadChartForecast();
     return;
   }
   const del = e.target.closest('[data-del]');
@@ -2408,15 +2530,38 @@ $('#realty-dialog').addEventListener('click', (e) => {
 $('#deposit-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });
-document.addEventListener('change', (e) => {
-  if (e.target.id !== 'chart-ai-toggle') return;
-  chartState.showForecast = e.target.checked;
-  const all = chartAllPoints();
-  chartState.view = { start: 0, end: Math.max(1, all.length - 1) };
-  renderChartToolbar();
-  renderChartStage();
-  updateChartSub();
+document.addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest('[data-home-drag]');
+  if (!handle) return;
+  const card = handle.closest('[data-home-card]');
+  if (!card) return;
+  e.preventDefault();
+  card.classList.add('is-dragging');
+  document.body.classList.add('is-home-dragging');
+  window.__homeDrag = card;
 });
+document.addEventListener('pointermove', (e) => {
+  const card = window.__homeDrag;
+  if (!card) return;
+  e.preventDefault();
+  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.bento-card');
+  if (!target || target === card || target.hidden) return;
+  const rect = target.getBoundingClientRect();
+  const after = e.clientX > rect.left + rect.width / 2;
+  target.parentNode.insertBefore(card, after ? target.nextSibling : target);
+}, { passive: false });
+function endHomeDrag() {
+  const card = window.__homeDrag;
+  if (!card) return;
+  card.classList.remove('is-dragging');
+  document.body.classList.remove('is-home-dragging');
+  window.__homeDrag = null;
+  const bento = $('.bento');
+  if (bento) saveHomeSlots([...bento.querySelectorAll('.bento-card:not([hidden])')].map((el) => el.dataset.homeCard).filter(Boolean));
+}
+document.addEventListener('pointerup', endHomeDrag);
+document.addEventListener('pointercancel', endHomeDrag);
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.body.classList.remove('menu-open');

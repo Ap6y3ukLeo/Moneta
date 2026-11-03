@@ -1495,15 +1495,23 @@ def build_mirkvartir_stats():
 
 AVITO_URL = "https://www.avito.ru/rossiya/kvartiry/prodam"
 AVITO_PAGES = 3
-AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => ({
-  id: card.dataset.itemId,
-  title: card.querySelector('[itemprop="name"]')?.innerText,
-  url: card.querySelector('a[itemprop="url"]')?.href,
-  price: card.querySelector('[itemprop="price"]')?.content,
-  img: card.querySelector('img')?.src,
-  addr: card.querySelector('[data-marker="item-address"]')?.innerText,
-  text: card.innerText
-})))"""
+AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => {
+  const img = card.querySelector('img');
+  const srcset = img?.getAttribute('srcset') || '';
+  const best = srcset.split(',').map((part) => {
+    const [url, size] = part.trim().split(/\s+/);
+    return { url, w: parseInt(size, 10) || 0 };
+  }).sort((a, b) => b.w - a.w)[0];
+  return {
+    id: card.dataset.itemId,
+    title: card.querySelector('[itemprop="name"]')?.innerText,
+    url: card.querySelector('a[itemprop="url"]')?.href,
+    price: card.querySelector('[itemprop="price"]')?.content,
+    img: best?.url || img?.src || img?.currentSrc,
+    addr: card.querySelector('[data-marker="item-address"]')?.innerText,
+    text: card.innerText
+  };
+}))"""
 
 CIAN_URL = "https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=2"
 CIAN_PAGES = 20
