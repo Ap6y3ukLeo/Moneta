@@ -8,8 +8,8 @@
 <link rel="icon" href="logo.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20261103k">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Manrope:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css?v=20261103m">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
@@ -34,6 +34,7 @@
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"/></symbol>
 </svg>
 
 <div class="app">
@@ -168,6 +169,26 @@
   </div>
 </dialog>
 
+<dialog id="map-dialog" class="dialog map-dialog">
+  <div class="dialog-card map-card">
+    <div class="dialog-head">
+      <div><h2>Карта объекта</h2><p id="map-sub"></p></div>
+      <button class="icon-btn" type="button" data-action="close-map" aria-label="Закрыть карту"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+    <iframe id="map-frame" class="map-frame" title="Карта объекта" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+  </div>
+</dialog>
+
+<dialog id="photo-dialog" class="dialog photo-dialog">
+  <div class="photo-card">
+    <button class="photo-close" type="button" data-action="close-photo" aria-label="Закрыть фото"><svg class="ic"><use href="#i-close"/></svg></button>
+    <button class="photo-nav photo-prev" type="button" data-photo-prev aria-label="Предыдущее фото">‹</button>
+    <img id="photo-full" class="photo-full" alt="">
+    <button class="photo-nav photo-next" type="button" data-photo-next aria-label="Следующее фото">›</button>
+    <span class="photo-count" id="photo-count"></span>
+  </div>
+</dialog>
+
 <dialog id="deposit-dialog" class="dialog deposit-dialog">
   <div class="dialog-card deposit-card">
     <div class="dialog-head">
@@ -209,6 +230,6 @@
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=20261103k"></script>
+<script src="app.js?v=20261103m"></script>
 </body>
 </html>

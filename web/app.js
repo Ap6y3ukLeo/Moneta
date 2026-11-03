@@ -526,7 +526,6 @@ function homePage() {
         <a class="btn" href="#/portfolio">Открыть портфель ${icon('arrow')}</a>
         <a class="btn btn--ghost" href="#/deposits">Сравнить вклады</a>
       </div>
-      <div class="hero-source">${icon('shield')} ЦБ РФ · Bybit · MOEX · банки · Яндекс и Авито</div>
     </div>
     <div class="hero-figures">
       ${usd ? `<a class="hero-figure" href="#/fx">
@@ -553,7 +552,6 @@ function homePage() {
   </section>
 
   <div class="home-tools">
-    <span class="home-tools-hint">Перетащите карточки за ⠿ — набор сохраняется</span>
     <details class="add-card">
       <summary class="btn btn--ghost btn--sm">${icon('plus')} Карточка</summary>
       <div class="add-card-menu" id="home-add-menu"></div>
@@ -1075,7 +1073,7 @@ function hasStreetAddress(address, city) {
   return /\d|ул\.|улица|пр-т|просп|переулок|шоссе|бульвар|наб\.|площад|проезд/i.test(value);
 }
 
-function geoBlockHtml(item, point, center, exact) {
+function geoBlockHtml(item, point) {
   if (!point) {
     return `<div class="geo-empty">Не удалось определить адрес на карте. <a href="${esc(item.url || '#')}" target="_blank" rel="noopener">Открыть источник ${icon('ext')}</a></div>`;
   }
@@ -1083,11 +1081,18 @@ function geoBlockHtml(item, point, center, exact) {
   const padLon = 0.01;
   const bbox = [point.lon - padLon, point.lat - padLat, point.lon + padLon, point.lat + padLat].join('%2C');
   const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${point.lat}%2C${point.lon}`;
+  return `<div class="geo-map-wrap">
+    <iframe class="geo-map" src="${src}" title="Карта: ${esc(item.address || item.city || 'объявление')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+    <button class="geo-expand" type="button" data-map-open data-map-src="${esc(src)}" data-map-title="${esc(item.address || item.city || '')}">${icon('expand')} На всю карту</button>
+  </div>`;
+}
+
+function geoInfoHtml(item, point, center, exact) {
+  if (!point) return '<div class="geo-info-empty">Маршрут недоступен: адрес не определён.</div>';
   const km = exact && center ? distanceKm(point, center) : null;
   const minutes = km == null ? null : Math.max(5, Math.round((8 + (km / 18) * 60) / 5) * 5);
   const route = km == null ? '' : `https://yandex.ru/maps/?rtext=${point.lat}%2C${point.lon}~${center.lat}%2C${center.lon}&rtt=mt`;
   return `
-    <iframe class="geo-map" src="${src}" title="Карта: ${esc(item.address || item.city || 'объявление')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
     <div class="geo-bar">
       <div><span>До центра</span><b>${minutes == null ? '—' : `≈ ${minutes} мин`}</b></div>
       <div><span>По прямой</span><b>${km == null ? '—' : `${num(km, 1)} км`}</b></div>
@@ -1098,6 +1103,7 @@ function geoBlockHtml(item, point, center, exact) {
 
 async function hydrateRealtyGeo(item) {
   const box = $('#realty-geo');
+  const info = $('#realty-geo-info');
   if (!box) return;
   const city = item.city || '';
   const address = item.address || '';
@@ -1110,7 +1116,8 @@ async function hydrateRealtyGeo(item) {
     geocode(`${city || address}, Россия`),
   ]);
   if (realtyGeoId !== item.id || !box.isConnected) return;
-  box.innerHTML = geoBlockHtml(item, point, center, exact);
+  box.innerHTML = geoBlockHtml(item, point);
+  if (info) info.innerHTML = geoInfoHtml(item, point, center, exact);
 }
 
 function realtyRowsHtml() {
@@ -1279,7 +1286,7 @@ function realtyGalleryHtml() {
   if (!images.length) return '<div class="realty-photo-wrap"><div class="realty-photo-empty">Нет фото</div></div>';
   const index = Math.min(realtyGallery.index, images.length - 1);
   const lowRes = /img\.avito\.st/.test(images[index]);
-  return `<div class="realty-photo-wrap${lowRes ? ' is-lowres' : ''}"${lowRes ? ` style="--photo:url('${esc(images[index])}')"` : ''}>
+  return `<div class="realty-photo-wrap${lowRes ? ' is-lowres' : ''}"${lowRes ? ` style="--photo:url('${esc(images[index])}')"` : ''} data-photo-open tabindex="0" role="button" aria-label="Открыть фото на весь экран">
       <div class="realty-photo-empty">Нет фото</div>
       <img class="realty-photo" src="${esc(images[index])}" alt="" loading="eager" referrerpolicy="no-referrer" onerror="this.remove()">
       <span class="realty-photo-count">${index + 1} / ${images.length}</span>
@@ -1290,6 +1297,23 @@ function realtyGalleryHtml() {
 function renderRealtyGallery() {
   const box = $('#realty-gallery');
   if (box) box.innerHTML = realtyGalleryHtml();
+}
+
+function openPhoto(index = realtyGallery.index) {
+  const dialog = $('#photo-dialog');
+  const img = $('#photo-full');
+  if (!dialog || !img || !realtyGallery.images.length) return;
+  realtyGallery.index = Math.max(0, Math.min(index, realtyGallery.images.length - 1));
+  img.src = realtyGallery.images[realtyGallery.index];
+  const count = $('#photo-count');
+  if (count) count.textContent = `${realtyGallery.index + 1} / ${realtyGallery.images.length}`;
+  renderRealtyGallery();
+  if (!dialog.open) dialog.showModal();
+}
+
+function movePhoto(delta) {
+  if (!realtyGallery.images.length) return;
+  openPhoto((realtyGallery.index + delta + realtyGallery.images.length) % realtyGallery.images.length);
 }
 
 function openRealty(id) {
@@ -1325,6 +1349,7 @@ function openRealty(id) {
         <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
       </div>
       <div class="realty-address">${esc(item.address || item.city || '')}</div>
+      <div id="realty-geo-info" class="geo-info"><div class="geo-info-empty">Определяем маршрут…</div></div>
       <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
       <div class="realty-actions realty-actions--single">
         ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
@@ -2396,6 +2421,20 @@ document.addEventListener('click', (e) => {
     renderRealtyGallery();
     return;
   }
+  const photoOpen = e.target.closest('[data-photo-open]');
+  if (photoOpen) { openPhoto(); return; }
+  if (e.target.closest('[data-photo-prev]')) { movePhoto(-1); return; }
+  if (e.target.closest('[data-photo-next]')) { movePhoto(1); return; }
+  const mapOpen = e.target.closest('[data-map-open]');
+  if (mapOpen) {
+    const frame = $('#map-frame');
+    if (frame) frame.src = mapOpen.dataset.mapSrc;
+    const sub = $('#map-sub');
+    if (sub) sub.textContent = mapOpen.dataset.mapTitle || '';
+    const dialog = $('#map-dialog');
+    if (dialog && !dialog.open) dialog.showModal();
+    return;
+  }
   const realtyCard = e.target.closest('[data-realty]');
   if (realtyCard) {
     if (e.target.closest('a')) return;
@@ -2448,6 +2487,8 @@ document.addEventListener('click', (e) => {
   else if (action === 'close-profile') $('#profile-dialog').close();
   else if (action === 'close-forecast') $('#forecast-dialog').close();
   else if (action === 'close-realty') $('#realty-dialog').close();
+  else if (action === 'close-map') $('#map-dialog').close();
+  else if (action === 'close-photo') $('#photo-dialog').close();
   else if (action === 'close-deposit') $('#deposit-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
@@ -2527,6 +2568,12 @@ $('#add-dialog').addEventListener('close', () => { $('#form-error').textContent 
 $('#realty-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });
+$('#map-dialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+});
+$('#photo-dialog').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.currentTarget.close();
+});
 $('#deposit-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });
@@ -2536,6 +2583,16 @@ document.addEventListener('pointerdown', (e) => {
   const card = handle.closest('[data-home-card]');
   if (!card) return;
   e.preventDefault();
+  const rect = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.classList.add('home-drag-ghost');
+  ghost.style.width = `${rect.width}px`;
+  ghost.style.height = `${rect.height}px`;
+  ghost.style.left = `${rect.left}px`;
+  ghost.style.top = `${rect.top}px`;
+  document.body.appendChild(ghost);
+  window.__homeGhost = ghost;
+  window.__homeOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top };
   card.classList.add('is-dragging');
   document.body.classList.add('is-home-dragging');
   window.__homeDrag = card;
@@ -2544,6 +2601,12 @@ document.addEventListener('pointermove', (e) => {
   const card = window.__homeDrag;
   if (!card) return;
   e.preventDefault();
+  const ghost = window.__homeGhost;
+  const offset = window.__homeOffset;
+  if (ghost && offset) {
+    ghost.style.left = `${e.clientX - offset.x}px`;
+    ghost.style.top = `${e.clientY - offset.y}px`;
+  }
   const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('.bento-card');
   if (!target || target === card || target.hidden) return;
   const rect = target.getBoundingClientRect();
@@ -2555,6 +2618,9 @@ function endHomeDrag() {
   if (!card) return;
   card.classList.remove('is-dragging');
   document.body.classList.remove('is-home-dragging');
+  window.__homeGhost?.remove();
+  window.__homeGhost = null;
+  window.__homeOffset = null;
   window.__homeDrag = null;
   const bento = $('.bento');
   if (bento) saveHomeSlots([...bento.querySelectorAll('.bento-card:not([hidden])')].map((el) => el.dataset.homeCard).filter(Boolean));
@@ -2563,6 +2629,10 @@ document.addEventListener('pointerup', endHomeDrag);
 document.addEventListener('pointercancel', endHomeDrag);
 
 document.addEventListener('keydown', (e) => {
+  if ($('#photo-dialog')?.open) {
+    if (e.key === 'ArrowLeft') { movePhoto(-1); return; }
+    if (e.key === 'ArrowRight') { movePhoto(1); return; }
+  }
   if (e.key === 'Escape') {
     document.body.classList.remove('menu-open');
     closeCityPicker();
