@@ -460,6 +460,7 @@ def build_crypto():
         change = float(row.get("price24hPcnt") or 0) * 100
         if inverse:
             change = -change
+        spark = _bybit_spark(pair, inverse) or _snapshot_spark("crypto", cg_id)
         return {
             "id": cg_id,
             "symbol": sym,
@@ -468,7 +469,7 @@ def build_crypto():
             "change24h": change,
             "marketCap": None,
             "volume": float(row.get("turnover24h") or 0),
-            "spark": _bybit_spark(pair, inverse),
+            "spark": spark,
             "tradeUrl": "https://www.bybit.com/fiat/trade/onramp" if sym == "USDT" else f"https://www.bybit.com/trade/spot/{sym}/USDT",
         }
 
@@ -494,7 +495,7 @@ def build_crypto_fallback():
             "change24h": usd.get("percent_change_24h"),
             "marketCap": usd.get("market_cap"),
             "volume": usd.get("volume_24h"),
-            "spark": [],
+            "spark": _snapshot_spark("crypto", cg_id),
             "tradeUrl": "https://www.bybit.com/fiat/trade/onramp" if sym == "USDT" else f"https://www.bybit.com/trade/spot/{sym}/USDT",
         }
 
@@ -920,6 +921,11 @@ def _slice_history(points, range_name):
         if stamp >= cutoff:
             filtered.append(point)
     return filtered or points[-days:]
+
+
+def _snapshot_spark(kind, asset_id, range_name="7d", limit=60):
+    points = _slice_history(_history_snapshot(kind, asset_id), range_name)
+    return [round(float(point["c"]), 8) for point in points if point.get("c") is not None][-limit:]
 
 
 def _history_points(kind, asset_id, range_name):
