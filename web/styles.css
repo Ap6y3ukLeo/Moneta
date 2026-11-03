@@ -1325,3 +1325,53 @@ body::before {
   .geo-bar { grid-template-columns: 1fr 1fr; }
   .geo-bar a { grid-column: 1 / -1; }
 }
+
+/* Широкая карточка недвижимости: фото + карта слева, детали справа */
+.realty-dialog { width: min(1080px, calc(100vw - 32px)); }
+.realty-card {
+  max-height: calc(100vh - 28px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(20, 209, 163, .45) transparent;
+}
+.realty-card::-webkit-scrollbar { width: 8px; }
+.realty-card::-webkit-scrollbar-track { background: transparent; }
+.realty-card::-webkit-scrollbar-thumb {
+  background: rgba(20, 209, 163, .38);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 99px;
+}
+.realty-card::-webkit-scrollbar-thumb:hover { background: rgba(20, 209, 163, .62); background-clip: padding-box; }
+.realty-body { display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(330px, .78fr); gap: 20px; align-items: start; }
+.realty-media, .realty-info { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.realty-media .realty-photo-wrap { min-height: 0; max-height: none; height: clamp(280px, 46vh, 460px); }
+.realty-media .realty-photo { width: 100%; height: 100%; max-height: none; object-fit: cover; }
+.realty-media .geo-map { height: 240px; }
+.realty-info .realty-price { font-size: 31px; }
+.realty-info .realty-grid { grid-template-columns: 1fr 1fr; }
+.realty-info .realty-note { margin-top: auto; }
+@media (max-width: 900px) {
+  .realty-body { grid-template-columns: minmax(0, 1fr); }
+  .realty-media .realty-photo-wrap { height: 320px; }
+  .realty-media .geo-map { height: 220px; }
+}
+@media (max-width: 520px) {
+  .realty-media .realty-photo-wrap { height: 230px; }
+  .realty-info .realty-price { font-size: 26px; }
+}
+
+/* Avito отдаёт только квадратное превью 208px — не растягиваем его на всю ширину */
+.realty-photo-wrap { display: flex; align-items: center; justify-content: center; }
+.realty-photo-wrap.is-lowres::before {
+  content: ""; position: absolute; inset: -30px; z-index: 0;
+  background: var(--photo) center / cover no-repeat;
+  filter: blur(30px) saturate(1.05);
+  transform: scale(1.12);
+  opacity: .5;
+}
+.realty-photo-wrap.is-lowres .realty-photo {
+  position: relative; z-index: 1;
+  width: min(320px, 78%); height: min(320px, 78%);
+  object-fit: cover; border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(20, 50, 46, .22);
+}

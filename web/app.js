@@ -1024,7 +1024,7 @@ function realtyRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
-    <div class="re-img">${r.img ? `<img src="${esc(r.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
+    <div class="re-img">${r.img ? `<img src="${esc(realtyThumb(r.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
@@ -1154,8 +1154,14 @@ function realtyPage() {
 let realtyGallery = { id: '', images: [], index: 0 };
 let realtyGeoId = '';
 
+function realtyThumb(url) {
+  const value = String(url || '');
+  // У Avito подписанный query истекает — сам файл доступен без него.
+  return /img\.avito\.st/.test(value) ? value.split('?')[0] : value;
+}
+
 function realtyHiRes(url) {
-  return String(url || '')
+  return realtyThumb(url)
     .replace(/\/minicard$/, '/main')
     .replace(/realty_minicard$/, 'realty_main')
     .replace('/s/640x480/', '/s/1280x960/');
@@ -1165,7 +1171,8 @@ function realtyGalleryHtml() {
   const images = realtyGallery.images || [];
   if (!images.length) return '<div class="realty-photo-wrap"><div class="realty-photo-empty">Нет фото</div></div>';
   const index = Math.min(realtyGallery.index, images.length - 1);
-  return `<div class="realty-photo-wrap">
+  const lowRes = /img\.avito\.st/.test(images[index]);
+  return `<div class="realty-photo-wrap${lowRes ? ' is-lowres' : ''}"${lowRes ? ` style="--photo:url('${esc(images[index])}')"` : ''}>
       <div class="realty-photo-empty">Нет фото</div>
       <img class="realty-photo" src="${esc(images[index])}" alt="" loading="eager" referrerpolicy="no-referrer" onerror="this.remove()">
       <span class="realty-photo-count">${index + 1} / ${images.length}</span>
@@ -1201,18 +1208,22 @@ function openRealty(id) {
   ].filter(([, value]) => value && value !== '—');
   realtyGeoId = item.id;
   body.innerHTML = `
-    <div id="realty-gallery">${realtyGalleryHtml()}</div>
-    <div class="realty-price-row">
-      <div><div class="realty-price">${money(item.price)}</div>${item.priceM2 ? `<div class="muted">${money(item.priceM2)} / м²</div>` : ''}</div>
-      <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
+    <div class="realty-media">
+      <div id="realty-gallery">${realtyGalleryHtml()}</div>
+      <div id="realty-geo" class="realty-geo"><div class="geo-loading"><span class="loader"></span>Определяем адрес на карте…</div></div>
     </div>
-    <div class="realty-address">${esc(item.address || item.city || '')}</div>
-    <div id="realty-geo" class="realty-geo"><div class="geo-loading"><span class="loader"></span>Определяем адрес на карте…</div></div>
-    <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
-    <div class="realty-actions realty-actions--single">
-      ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
-    </div>
-    <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>`;
+    <div class="realty-info">
+      <div class="realty-price-row">
+        <div><div class="realty-price">${money(item.price)}</div>${item.priceM2 ? `<div class="muted">${money(item.priceM2)} / м²</div>` : ''}</div>
+        <span class="badge badge--blue">${esc(item.source || 'Источник')}</span>
+      </div>
+      <div class="realty-address">${esc(item.address || item.city || '')}</div>
+      <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
+      <div class="realty-actions realty-actions--single">
+        ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
+      </div>
+      <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>
+    </div>`;
   if (!dialog.open) dialog.showModal();
   hydrateRealtyGeo(item);
   if (item.id.startsWith('yandex:')) {
