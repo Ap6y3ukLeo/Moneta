@@ -450,11 +450,11 @@ function homePage() {
   const russia = S.realty?.stats?.russia;
   const v = valuation();
   const bestCrypto = [...crypto.items].sort((a, b) => (b.change24h || 0) - (a.change24h || 0))[0];
-  const aiNote = topDep
-    ? `Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`
-    : bestCrypto
-      ? `Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`
-      : 'Данные обновляются — через минуту здесь появится сводка.';
+  const aiNotes = [];
+  if (topDep) aiNotes.push(`Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`);
+  if (xau) aiNotes.push(`Золото ${chg(xau.change24h)} за день, <b>${money(xau.price)}</b>/г.`);
+  if (btc) aiNotes.push(`BTC ${chg(btc.change24h)} за сутки, <b>${money(rub(btc.price))}</b>.`);
+  if (!aiNotes.length && bestCrypto) aiNotes.push(`Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`);
 
   return `
   ${sourceWarning()}
@@ -576,7 +576,9 @@ function homePage() {
         <span class="bento-meta">live</span>
       </header>
       <div class="ai-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
-      <p class="bento-ai-text">${aiNote}</p>
+      <div class="ai-notes">
+        ${aiNotes.map((n) => `<div class="ai-note">${icon('spark')}<span>${n}</span></div>`).join('')}
+      </div>
       <footer class="bento-foot"><button class="link-more" type="button" data-action="ai-open">Спросить нейросеть ${icon('arrow')}</button></footer>
     </article>
   </section>`;
