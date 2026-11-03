@@ -90,17 +90,19 @@ function sparkline(values, color, w = 120, h = 44) {
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
   return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
     <path class="area" d="${d} L ${w} ${h} L 0 ${h} Z" fill="${color}"/>
-    <path d="${d}" stroke="${color}" vector-effect="non-scaling-stroke"/>
+    <path class="spark-line" d="${d}" stroke="${color}" pathLength="1" vector-effect="non-scaling-stroke"/>
   </svg>`;
 }
 const coin = (txt, cls = '') => `<span class="coin ${cls}">${esc(String(txt).slice(0, 4))}</span>`;
 const cryptoIcon = (c) => {
   const symbol = String(c?.symbol || '').toLowerCase();
-  return `<span class="coin coin--logo">${esc(String(c?.symbol || '?').slice(0, 4))}${symbol ? `<img src="https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/32/color/${encodeURIComponent(symbol)}.png" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+  const primary = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/32/color/${encodeURIComponent(symbol)}.png`;
+  const fallback = `https://assets.coincap.io/assets/icons/${encodeURIComponent(symbol)}@2x.png`;
+  return `<span class="coin coin--logo">${esc(String(c?.symbol || '?').slice(0, 4))}${symbol ? `<img src="${primary}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="if(this.dataset.fb){this.remove()}else{this.dataset.fb='1';this.src='${fallback}'}">` : ''}</span>`;
 };
 const metalIcon = (code) => coin(code === 'XAU' ? 'Au' : code === 'XAG' ? 'Ag' : code === 'XPT' ? 'Pt' : 'Pd',
   code === 'XAU' ? 'coin--gold' : code === 'XAG' ? 'coin--silver' : 'coin--platinum');
-const stockIcon = (s) => `<span class="coin coin--logo">${esc(String(s?.ticker || '?').slice(0, 4))}${s?.logo ? `<img src="${esc(s.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+const stockIcon = (s) => `<span class="coin coin--logo">${esc(String(s?.ticker || '?').slice(0, 4))}${s?.logo ? `<img src="${esc(s.logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="this.remove()">` : ''}</span>`;
 const ext = (url, label = '', cls = 'icon-btn') => url
   ? `<a class="${cls}" href="${esc(url)}" target="_blank" rel="noopener" title="${esc(label || 'Открыть источник')}" aria-label="${esc(label || 'Открыть источник')}">${icon('ext')}</a>`
   : '';
@@ -431,54 +433,36 @@ function sourcePill(label, meta) {
   const cls = meta?.ok === false ? 'pill--warn' : 'pill--mint';
   return `<span class="pill ${cls}"><span class="dot"></span>${esc(label)} · ${timeOf(meta?.updated)}</span>`;
 }
-function trendList() {
-  const items = [];
-  cryptoList().slice(0, 8).forEach((c) => items.push({
-    name: c.name, icon: cryptoIcon(c), chg: c.change24h, value: money(rub(c.price)), href: '#/crypto',
-  }));
-  metalList().forEach((m) => items.push({
-    name: m.name, icon: metalIcon(m.code), chg: m.change24h, value: money(m.price) + '/г', href: '#/metals',
-  }));
-  const fx = S.market?.fx?.items || [];
-  ['USD', 'EUR', 'CNY'].forEach((code) => {
-    const f = fx.find((i) => i.code === code);
-    if (f) items.push({ name: code, icon: coin(code, 'coin--silver'), chg: f.change24h, value: num(f.value, 2) + ' ₽', href: '#/fx' });
-  });
-  return items
-    .filter((i) => isFinite(i.chg))
-    .sort((a, b) => Math.abs(b.chg) - Math.abs(a.chg))
-    .slice(0, 5);
-}
-
 /* ------------------------------------------------------------------ pages: home */
 function homePage() {
   if (!S.market) return loadingView();
   const { crypto, metals, fx } = S.market;
   const usd = fx.items.find((i) => i.code === 'USD');
   const eur = fx.items.find((i) => i.code === 'EUR');
-  const cny = fx.items.find((i) => i.code === 'CNY');
-  const btc = crypto.items[0];
   const xau = metals.items.find((m) => m.code === 'XAU');
-  const xag = metals.items.find((m) => m.code === 'XAG');
-  const xpt = metals.items.find((m) => m.code === 'XPT');
+  const keyRate = S.deposits?.keyRate?.value;
+  const btc = crypto.items[0];
+  const eth = crypto.items.find((c) => c.symbol === 'ETH');
+  const sol = crypto.items.find((c) => c.symbol === 'SOL');
   const topDep = bestDeposit();
+  const depP = topDep ? Math.max(8, Math.min(100, (topDep.rate / 30) * 100)) : 0;
   const msk = S.realty?.stats?.moscow;
   const russia = S.realty?.stats?.russia;
   const v = valuation();
-  const insights = [];
-
-  if (topDep) insights.push(`Лучший вклад: <b>${esc(topDep.bank)}</b> — <b>${num(topDep.rate, 2)}%</b>${topDep.termDays ? ` на ${topDep.termDays} дн.` : ''}, от ${money(topDep.min)}.`);
-  if (xau) insights.push(`Золото ${xau.change24h >= 0 ? 'выросло' : 'снизилось'} на <b>${num(Math.abs(xau.change24h), 2)}%</b> за день — <b>${money(xau.price)}</b>/г.`);
   const bestCrypto = [...crypto.items].sort((a, b) => (b.change24h || 0) - (a.change24h || 0))[0];
-  if (bestCrypto) insights.push(`Лидер суток в крипте — <b>${esc(bestCrypto.name)}</b>: ${chg(bestCrypto.change24h)}.`);
+  const aiNote = topDep
+    ? `Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`
+    : bestCrypto
+      ? `Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`
+      : 'Данные обновляются — через минуту здесь появится сводка.';
 
   return `
   ${sourceWarning()}
   <section class="hero">
     <div class="hero-copy">
       <span class="eyebrow">Сводка · ${timeOf(fx.meta?.updated || crypto.meta?.updated)}</span>
-      <h1>Курс, ставка и цена метра — <em>на одном экране</em></h1>
-      <p>Пять рынков в одном расчёте: крипта и валюта по бирже, металлы и ставка ЦБ, вклады банков и объявления по всей России. Данные обновляются автоматически.</p>
+      <h1><span class="hero-line"><span>Курс, ставка и цена метра</span></span><span class="hero-line"><em>— на одном экране</em></span></h1>
+      <p>Пять рынков в одном расчёте: крипта и валюта по бирже, металлы и ставка ЦБ, вклады банков и объявления по всей России.</p>
       <div class="hero-actions">
         <a class="btn" href="#/portfolio">Открыть портфель ${icon('arrow')}</a>
         <a class="btn btn--ghost" href="#/deposits">Сравнить вклады</a>
@@ -486,168 +470,116 @@ function homePage() {
       <div class="hero-source">${icon('shield')} ЦБ РФ · Bybit · MOEX · банки · Яндекс и Авито</div>
     </div>
     <div class="hero-figures">
-      ${btc ? `<a class="hero-figure" href="#/crypto">
-        <span class="fig-label">BTC · Bybit</span>
-        <span class="fig-value">${money(rub(btc.price))}</span>
-        <span class="fig-meta">${chg(btc.change24h)} за сутки</span>
-      </a>` : ''}
       ${usd ? `<a class="hero-figure" href="#/fx">
         <span class="fig-label">USD · ЦБ РФ</span>
         <span class="fig-value">${num(usd.value, 2)} ₽</span>
         <span class="fig-meta">${chg(usd.change24h)} за день</span>
       </a>` : ''}
-      ${topDep ? `<a class="hero-figure" href="#/deposits">
-        <span class="fig-label">Вклад · ${esc(topDep.bank)}</span>
-        <span class="fig-value">${num(topDep.rate, 2)}%</span>
-        <span class="fig-meta">${esc(topDep.termDays ? depositTermText(topDep) : 'годовых')}</span>
+      ${eur ? `<a class="hero-figure" href="#/fx">
+        <span class="fig-label">EUR · ЦБ РФ</span>
+        <span class="fig-value">${num(eur.value, 2)} ₽</span>
+        <span class="fig-meta">${chg(eur.change24h)} за день</span>
       </a>` : ''}
-      ${msk ? `<a class="hero-figure" href="#/realty">
-        <span class="fig-label">Москва · м²</span>
-        <span class="fig-value">${money(msk.avgM2)}</span>
-        <span class="fig-meta">квартира ${money(msk.avgPrice)}</span>
+      ${xau ? `<a class="hero-figure" href="#/metals">
+        <span class="fig-label">Золото · ЦБ РФ</span>
+        <span class="fig-value">${money(xau.price)}</span>
+        <span class="fig-meta">${chg(xau.change24h)} за день</span>
+      </a>` : ''}
+      ${keyRate ? `<a class="hero-figure" href="#/deposits">
+        <span class="fig-label">Ключевая ставка</span>
+        <span class="fig-value">${num(keyRate, 2)}%</span>
+        <span class="fig-meta">ЦБ РФ</span>
       </a>` : ''}
     </div>
   </section>
 
-  <div class="chips">
-    <a class="chip is-active" href="#/">Все рынки</a>
-    <a class="chip" href="#/deposits">${icon('bank')} Вклады</a>
-    <a class="chip" href="#/crypto">${icon('crypto')} Криптовалюта</a>
-    <a class="chip" href="#/metals">${icon('gold')} Драгметаллы</a>
-    <a class="chip" href="#/fx">${icon('fx')} Валюта</a>
-    <a class="chip" href="#/realty">${icon('building')} Недвижимость</a>
-    <a class="chip" href="#/portfolio">${icon('wallet')} Портфель</a>
-  </div>
-
-  <div class="home-layout">
-    <div class="home-main">
-      <div class="cards">
-        <article class="card card--click" data-go="#/deposits" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Вклады банков</h3><div class="sub">${depositList().length} предложений · ${new Set(depositList().map((d) => d.bank)).size} банков</div></div>
-          </div>
-          <div class="metric-big">до ${topDep ? num(topDep.rate, 2) + '%' : '—'}</div>
-          <div class="muted" style="font-size:11.5px">по вкладам в рублях</div>
-          <div class="mini-rows">
-            ${depositList().slice(0, 2).map((d) => `<div class="mini-row">${coin(d.bank[0])}<span class="name">${esc(d.bank)} · ${esc(d.name)}</span><span class="price">${num(d.rate, 2)}%</span></div>`).join('') || '<div class="muted">Нет данных</div>'}
-          </div>
-          <div class="card-foot"><a class="link-more" href="#/deposits">Смотреть все ${icon('arrow')}</a><a class="chev-link" href="#/deposits">${icon('chev')}</a></div>
-        </article>
-
-        <article class="card card--click" data-go="#/crypto" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Криптовалюта</h3><div class="sub">Топ активы · Bybit</div></div>
-          </div>
-          ${btc ? `<div style="display:flex;align-items:baseline;gap:8px">
-              <div class="metric-big">${money(rub(btc.price))}</div>
-              ${chg(btc.change24h)}
-            </div>
-            <div class="muted" style="font-size:11px">BTC · $${price(btc.price)}</div>
-            <div class="spark-wrap">${sparkline(btc.spark, btc.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 48)}</div>` : '<div class="muted">Нет данных</div>'}
-          <div class="card-foot"><a class="link-more" href="#/crypto">Подробнее ${icon('arrow')}</a>${btc?.tradeUrl ? `<a class="link-more" href="${esc(btc.tradeUrl)}" target="_blank" rel="noopener">Купить BTC ${icon('ext')}</a>` : ''}</div>
-        </article>
-
-        <article class="card card--click" data-go="#/fx" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Валюта</h3><div class="sub">Курсы ЦБ РФ</div></div>
-            <span class="badge badge--blue">${esc(fx.date || '')}</span>
-          </div>
-          <div class="mini-rows">
-            ${[['USD', usd, '$'], ['EUR', eur, '€'], ['CNY', cny, '¥']].map(([code, f, sym]) => f ? `<div class="mini-row">
-                ${coin(sym, 'coin--silver')}<span class="name">${code}</span>
-                <span class="price">${num(f.value, 2)} ₽</span><span class="chg">${chg(f.change24h)}</span>
-              </div>` : '').join('')}
-          </div>
-          <div class="card-foot"><a class="link-more" href="#/fx">Все курсы ${icon('arrow')}</a><a class="chev-link" href="#/fx">${icon('chev')}</a></div>
-        </article>
-
-        <article class="card card--click" data-go="#/metals" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Драгметаллы</h3><div class="sub">ЦБ РФ, ₽ за грамм</div></div>
-            <span class="badge badge--gold">ЦБ РФ</span>
-          </div>
-          <div class="mini-rows">
-            ${[[xau, 'Au'], [xag, 'Ag'], [xpt, 'Pt']].map(([m]) => m ? `<div class="mini-row">
-                ${metalIcon(m.code)}<span class="name">${esc(m.name)}</span>
-                <span class="price">${money(m.price)}</span><span class="chg">${chg(m.change24h)}</span>
-              </div>` : '').join('')}
-          </div>
-          <div class="spark-wrap">${xau ? sparkline(xau.spark, xau.change24h >= 0 ? '#0fa97d' : '#e8564b', 220, 42) : ''}</div>
-          <div class="card-foot"><a class="link-more" href="#/metals">Подробнее ${icon('arrow')}</a><a class="chev-link" href="#/metals">${icon('chev')}</a></div>
-        </article>
-
-        <article class="card card--click" data-go="#/portfolio" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Мой портфель</h3><div class="sub">${v.rows.length ? `${v.rows.length} позиции` : 'Пока пусто'}</div></div>
-            <span class="badge ${v.pnl >= 0 ? '' : 'badge--gray'}">${v.rows.length ? chg(v.pnlPct) : 'Старт'}</span>
-          </div>
-          ${v.rows.length ? `
-            <div class="metric-big">${money(v.value)}</div>
-            <div class="muted" style="font-size:11.5px">вложено ${money(v.invested)} · ${chg(v.changePct)} за сутки</div>
-            <div style="display:flex;height:6px;border-radius:0;overflow:hidden;margin:12px 0 8px;background:#eef4f3">
-              ${v.rows.slice(0, 5).map((r, i) => `<span style="width:${(r.cur / (v.value || 1)) * 100}%;background:${PALETTE[i % PALETTE.length]}"></span>`).join('')}
-            </div>
-            <div class="mini-rows">${v.rows.slice(0, 2).map((r) => `<div class="mini-row"><span class="name">${esc(r.name)}</span><span class="price">${money(r.cur)}</span><span class="chg">${chg(r.pnlPct)}</span></div>`).join('')}</div>
-          ` : `
-            <p class="muted" style="font-size:12px;margin:6px 0 12px">Добавьте криптовалюту, металл или вклад — сервис посчитает стоимость, прибыль и доходность.</p>
-            <button class="btn btn--sm" data-action="open-add">Собрать портфель</button>
-          `}
-          <div class="card-foot"><a class="link-more" href="#/portfolio">Открыть портфель ${icon('arrow')}</a></div>
-        </article>
-
-        <article class="card card--click" data-go="#/realty" tabindex="0" role="link">
-          <div class="card-head">
-            <div><h3>Недвижимость</h3><div class="sub">Вся Россия · Яндекс, Авито, Циан, БН.ру</div></div>
-            <span class="badge badge--blue">${realtyList().length ? realtyList().length + ' объявл.' : 'Рынок'}</span>
-          </div>
-          ${msk ? `<div class="metric-big" style="font-size:23px">${money(msk.avgM2)}<span class="muted" style="font-size:12px;font-weight:500">/м²</span></div>
-            <div class="muted" style="font-size:11.5px">Москва · средняя квартира ${money(msk.avgPrice)}</div>` : '<p class="muted" style="font-size:12px">Загружаем средние цены…</p>'}
-          <div class="mini-rows" style="margin-top:12px">
-            ${russia ? `<div class="mini-row">${icon('building')}<span class="name">Россия · медиана</span><span class="price">${money(russia.median)}</span></div>` : ''}
-            ${russia?.avgM2 ? `<div class="mini-row"><span class="name">Россия · цена м²</span><span class="price">${money(russia.avgM2)}</span></div>` : ''}
-          </div>
-          <div class="card-foot"><a class="link-more" href="#/realty">Смотреть объявления ${icon('arrow')}</a><a class="chev-link" href="#/realty">${icon('chev')}</a></div>
-        </article>
-      </div>
-    </div>
-
-    <aside class="rail">
-      <div class="card">
-        <div class="ai-head"><div class="ai-title">${icon('spark')} Сводка по рынку</div></div>
-        <p class="ai-greet">Три факта из текущих данных:</p>
-        <div class="ai-list">${insights.map((t) => `<div class="ai-item">${icon('shield')}<span>${t}</span></div>`).join('')}</div>
-        <button class="btn btn--sm ai-open-btn" type="button" data-action="ai-open">${icon('spark')} Открыть чат</button>
-        <div class="ai-chips"><a href="#/deposits">Вклады</a><a href="#/crypto">Крипта</a><a href="#/metals">Металлы</a><a href="#/fx">Валюты</a></div>
-      </div>
-
-      <div class="card">
-        <div class="rail-title"><h3>Сейчас в тренде</h3><span class="muted" style="font-size:10px">24ч</span></div>
-        <div class="trend">
-          ${trendList().map((t, i) => `<a class="trend-row" href="${t.href}">
-            <span class="rank">${i + 1}</span>${t.icon}
-            <span class="name">${esc(t.name)}<br><small class="muted">${t.value}</small></span>
-            <span class="chg ${t.chg >= 0 ? 'up' : 'down'}">${pct(t.chg)}</span>
-          </a>`).join('')}
+  <section class="bento" aria-label="Главное на рынках">
+    <a class="bento-card bento-card--deposit card" href="#/deposits">
+      <header class="bento-head">
+        <span class="bento-label">${icon('bank')} Вклады</span>
+        <span class="bento-meta">${ruPlural(depositList().length, 'предложение', 'предложения', 'предложений')}</span>
+      </header>
+      <div class="bento-deposit">
+        <div class="gauge">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="gauge-bg" cx="60" cy="60" r="52" pathLength="100"/>
+            <circle class="gauge-val" cx="60" cy="60" r="52" pathLength="100" style="--p:${depP.toFixed(1)}"/>
+          </svg>
+          <div class="gauge-center"><b>${topDep ? num(topDep.rate, 2) + '%' : '—'}</b><span>годовых</span></div>
+        </div>
+        <div class="bento-copy">
+          <span class="bento-kicker">Лучшая ставка</span>
+          <div class="bento-title">${topDep ? esc(topDep.bank) : 'Нет данных'}</div>
+          <div class="bento-sub">${topDep ? `${esc(depositTermText(topDep))} · ${esc(depositAmountText(topDep))}` : 'Обновите данные'}</div>
+          <div class="bento-note">${depositList()[1] ? `Далее ${num(depositList()[1].rate, 2)}% — ${esc(depositList()[1].bank)}` : ''}</div>
         </div>
       </div>
+      <footer class="bento-foot"><span>Сравнить все</span>${icon('arrow')}</footer>
+    </a>
 
-      <div class="card">
-        <div class="rail-title"><h3>Данные</h3><button class="icon-btn" style="width:32px;height:32px;border-radius:9px" data-action="refresh" title="Обновить">${icon('refresh')}</button></div>
-        <div class="data-status" style="margin-top:10px">
-          ${dataStatusLine('Криптовалюта', crypto.meta)}
-          ${dataStatusLine('Драгметаллы', metals.meta)}
-          ${dataStatusLine('Курсы валют', fx.meta)}
-          ${dataStatusLine(`Вклады · ${new Set((S.deposits?.items || []).map((d) => d.bank)).size} банков`, S.deposits?.meta)}
-          ${dataStatusLine('Недвижимость', S.realty?.meta)}
+    <a class="bento-card bento-card--portfolio card" href="#/portfolio">
+      <header class="bento-head">
+        <span class="bento-label">${icon('wallet')} Портфель</span>
+        <span class="bento-meta">${v.rows.length ? ruPlural(v.rows.length, 'позиция', 'позиции', 'позиций') : 'не создан'}</span>
+      </header>
+      <div class="bento-price">${v.rows.length ? money(v.value) : '0 ₽'}</div>
+      ${v.rows.length ? `
+        <div class="bento-delta">${chg(v.changePct)} за сутки</div>
+        <div class="portfolio-bars" aria-hidden="true">
+          ${v.rows.slice(0, 4).map((r, i) => `<span style="--w:${Math.max(4, (r.cur / (v.value || 1)) * 100)}%;--c:${PALETTE[i % PALETTE.length]};--d:${i * .08}s"></span>`).join('')}
         </div>
-      </div>
-    </aside>
-  </div>`;
-}
+        <div class="bento-note">Прибыль ${v.pnl >= 0 ? '+' : ''}${money(v.pnl)} · ${pct(v.pnlPct)}</div>
+      ` : `
+        <div class="bento-delta muted">Соберите первый портфель</div>
+        <div class="ghost-bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div class="bento-note">Вклады, металлы, валюта и крипта — в одном расчёте</div>
+      `}
+      <footer class="bento-foot"><span>${v.rows.length ? 'Открыть портфель' : 'Собрать портфель'}</span>${icon('arrow')}</footer>
+    </a>
 
-function dataStatusLine(label, meta) {
-  const ok = meta?.ok !== false;
-  return `<div><span>${label}</span><span class="${ok ? 'ok' : 'warn'}">${ok ? 'онлайн' : 'кэш'} · ${timeOf(meta?.updated)}</span></div>`;
+    <a class="bento-card bento-card--crypto card" href="#/crypto">
+      <header class="bento-head">
+        <span class="bento-label">${icon('crypto')} Криптовалюта</span>
+        <span class="bento-meta">Bybit · 24ч</span>
+      </header>
+      ${btc ? `
+        <div class="bento-price-row">
+          <div class="bento-price">${money(rub(btc.price))}</div>
+          <div class="bento-delta">${chg(btc.change24h)}</div>
+        </div>
+        <div class="bento-spark">${sparkline(btc.spark, btc.change24h >= 0 ? '#0fa97d' : '#e8564b', 380, 78)}</div>
+        <div class="pair-row">
+          ${eth ? `<span class="pair">${cryptoIcon(eth)}<span>ETH</span><b>${money(rub(eth.price))}</b></span>` : ''}
+          ${sol ? `<span class="pair">${cryptoIcon(sol)}<span>SOL</span><b>${money(rub(sol.price))}</b></span>` : ''}
+        </div>
+      ` : '<div class="bento-delta muted">Нет данных</div>'}
+      <footer class="bento-foot"><span>Все активы</span>${icon('arrow')}</footer>
+    </a>
+
+    <a class="bento-card bento-card--realty card" href="#/realty">
+      <header class="bento-head">
+        <span class="bento-label">${icon('building')} Недвижимость</span>
+        <span class="bento-meta">${realtyList().length ? num(realtyList().length, 0) + ' объявл.' : 'Рынок'}</span>
+      </header>
+      <div class="map-grid" aria-hidden="true">${Array.from({ length: 20 }, (_, i) => `<span style="--i:${i}"></span>`).join('')}</div>
+      ${msk ? `
+        <div class="bento-price">${money(msk.avgM2)}<small>/м²</small></div>
+        <div class="bento-sub">Москва · квартира ${money(msk.avgPrice)}</div>
+        ${russia ? `<div class="bento-note">Россия · медиана ${money(russia.median)} · ${num(russia.cities, 0)} городов</div>` : ''}
+      ` : '<div class="bento-delta muted">Загружаем цены…</div>'}
+      <footer class="bento-foot"><span>Смотреть объявления</span>${icon('arrow')}</footer>
+    </a>
+
+    <article class="bento-card bento-card--ai card">
+      <header class="bento-head">
+        <span class="bento-label">${icon('spark')} AI-сводка</span>
+        <span class="bento-meta">live</span>
+      </header>
+      <div class="ai-orbit" aria-hidden="true"><span></span><span></span><span></span></div>
+      <p class="bento-ai-text">${aiNote}</p>
+      <footer class="bento-foot"><button class="link-more" type="button" data-action="ai-open">Спросить нейросеть ${icon('arrow')}</button></footer>
+    </article>
+  </section>`;
 }
 
 /* ------------------------------------------------------------------ pages: crypto */
@@ -867,7 +799,7 @@ function depositRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Под эту сумму вкладов нет. Уменьшите сумму — покажем доступные предложения.</div>`;
   const shown = items.slice(0, S.dep.limit);
   const html = shown.map((d) => `<article class="offer" data-deposit="${esc(d.id)}" tabindex="0" role="button" aria-label="Подробнее о вкладе ${esc(d.name)}">
-    <div class="offer-logo"><span>${esc((d.bank || 'Б')[0])}</span>${d.logo ? `<img src="${esc(d.logo)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
+    <div class="offer-logo"><span>${esc((d.bank || 'Б')[0])}</span>${d.logo ? `<img src="${esc(d.logo)}" alt="" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="this.remove()">` : ''}</div>
     <div class="offer-main">
       <div class="offer-title"><b title="${esc(d.name)}">${esc(d.name)}</b></div>
       <div class="offer-bank">${esc(d.bank)}</div>
@@ -1435,6 +1367,34 @@ function saveProfileName(e) {
   toast('Имя профиля сохранено');
 }
 
+const TILT_SELECTOR = '.bento-card, .re-card, .metal-card, .summary .card';
+let motionBound = false;
+
+function enhanceMotion() {
+  if (motionBound || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  motionBound = true;
+  let active = null;
+  let raf = 0;
+  document.addEventListener('pointermove', (e) => {
+    const el = e.target.closest?.(TILT_SELECTOR);
+    if (!el) return;
+    active = el;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    if (!raf) raf = requestAnimationFrame(() => {
+      raf = 0;
+      if (!active) return;
+      active.style.transform = `perspective(900px) rotateX(${((0.5 - py) * 3.2).toFixed(2)}deg) rotateY(${((px - 0.5) * 3.2).toFixed(2)}deg) translateY(-2px)`;
+    });
+  }, { passive: true });
+  document.addEventListener('pointerout', (e) => {
+    const el = e.target.closest?.(TILT_SELECTOR);
+    if (!el || (e.relatedTarget && el.contains(e.relatedTarget))) return;
+    el.style.transform = '';
+  }, { passive: true });
+}
+
 function render() {
   const { page, params } = route();
   const view = $('#view');
@@ -1453,6 +1413,7 @@ function render() {
   else html = `<div class="empty-state"><h3>Страница не найдена</h3><a class="btn" href="#/">На главную</a></div>`;
 
   view.innerHTML = html;
+  enhanceMotion();
 
   if (page === 'deposits' && params.get('calc')) navKey = 'calc';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
