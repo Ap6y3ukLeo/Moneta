@@ -789,12 +789,13 @@ function stockRowsHtml() {
   const items = stockList()
     .filter((s) => !q || `${s.name} ${s.ticker}`.toLowerCase().includes(q))
     .sort(STOCK_SORTS[S.stocks.sort] || STOCK_SORTS.turnover);
-  if (!items.length) return '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
+  if (!items.length) return '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
   return items.map((s, i) => `<tr class="row-click" data-chart="stock:${esc(s.id)}">
     <td class="muted">${i + 1}</td>
     <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · MOEX</small></span></div></td>
     <td class="num"><b>${money(s.price)}</b></td>
     <td class="num">${chg(s.change24h)}</td>
+    <td style="width:120px"><span class="spark-slot" data-spark-stock="${esc(s.id)}"></span></td>
     <td class="num muted">${s.turnover ? money(s.turnover, 0) : '—'}</td>
   </tr>`).join('');
 }
@@ -824,7 +825,7 @@ function stocksPage() {
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th class="num">Оборот</th></tr></thead>
+        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Оборот</th></tr></thead>
         <tbody id="stocks-rows">${stockRowsHtml()}</tbody>
       </table>
     </div>
@@ -846,12 +847,13 @@ function fxPage() {
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Валюта</th><th class="num">Курс ЦБ, ₽</th><th class="num">За день</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
+        <thead><tr><th>Валюта</th><th class="num">Курс ЦБ, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
         <tbody>
         ${fx.items.map((f) => `<tr class="${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? 'row-click' : ''}"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
           <td><div class="asset-cell">${coin(f.code, 'coin--silver')}<span class="txt"><b>${esc(f.name || f.code)}</b><small>${esc(f.code)}</small></span></div></td>
           <td class="num"><b>${num(f.value, 4)}</b>${f.live ? `<small class="fx-live">${esc(f.live.source || 'биржа')} ${num(f.live.value, 4)}${f.live.change24h != null ? ` · ${chg(f.live.change24h)}` : ''}</small>` : ''}</td>
           <td class="num">${chg(f.change24h)}</td>
+          <td style="width:120px">${f.spark?.length > 1 ? `<button class="spark-btn" type="button"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''} title="Открыть график" aria-label="Открыть график ${esc(f.code)}">${sparkline(f.spark, (f.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button>` : '<span class="muted">—</span>'}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
           <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График" aria-label="График ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
@@ -1065,6 +1067,54 @@ function distanceKm(a, b) {
 function realtyFloor(title) {
   const match = String(title || '').match(/(\d+)\s*\/\s*(\d+)\s*эт/);
   return match ? `${match[1]}/${match[2]}` : '';
+}
+
+const REALTY_PRICE_KEY = 'monetka:realty:prices:v1';
+
+function readPriceStore() {
+  try { return JSON.parse(localStorage.getItem(REALTY_PRICE_KEY)) || {}; } catch { return {}; }
+}
+
+function trackRealtyPrice(item) {
+  const store = readPriceStore();
+  const today = new Date().toISOString().slice(0, 10);
+  const entry = store[item.id] || { title: item.title || item.address || item.city || 'Квартира', city: item.city || '', url: item.url || '', history: [] };
+  const history = Array.isArray(entry.history) ? entry.history : [];
+  const last = history[history.length - 1];
+  if (!last || last.t !== today || last.p !== item.price) {
+    history.push({ t: today, p: item.price });
+  }
+  entry.title = item.title || entry.title;
+  entry.city = item.city || entry.city;
+  entry.url = item.url || entry.url;
+  entry.price = item.price;
+  entry.updated = Date.now();
+  entry.history = history.slice(-60);
+  store[item.id] = entry;
+  const recent = Object.entries(store).sort((a, b) => (b[1].updated || 0) - (a[1].updated || 0)).slice(0, 30);
+  try { localStorage.setItem(REALTY_PRICE_KEY, JSON.stringify(Object.fromEntries(recent))); } catch {}
+  return entry;
+}
+
+function realtyPriceHtml(entry) {
+  const history = entry?.history || [];
+  const first = history[0];
+  const last = history[history.length - 1];
+  if (!first || !last) return '';
+  const diff = last.p - first.p;
+  const changePct = first.p ? (diff / first.p) * 100 : 0;
+  const change = diff === 0
+    ? '<span class="muted">без изменений</span>'
+    : `<span class="${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${money(diff)} · ${pct(changePct)}</span>`;
+  const spark = history.length > 1
+    ? sparkline(history.map((point) => point.p), diff >= 0 ? '#0fa97d' : '#e8564b', 300, 46)
+    : '';
+  return `<div class="price-history">
+    <div class="price-history-head"><span>Динамика цены</span><span class="mono">${history.length > 1 ? `${history.length} набл.` : 'наблюдаем'}</span></div>
+    <div class="price-history-value">${money(last.p)} ${change}</div>
+    ${spark || `<p class="price-history-note">Первое наблюдение ${new Date(first.t).toLocaleDateString('ru-RU')}. Изменение появится после следующего визита.</p>`}
+    <p class="price-history-note">История хранится в этом браузере.</p>
+  </div>`;
 }
 
 function hasStreetAddress(address, city) {
@@ -1337,6 +1387,7 @@ function openRealty(id) {
     ['Источник', item.source],
   ].filter(([, value]) => value && value !== '—');
   realtyGeoId = item.id;
+  const priceEntry = trackRealtyPrice(item);
   body.innerHTML = `
     <div class="realty-media">
       <div id="realty-gallery">${realtyGalleryHtml()}</div>
@@ -1349,6 +1400,7 @@ function openRealty(id) {
       </div>
       <div class="realty-address">${esc(item.address || item.city || '')}</div>
       <div id="realty-geo-info" class="geo-info"><div class="geo-info-empty">Определяем маршрут…</div></div>
+      ${realtyPriceHtml(priceEntry)}
       <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
       <div class="realty-actions realty-actions--single">
         ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
@@ -1601,6 +1653,69 @@ function saveProfileName(e) {
 const TILT_SELECTOR = '.bento-card, .re-card, .metal-card, .summary .card';
 let motionBound = false;
 
+const stockSparkCache = new Map();
+let stockSparkObserver = null;
+let stockSparkQueue = [];
+let stockSparkActive = 0;
+
+function renderStockSpark(slot, values) {
+  slot.innerHTML = values.length > 1
+    ? sparkline(values, values[values.length - 1] >= values[0] ? '#0fa97d' : '#e8564b', 120, 34)
+    : '<span class="muted">—</span>';
+}
+
+async function pumpStockSparks() {
+  if (stockSparkActive >= 3) return;
+  const job = stockSparkQueue.shift();
+  if (!job) return;
+  const cached = stockSparkCache.get(job.id);
+  if (cached) {
+    if (job.slot.isConnected) renderStockSpark(job.slot, cached);
+    pumpStockSparks();
+    return;
+  }
+  stockSparkActive += 1;
+  try {
+    const res = await fetch(`/api/history?kind=stock&id=${encodeURIComponent(job.id)}&range=7d`);
+    const data = res.ok ? await res.json() : {};
+    const values = (data.points || []).map((point) => Number(point.c)).filter(Number.isFinite);
+    stockSparkCache.set(job.id, values);
+    if (job.slot.isConnected) renderStockSpark(job.slot, values);
+  } catch {
+    if (job.slot.isConnected) renderStockSpark(job.slot, []);
+  }
+  stockSparkActive -= 1;
+  pumpStockSparks();
+}
+
+function queueStockSpark(id, slot) {
+  const cached = stockSparkCache.get(id);
+  if (cached) { renderStockSpark(slot, cached); return; }
+  const existing = stockSparkQueue.find((job) => job.id === id);
+  if (existing) { existing.slot = slot; return; }
+  stockSparkQueue.push({ id, slot });
+  pumpStockSparks();
+}
+
+function hydrateStockSparks() {
+  if (stockSparkObserver) stockSparkObserver.disconnect();
+  stockSparkQueue = [];
+  const slots = [...document.querySelectorAll('[data-spark-stock]')];
+  if (!slots.length) return;
+  if (!('IntersectionObserver' in window)) {
+    slots.slice(0, 24).forEach((slot) => queueStockSpark(slot.dataset.sparkStock, slot));
+    return;
+  }
+  stockSparkObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      stockSparkObserver.unobserve(entry.target);
+      queueStockSpark(entry.target.dataset.sparkStock, entry.target);
+    });
+  }, { rootMargin: '220px' });
+  slots.forEach((slot) => stockSparkObserver.observe(slot));
+}
+
 function enhanceMotion() {
   if (motionBound || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   motionBound = true;
@@ -1646,6 +1761,7 @@ function render() {
   view.innerHTML = html;
   enhanceMotion();
   if (page === 'home') applyHomeLayout();
+  if (page === 'stocks') hydrateStockSparks();
 
   if (page === 'deposits' && params.get('calc')) navKey = 'calc';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
@@ -2543,7 +2659,7 @@ document.addEventListener('change', (e) => {
   if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
-  if (e.target.id === 'stocks-sort') { S.stocks.sort = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); }
+  if (e.target.id === 'stocks-sort') { S.stocks.sort = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); hydrateStockSparks(); }
 });
 
 document.addEventListener('input', (e) => {
@@ -2554,7 +2670,7 @@ document.addEventListener('input', (e) => {
     $('#re-list').innerHTML = realtyRowsHtml();
   }
   if (e.target.id === 're-city-q') filterCityOptions(e.target.value);
-  if (e.target.id === 'stocks-q') { S.stocks.q = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); }
+  if (e.target.id === 'stocks-q') { S.stocks.q = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); hydrateStockSparks(); }
 });
 
 $('#search-form').addEventListener('submit', (e) => {

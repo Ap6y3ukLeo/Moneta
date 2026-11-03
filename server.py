@@ -645,6 +645,7 @@ def build_fx():
                 "prev": prev,
                 "nominal": nominal,
                 "change24h": (value / prev - 1) * 100 if prev else 0,
+                "spark": _snapshot_spark("fx", code),
             }
         )
     live = build_fx_live()
