@@ -1133,3 +1133,16 @@ body:has(dialog[open]) { overflow: hidden; }
   transition: none; animation: none !important;
 }
 .bento-card.is-dragging { opacity: .12; transform: none !important; }
+
+/* Покупка акции — в окне бумаги, а не в таблице */
+.chart-buy { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--mint-2); }
+.chart-buy-title { font-size: 12px; font-weight: 700; color: var(--navy); }
+.chart-buy .buy-links { gap: 6px; }
+.chart-buy .buy-links a {
+  display: inline-flex; align-items: center; gap: 5px; padding: 7px 11px;
+  border: 1px solid var(--line); border-radius: 9px; background: #fff;
+  color: var(--teal-700); font-size: 11px; font-weight: 600;
+}
+.chart-buy .buy-links a:hover { border-color: var(--teal); background: var(--mint); text-decoration: none; }
+.chart-buy .buy-links .ic { width: 11px; height: 11px; opacity: .7; }
+.chart-buy-note { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.45; }

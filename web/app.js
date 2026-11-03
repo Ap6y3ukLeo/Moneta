@@ -789,14 +789,13 @@ function stockRowsHtml() {
   const items = stockList()
     .filter((s) => !q || `${s.name} ${s.ticker}`.toLowerCase().includes(q))
     .sort(STOCK_SORTS[S.stocks.sort] || STOCK_SORTS.turnover);
-  if (!items.length) return '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
+  if (!items.length) return '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
   return items.map((s, i) => `<tr class="row-click" data-chart="stock:${esc(s.id)}">
     <td class="muted">${i + 1}</td>
     <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · MOEX</small></span></div></td>
     <td class="num"><b>${money(s.price)}</b></td>
     <td class="num">${chg(s.change24h)}</td>
     <td class="num muted">${s.turnover ? money(s.turnover, 0) : '—'}</td>
-    <td>${stockBuyMenu(s)}</td>
   </tr>`).join('');
 }
 
@@ -825,12 +824,12 @@ function stocksPage() {
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th class="num">Оборот</th><th>Купить</th></tr></thead>
+        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th class="num">Оборот</th></tr></thead>
         <tbody id="stocks-rows">${stockRowsHtml()}</tbody>
       </table>
     </div>
   </div>` : `<div class="empty-state"><h3>Котировки акций недоступны</h3><p>MOEX не ответил. Попробуйте обновить данные.</p><button class="btn" data-action="refresh">Повторить</button></div>`}
-  <p class="muted" style="font-size:11px;margin-top:12px">Цены MOEX — справочные, могут отставать от биржи в реальном времени. Логотипы есть у крупнейших компаний, у остальных — тикер. Ссылки ведут на страницы бумаг у брокеров; комиссии и доступность сделки уточняйте в приложении брокера. Это не инвестиционная рекомендация.</p>`;
+  <p class="muted" style="font-size:11px;margin-top:12px">Цены MOEX — справочные, могут отставать от биржи в реальном времени. Логотипы есть у крупнейших компаний, у остальных — тикер. Откройте бумагу, чтобы посмотреть график и перейти к покупке у брокера. Это не инвестиционная рекомендация.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: fx */
@@ -2328,7 +2327,10 @@ async function openChart(kind, id) {
   chartState.forecastError = '';
   if (title) title.textContent = `График · ${asset.name}`;
   if (sub) sub.textContent = 'Загружаем историю…';
-  body.innerHTML = '<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг</div>';
+  const buyBlock = kind === 'stock'
+    ? `<div class="chart-buy"><div class="chart-buy-title">Купить ${esc(asset.name)}</div>${stockBuyMenu(asset)}<p class="chart-buy-note">Ссылки ведут на страницы бумаги у брокеров. Комиссии и доступность сделки уточняйте в приложении брокера.</p></div>`
+    : '';
+  body.innerHTML = `<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг</div>${buyBlock}`;
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();
