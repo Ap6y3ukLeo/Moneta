@@ -929,11 +929,21 @@ def _snapshot_spark(kind, asset_id, range_name="7d", limit=60):
     return [round(float(point["c"]), 8) for point in points if point.get("c") is not None][-limit:]
 
 
+def _history_fresh(points, max_age_days=2):
+    if not points:
+        return False
+    try:
+        last = datetime.strptime(str(points[-1].get("t") or "")[:10], "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return False
+    return (datetime.now(MSK).date() - last).days <= max_age_days
+
+
 def _history_points(kind, asset_id, range_name):
     snapshot_first = os.environ.get("VERCEL") and not os.environ.get("MONETKA_LIVE")
     if snapshot_first:
         points = _history_snapshot(kind, asset_id)
-        if points:
+        if points and _history_fresh(points):
             return _slice_history(points, range_name), "snapshot"
     try:
         if kind == "crypto":

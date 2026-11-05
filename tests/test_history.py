@@ -45,7 +45,11 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(result["source"], "снимок")
 
     def test_vercel_prefers_snapshot(self):
-        points = [{"t": "2026-10-01", "c": 100.0}, {"t": "2026-10-02", "c": 101.0}]
+        today = datetime.now(server.MSK).date()
+        points = [
+            {"t": (today - timedelta(days=1)).isoformat(), "c": 100.0},
+            {"t": today.isoformat(), "c": 101.0},
+        ]
         with patch.dict(os.environ, {"VERCEL": "1"}, clear=True), patch.object(
             server, "_history_snapshot", return_value=points
         ), patch.object(server, "_crypto_history") as live:
