@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import gzip
+import hmac
 import json
 import math
 import os
@@ -2548,6 +2549,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
+        token = os.environ.get("MONETKA_TOKEN")
+        if token and path.startswith("/api/") and not hmac.compare_digest(self.headers.get("X-Monetka-Token", ""), token):
+            self.send_json({"error": "unauthorized"}, status=401)
+            return
         try:
             if path == "/api/market":
                 query = parse_qs(self.path.partition("?")[2])
@@ -2617,7 +2622,8 @@ class Handler(SimpleHTTPRequestHandler):
 
 def main():
     port = int(os.environ.get("PORT", "8787"))
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    host = os.environ.get("HOST", "127.0.0.1")
+    server = ThreadingHTTPServer((host, port), Handler)
     url = f"http://127.0.0.1:{port}"
     print(f"Monetka is running: {url}")
     print("Ctrl+C to stop")
