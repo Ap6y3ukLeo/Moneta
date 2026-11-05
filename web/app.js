@@ -172,7 +172,6 @@ function saveProfiles() {
 
 const HOME_CARDS = {
   deposits: { label: 'Вклады' },
-  portfolio: { label: 'Портфель' },
   crypto: { label: 'Криптовалюта' },
   realty: { label: 'Недвижимость' },
   metals: { label: 'Драгметаллы' },
@@ -180,14 +179,17 @@ const HOME_CARDS = {
   stocks: { label: 'Акции' },
   summary: { label: 'Сводка' },
 };
-const DEFAULT_HOME = ['deposits', 'portfolio', 'crypto', 'realty', 'summary'];
+const DEFAULT_HOME = ['deposits', 'crypto', 'realty', 'metals', 'summary'];
 const HOME_PREFIX = 'monetka:home:v1:';
 
 function homeSlots() {
   let saved;
   try { saved = JSON.parse(localStorage.getItem(HOME_PREFIX + activeProfile().id) || 'null'); } catch { saved = null; }
   if (!Array.isArray(saved)) return [...DEFAULT_HOME];
-  return [...new Set(saved.filter((id) => HOME_CARDS[id]))];
+  const cleaned = [...new Set(saved.filter((id) => HOME_CARDS[id]))];
+  // Мягкая миграция: вместо убранного портфеля показываем металлы.
+  if (saved.includes('portfolio') && !cleaned.includes('metals')) cleaned.push('metals');
+  return cleaned;
 }
 
 function saveHomeSlots(list) {
@@ -270,6 +272,7 @@ async function refresh({ silent = false, marketOnly = false } = {}) {
   const results = await Promise.all(jobs.map(async ([key, url, label, timeout]) => {
     try {
       S[key] = await fetchJson(url, timeout);
+      if (key === 'realty') trackAllRealtyPrices();
       delete S.errors[key];
       if (key === 'market') S.loading = false;
       const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
@@ -482,7 +485,7 @@ function loadingView() {
 }
 function sourcePill(label, meta) {
   const cls = meta?.ok === false ? 'pill--warn' : 'pill--mint';
-  return `<span class="pill ${cls}"><span class="dot"></span>${esc(label)} · ${timeOf(meta?.updated)}</span>`;
+  return `<span class="pill ${cls}"><span class="dot"></span>${esc(label)}</span>`;
 }
 /* ------------------------------------------------------------------ pages: home */
 function homePage() {
@@ -503,7 +506,6 @@ function homePage() {
   const depP = topDep ? Math.max(8, Math.min(100, (topDep.rate / 30) * 100)) : 0;
   const msk = S.realty?.stats?.moscow;
   const russia = S.realty?.stats?.russia;
-  const v = valuation();
   const bestCrypto = [...crypto.items].sort((a, b) => (b.change24h || 0) - (a.change24h || 0))[0];
   const aiNotes = [];
   if (topDep) aiNotes.push(`Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`);
@@ -519,11 +521,11 @@ function homePage() {
   ${sourceWarning()}
   <section class="hero">
     <div class="hero-copy">
-      <span class="eyebrow">Сводка · ${timeOf(fx.meta?.updated || crypto.meta?.updated)}</span>
+      <span class="eyebrow">Обзор рынка</span>
       <h1><span class="hero-line"><span>Курс, ставка и цена метра</span></span><span class="hero-line"><em>— на одном экране</em></span></h1>
       <p>Пять рынков в одном расчёте: крипта и валюта по бирже, металлы и ставка ЦБ, вклады банков и объявления по всей России.</p>
       <div class="hero-actions">
-        <a class="btn" href="#/portfolio">Открыть портфель ${icon('arrow')}</a>
+        <a class="btn" href="#/crypto">Смотреть рынки ${icon('arrow')}</a>
         <a class="btn btn--ghost" href="#/deposits">Сравнить вклады</a>
       </div>
     </div>
@@ -581,27 +583,6 @@ function homePage() {
         </div>
       </div>
       <footer class="bento-foot"><span>Сравнить все</span>${icon('arrow')}</footer>
-    </article>
-
-    <article class="bento-card bento-card--portfolio card card--click" data-home-card="portfolio" data-go="#/portfolio" tabindex="0" role="link">
-      ${tools}
-      <header class="bento-head">
-        <span class="bento-label">${icon('wallet')} Портфель</span>
-        <span class="bento-meta">${v.rows.length ? ruPlural(v.rows.length, 'позиция', 'позиции', 'позиций') : 'не создан'}</span>
-      </header>
-      <div class="bento-price">${v.rows.length ? money(v.value) : '0 ₽'}</div>
-      ${v.rows.length ? `
-        <div class="bento-delta">${chg(v.changePct)} за сутки</div>
-        <div class="portfolio-bars" aria-hidden="true">
-          ${v.rows.slice(0, 4).map((r, i) => `<span style="--w:${Math.max(4, (r.cur / (v.value || 1)) * 100)}%;--c:${PALETTE[i % PALETTE.length]};--d:${i * .08}s"></span>`).join('')}
-        </div>
-        <div class="bento-note">Прибыль ${v.pnl >= 0 ? '+' : ''}${money(v.pnl)} · ${pct(v.pnlPct)}</div>
-      ` : `
-        <div class="bento-delta muted">Соберите первый портфель</div>
-        <div class="ghost-bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-        <div class="bento-note">Вклады, металлы, валюта и крипта — в одном расчёте</div>
-      `}
-      <footer class="bento-foot"><span>${v.rows.length ? 'Открыть портфель' : 'Собрать портфель'}</span>${icon('arrow')}</footer>
     </article>
 
     <article class="bento-card bento-card--crypto card card--click" data-home-card="crypto" data-go="#/crypto" tabindex="0" role="link">
@@ -716,7 +697,6 @@ function cryptoPage() {
             <td class="num muted">${money(c.volume ? rub(c.volume) : null, 0)}</td>
             <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
-              <button class="icon-btn" data-add-crypto="${esc(c.id)}" title="В портфель" aria-label="Добавить ${esc(c.name)} в портфель">${icon('plus')}</button>
               <button class="icon-btn" data-chart="crypto:${esc(c.id)}" title="График" aria-label="График ${esc(c.name)}">${icon('chart')}</button>
             </div></td>
           </tr>`;
@@ -732,12 +712,11 @@ function cryptoPage() {
 function metalsPage() {
   if (!S.market) return loadingView();
   const meta = S.market.metals.meta;
-  const date = S.market.metals.items[0]?.date || '';
   return `
   ${sourceWarning()}
   <div class="page-head">
     <div><h1>Драгметаллы</h1></div>
-    <div class="head-meta">${sourcePill('ЦБ РФ · ' + date, meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
+    <div class="head-meta">${sourcePill('ЦБ РФ', meta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="metal-cards">
     ${metalList().map((m) => `<article class="card metal-card row-click" data-chart="metal:${esc(m.id)}" tabindex="0" role="button" aria-label="График и информация: ${esc(m.name)}">
@@ -746,7 +725,7 @@ function metalsPage() {
       <div class="sub">₽/унция: ${money(m.ozRub)} · $/унция: ${num(m.ozUsd, 2)}</div>
       <div class="chg">${chg(m.change24h)} <span class="muted">за день</span></div>
       <button class="spark-btn" type="button" data-chart="metal:${esc(m.id)}" title="Открыть график" aria-label="Открыть график ${esc(m.name)}">${sparkline(m.spark, m.change24h >= 0 ? '#0fa97d' : '#e8564b', 240, 38)}</button>
-      <div class="card-foot"><button class="link-more" data-add-metal="${esc(m.id)}" style="border:0;background:none;padding:0">В портфель ${icon('plus')}</button><button class="link-more" data-chart="metal:${esc(m.id)}" style="border:0;background:none;padding:0">График ${icon('chart')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
+      <div class="card-foot"><button class="link-more" data-chart="metal:${esc(m.id)}" style="border:0;background:none;padding:0">График ${icon('chart')}</button>${ext('https://www.cbr.ru/hd_base/metall/', 'Котировки ЦБ РФ', 'chev-link')}</div>
     </article>`).join('')}
   </div>
   <div class="card table-card">
@@ -761,7 +740,7 @@ function metalsPage() {
           <td class="num">$${num(m.ozUsd, 2)}</td>
           <td class="num">${chg(m.change24h)}</td>
           <td class="muted">ЦБ РФ, ${esc(m.date)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-metal="${esc(m.id)}" title="В портфель">${icon('plus')}</button><button class="icon-btn" data-chart="metal:${esc(m.id)}" title="График" aria-label="График ${esc(m.name)}">${icon('chart')}</button></div></td>
+          <td><div class="row-actions"><button class="icon-btn" data-chart="metal:${esc(m.id)}" title="График" aria-label="График ${esc(m.name)}">${icon('chart')}</button></div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -856,7 +835,7 @@ function fxPage() {
           <td style="width:120px">${f.spark?.length > 1 ? `<button class="spark-btn" type="button"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''} title="Открыть график" aria-label="Открыть график ${esc(f.code)}">${sparkline(f.spark, (f.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button>` : '<span class="muted">—</span>'}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
           <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions"><button class="icon-btn" data-add-fx="${esc(f.code)}" title="В портфель" aria-label="Добавить валюту в портфель">${icon('plus')}</button>${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График" aria-label="График ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td><div class="row-actions">${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График" aria-label="График ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
         </tr>`).join('')}
         </tbody>
       </table>
@@ -920,7 +899,6 @@ function depositRowsHtml() {
     </div>
     <div class="offer-rate"><b>${num(d.rate, 2)}%</b><span>≈ ${money(depositIncome(d))} за ${S.dep.months} мес.</span></div>
     <div class="offer-actions">
-      <button class="icon-btn" data-add-deposit="${esc(d.id)}" title="В портфель" aria-label="Добавить вклад в портфель">${icon('plus')}</button>
       <span class="offer-chev">${icon('chev')}</span>
     </div>
   </article>`).join('');
@@ -974,10 +952,7 @@ function depositsPage() {
       <h3>Доход по лучшему вкладу</h3>
       <div class="sub" id="calc-sub">${bestDeposit() ? `${esc(bestDeposit().bank)} · ${esc(bestDeposit().name)}` : 'Нет подходящих предложений'}</div>
       <div class="calc-out" id="calc-result">${calcSummaryHtml()}</div>
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn--ghost btn--sm" style="flex:0 0 auto" data-action="calc-add">В портфель</button>
-        <span class="muted" style="font-size:10px;line-height:1.35">Расчёт по ставке лучшего предложения. Проверьте условия в банке.</span>
-      </div>
+      <p class="muted" style="font-size:10px;line-height:1.35;margin-top:10px">Расчёт по ставке лучшего предложения. Проверьте условия в банке.</p>
       <p class="calc-note">НДФЛ с процентов: 13% с суммы, превышающей 1 млн ₽ × ключевую ставку ЦБ${keyRate ? ` (${num(keyRate, 2)}%)` : ''}.</p>
     </aside>
   </div>`;
@@ -1020,11 +995,7 @@ function openDeposit(id) {
     <div class="deposit-detail-rate"><b>${num(d.rate, 2)}%</b><span>годовых</span></div>
     <div class="deposit-detail-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
     ${d.note ? `<p class="deposit-note">${esc(d.note)}</p>` : ''}
-    <div class="dialog-actions dialog-actions--single">
-      ${d.url
-        ? `<a class="btn btn--block" href="${esc(d.url)}" target="_blank" rel="noopener">Оформить вклад ${icon('ext')}</a>`
-        : `<button class="btn btn--block" type="button" data-add-deposit="${esc(d.id)}">Добавить в портфель</button>`}
-    </div>
+    ${d.url ? `<div class="dialog-actions dialog-actions--single"><a class="btn btn--block" href="${esc(d.url)}" target="_blank" rel="noopener">Оформить вклад ${icon('ext')}</a></div>` : ''}
     <p class="dialog-hint">Ставка и доход зависят от условий банка. Проверьте сумму, срок и способ выплаты процентов перед открытием.</p>`;
   if (!dialog.open) dialog.showModal();
 }
@@ -1069,51 +1040,97 @@ function realtyFloor(title) {
   return match ? `${match[1]}/${match[2]}` : '';
 }
 
-const REALTY_PRICE_KEY = 'monetka:realty:prices:v1';
+const SELLER_LABELS = { owner: 'Собственник', agency: 'Агентство', unknown: 'Не определено' };
+const sellerLabel = (type) => SELLER_LABELS[type] || SELLER_LABELS.unknown;
+
+function sellerBadge(item) {
+  const type = item?.sellerType || 'unknown';
+  const name = type === 'agency' && item?.sellerName ? ` title="${esc(item.sellerName)}"` : '';
+  return `<span class="re-seller re-seller--${type}"${name}>${sellerLabel(type)}</span>`;
+}
+
+const REALTY_PRICE_KEY = 'monetka:realty:prices:v2';
+let priceStoreCache = null;
 
 function readPriceStore() {
-  try { return JSON.parse(localStorage.getItem(REALTY_PRICE_KEY)) || {}; } catch { return {}; }
+  if (priceStoreCache) return priceStoreCache;
+  try { priceStoreCache = JSON.parse(localStorage.getItem(REALTY_PRICE_KEY)) || {}; } catch { priceStoreCache = {}; }
+  return priceStoreCache;
 }
 
-function trackRealtyPrice(item) {
+function writePriceStore(store) {
+  priceStoreCache = store;
+  try { localStorage.setItem(REALTY_PRICE_KEY, JSON.stringify(store)); } catch { /* переполнение — не роняем страницу */ }
+}
+
+function trackAllRealtyPrices() {
+  const items = realtyList();
+  if (!items.length) return;
   const store = readPriceStore();
   const today = new Date().toISOString().slice(0, 10);
-  const entry = store[item.id] || { title: item.title || item.address || item.city || 'Квартира', city: item.city || '', url: item.url || '', history: [] };
-  const history = Array.isArray(entry.history) ? entry.history : [];
-  const last = history[history.length - 1];
-  if (!last || last.t !== today || last.p !== item.price) {
-    history.push({ t: today, p: item.price });
-  }
-  entry.title = item.title || entry.title;
-  entry.city = item.city || entry.city;
-  entry.url = item.url || entry.url;
-  entry.price = item.price;
-  entry.updated = Date.now();
-  entry.history = history.slice(-60);
-  store[item.id] = entry;
-  const recent = Object.entries(store).sort((a, b) => (b[1].updated || 0) - (a[1].updated || 0)).slice(0, 30);
-  try { localStorage.setItem(REALTY_PRICE_KEY, JSON.stringify(Object.fromEntries(recent))); } catch {}
-  return entry;
+  let changed = false;
+  items.forEach((item) => {
+    if (!item?.id || !Number.isFinite(Number(item.price))) return;
+    const price = Number(item.price);
+    const entry = store[item.id];
+    if (!entry) {
+      store[item.id] = { f: price, p: price, t: today, h: [[today, price]] };
+      changed = true;
+      return;
+    }
+    if (!Array.isArray(entry.h)) entry.h = [];
+    if (entry.f == null) { entry.f = price; changed = true; }
+    if (entry.p !== price) {
+      entry.p = price;
+      entry.h.push([today, price]);
+      entry.h = entry.h.slice(-20);
+      changed = true;
+    }
+    entry.t = today;
+  });
+  if (changed) writePriceStore(store);
 }
 
-function realtyPriceHtml(entry) {
-  const history = entry?.history || [];
-  const first = history[0];
-  const last = history[history.length - 1];
-  if (!first || !last) return '';
-  const diff = last.p - first.p;
-  const changePct = first.p ? (diff / first.p) * 100 : 0;
+function realtyTrackedPrice(id) {
+  return readPriceStore()[id];
+}
+
+function realtyPriceChange(item) {
+  const entry = realtyTrackedPrice(item.id);
+  const first = entry?.h?.[0]?.[1];
+  const last = entry?.h?.[entry.h.length - 1]?.[1];
+  const local = first && last && first !== last ? (last / first - 1) * 100 : null;
+  const server = item.pricePrev && item.price ? (item.price / item.pricePrev - 1) * 100 : null;
+  return server ?? local;
+}
+
+function realtyChangeBadge(item) {
+  const change = realtyPriceChange(item);
+  if (change == null || Math.abs(change) < 0.05) return '';
+  return `<span class="re-change ${change > 0 ? 'up' : 'down'}">${pct(change)}</span>`;
+}
+
+function realtyPriceHtml(item) {
+  const entry = realtyTrackedPrice(item.id);
+  const prices = (entry?.h || []).map((point) => point[1]);
+  if (item.pricePrev) prices.unshift(item.pricePrev);
+  if (item.price) prices.push(item.price);
+  const unique = prices.filter((price, index) => price && prices.indexOf(price) === index);
+  if (!unique.length) return '';
+  const first = unique[0];
+  const last = unique[unique.length - 1];
+  const diff = last - first;
+  const changePct = first ? (diff / first) * 100 : 0;
   const change = diff === 0
-    ? '<span class="muted">без изменений</span>'
+    ? ''
     : `<span class="${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${money(diff)} · ${pct(changePct)}</span>`;
-  const spark = history.length > 1
-    ? sparkline(history.map((point) => point.p), diff >= 0 ? '#0fa97d' : '#e8564b', 300, 46)
+  const spark = unique.length > 1
+    ? sparkline(unique, diff >= 0 ? '#0fa97d' : '#e8564b', 300, 46)
     : '';
   return `<div class="price-history">
-    <div class="price-history-head"><span>Динамика цены</span><span class="mono">${history.length > 1 ? `${history.length} набл.` : 'наблюдаем'}</span></div>
-    <div class="price-history-value">${money(last.p)} ${change}</div>
-    ${spark || `<p class="price-history-note">Первое наблюдение ${new Date(first.t).toLocaleDateString('ru-RU')}. Изменение появится после следующего визита.</p>`}
-    <p class="price-history-note">История хранится в этом браузере.</p>
+    <div class="price-history-head"><span>Динамика цены</span></div>
+    <div class="price-history-value">${money(last)} ${change}</div>
+    ${spark}
   </div>`;
 }
 
@@ -1189,10 +1206,10 @@ function realtyRowsHtml() {
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
     <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
-      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}</span></div>
+      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}${realtyChangeBadge(r)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
       <div class="re-meta">${[r.metro, r.district, r.sub].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
-      <div class="re-foot"><span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
+      <div class="re-foot">${sellerBadge(r)}<span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
     </div>
   </article>`).join('')}</div>`;
   const more = items.length - shown.length;
@@ -1384,10 +1401,10 @@ function openRealty(id) {
     ['Площадь', item.area ? `${num(item.area, 1)} м²` : ''],
     ['Этаж', realtyFloor(item.title)],
     ['Тип', item.sub],
+    ['Продавец', sellerLabel(item.sellerType)],
     ['Источник', item.source],
   ].filter(([, value]) => value && value !== '—');
   realtyGeoId = item.id;
-  const priceEntry = trackRealtyPrice(item);
   body.innerHTML = `
     <div class="realty-media">
       <div id="realty-gallery">${realtyGalleryHtml()}</div>
@@ -1400,7 +1417,7 @@ function openRealty(id) {
       </div>
       <div class="realty-address">${esc(item.address || item.city || '')}</div>
       <div id="realty-geo-info" class="geo-info"><div class="geo-info-empty">Определяем маршрут…</div></div>
-      ${realtyPriceHtml(priceEntry)}
+      ${realtyPriceHtml(item)}
       <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
       <div class="realty-actions realty-actions--single">
         ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
@@ -1754,7 +1771,6 @@ function render() {
   else if (page === 'fx') html = fxPage();
   else if (page === 'deposits') html = depositsPage();
   else if (page === 'realty') html = realtyPage();
-  else if (page === 'portfolio') html = portfolioPage();
   else if (page === 'search') html = searchPage(params);
   else html = `<div class="empty-state"><h3>Страница не найдена</h3><a class="btn" href="#/">На главную</a></div>`;
 
@@ -1780,7 +1796,7 @@ function render() {
 }
 
 function pageTitle(page) {
-  return { home: 'Главная', crypto: 'Криптовалюта', stocks: 'Акции', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', realty: 'Недвижимость', portfolio: 'Портфель', search: 'Поиск' }[page] || 'Монетка';
+  return { home: 'Главная', crypto: 'Криптовалюта', stocks: 'Акции', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', realty: 'Недвижимость', search: 'Поиск' }[page] || 'Монетка';
 }
 
 function updateSideStatus() {
@@ -2679,10 +2695,10 @@ $('#search-form').addEventListener('submit', (e) => {
   location.hash = q ? `#/search?q=${encodeURIComponent(q)}` : '#/';
 });
 
-$('#add-form').addEventListener('submit', handleSubmit);
-$('#profile-form').addEventListener('submit', saveProfileName);
+$('#add-form')?.addEventListener('submit', handleSubmit);
+$('#profile-form')?.addEventListener('submit', saveProfileName);
 $('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); askAi(); });
-$('#add-dialog').addEventListener('close', () => { $('#form-error').textContent = ''; });
+$('#add-dialog')?.addEventListener('close', () => { const err = $('#form-error'); if (err) err.textContent = ''; });
 $('#realty-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
 });

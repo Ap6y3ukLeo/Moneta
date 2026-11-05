@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Manrope:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20261103r">
+<link rel="stylesheet" href="styles.css?v=20261105c">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
@@ -49,7 +49,6 @@
 
     <nav class="nav" aria-label="Основная навигация">
       <a href="#/" data-nav="home"><svg class="ic"><use href="#i-home"/></svg>Главная</a>
-      <a href="#/portfolio" data-nav="portfolio"><svg class="ic"><use href="#i-wallet"/></svg>Портфель</a>
       <a href="#/deposits" data-nav="deposits"><svg class="ic"><use href="#i-bank"/></svg>Вклады банков</a>
       <a href="#/realty" data-nav="realty"><svg class="ic"><use href="#i-building"/></svg>Недвижимость</a>
       <a href="#/crypto" data-nav="crypto"><svg class="ic"><use href="#i-crypto"/></svg>Криптовалюта</a>
@@ -70,11 +69,6 @@
       <div class="top-actions">
         <button class="icon-btn" type="button" data-action="refresh" title="Обновить данные" aria-label="Обновить данные"><svg class="ic"><use href="#i-refresh"/></svg></button>
         <button class="icon-btn has-dot" type="button" data-action="bell" title="Уведомления" aria-label="Уведомления"><svg class="ic"><use href="#i-bell"/></svg></button>
-        <button class="user" type="button" data-action="profile" title="Профиль и портфель">
-          <span class="avatar" id="user-avatar">А</span>
-          <span class="user-name" id="user-name">Алексей</span>
-          <svg class="ic chev"><use href="#i-chev"/></svg>
-        </button>
       </div>
     </header>
 
@@ -101,53 +95,6 @@
 </div>
 
 <div class="scrim" data-action="menu" aria-hidden="true"></div>
-
-<dialog id="add-dialog" class="dialog">
-  <form id="add-form" class="dialog-card" novalidate>
-    <div class="dialog-head">
-      <div><h2>Добавить в портфель</h2><p>Данные хранятся только в этом браузере.</p></div>
-      <button class="icon-btn" type="button" data-action="close-dialog" aria-label="Закрыть"><svg class="ic"><use href="#i-close"/></svg></button>
-    </div>
-    <div class="seg" id="kind-seg">
-      <button type="button" class="seg-btn is-active" data-kind="crypto">Криптовалюта</button>
-      <button type="button" class="seg-btn" data-kind="metal">Драгметалл</button>
-      <button type="button" class="seg-btn" data-kind="fx">Валюта</button>
-      <button type="button" class="seg-btn" data-kind="deposit">Вклад</button>
-    </div>
-    <div id="add-fields" class="fields"></div>
-    <p class="form-error" id="form-error" role="alert"></p>
-    <div class="dialog-actions">
-      <button class="btn btn--ghost" type="button" data-action="close-dialog">Отмена</button>
-      <button class="btn" type="submit">Добавить</button>
-    </div>
-    <p class="dialog-hint">Валюту и металлы считаем по курсу ЦБ. Для вклада доход считается с капитализацией и налогом с процентов (13% сверх 1 млн × ключевая ставка).</p>
-  </form>
-</dialog>
-
-<dialog id="profile-dialog" class="dialog">
-  <form id="profile-form" class="dialog-card" novalidate>
-    <div class="dialog-head">
-      <div><h2>Профиль</h2><p>У каждого профиля свой портфель. Данные хранятся только в этом браузере.</p></div>
-      <button class="icon-btn" type="button" data-action="close-profile" aria-label="Закрыть"><svg class="ic"><use href="#i-close"/></svg></button>
-    </div>
-    <div class="fields">
-      <div class="field field--full">
-        <label for="profile-select">Активный профиль</label>
-        <select id="profile-select"></select>
-      </div>
-      <div class="field field--full">
-        <label for="profile-name">Имя</label>
-        <input id="profile-name" type="text" maxlength="24" autocomplete="off" placeholder="Как к вам обращаться">
-      </div>
-    </div>
-    <div class="dialog-actions profile-actions">
-      <button class="btn btn--ghost" type="button" data-action="profile-new">Новый профиль</button>
-      <button class="btn btn--ghost" type="button" id="profile-delete" data-action="profile-delete">Удалить</button>
-      <button class="btn" type="submit">Сохранить</button>
-    </div>
-    <p class="dialog-hint">Портфели профилей не смешиваются. Переключение доступно в верхней панели.</p>
-  </form>
-</dialog>
 
 <dialog id="forecast-dialog" class="dialog forecast-dialog">
   <div class="dialog-card forecast-card">
@@ -210,11 +157,9 @@
     </header>
     <div class="ai-log" id="ai-log" role="log" aria-live="polite"></div>
     <div class="ai-panel-presets">
-      <button class="chip" type="button" data-ai="Что в портфеле самое рискованное?">Риски</button>
-      <button class="chip" type="button" data-ai="Посчитай общую доходность и XIRR портфеля, покажи, что тянет результат вниз.">Доходность</button>
       <button class="chip" type="button" data-ai="Сравни лучшие вклады при сумме 300 000 ₽ на год.">Вклады</button>
-      <button class="chip" type="button" data-ai="Что происходит с долларом и что это значит для портфеля?">Валюта</button>
-      <button class="chip" type="button" data-ai="Покажи средние цены на недвижимость и что это значит для портфеля.">Недвижимость</button>
+      <button class="chip" type="button" data-ai="Что происходит с долларом и что это значит для рынка?">Валюта</button>
+      <button class="chip" type="button" data-ai="Покажи средние цены на недвижимость по России и Москве.">Недвижимость</button>
       <button class="chip" type="button" data-ai="Что ты умеешь?">Что умею</button>
     </div>
     <form class="ai-form" id="ai-form">
@@ -230,6 +175,6 @@
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=20261103r"></script>
+<script src="app.js?v=20261105c"></script>
 </body>
 </html>

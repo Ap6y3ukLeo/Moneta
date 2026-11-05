@@ -1466,6 +1466,7 @@ def _parse_bn(html):
             "district": district_text,
             "metro": _clean(metro.group(1)) if metro else "",
             "sub": subtext,
+            "sellerType": _seller_type("БН.ру", seg),
             "img": img,
             "url": "https://www.bn.ru" + m.group(1),
         })
@@ -1511,7 +1512,7 @@ def build_mirkvartir_stats():
 
 
 AVITO_URL = "https://www.avito.ru/rossiya/kvartiry/prodam"
-AVITO_PAGES = 3
+AVITO_PAGES = 8
 AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => {
   const img = card.querySelector('img');
   const srcset = img?.getAttribute('srcset') || '';
@@ -1531,7 +1532,18 @@ AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"
 }))"""
 
 CIAN_URL = "https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=2"
-CIAN_PAGES = 20
+CIAN_PAGES = 12
+CIAN_REGIONS = ((2, "Санкт-Петербург"), (1, "Москва"))
+
+MIRK_URL = "https://www.mirkvartir.ru/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0/"
+MIRK_PAGES = 2
+MIRK_JS = r"""JSON.stringify([...document.querySelectorAll('a[href^="https://www.mirkvartir.ru/"]')]
+  .filter((a) => /\/\d+\/$/.test(a.pathname))
+  .map((a) => ({
+    url: a.href,
+    text: (a.parentElement?.parentElement || a.parentElement || a).innerText,
+    img: (a.parentElement?.parentElement || a.parentElement || a).querySelector('img')?.src
+  })))"""
 CIAN_JS = r"""JSON.stringify([...document.querySelectorAll('article[data-name="CardComponent"]')].map((card) => ({
   url: card.querySelector('a[href*="/sale/flat/"]')?.href,
   title: card.querySelector('[data-mark="OfferTitle"]')?.innerText,
@@ -1575,6 +1587,36 @@ CITY_SLUGS = {
     "voskresenskoe": "Воскресенское",
     "odintsovo": "Одинцово",
 }
+
+
+OWNER_RE = re.compile(r"собственник|хозяин|от собственника|без комисс|без агент", re.I)
+AGENCY_RE = re.compile(r"агентств|риелтор|риэлтор|АН\b|компани|застройщик|брокер|офис продаж", re.I)
+
+
+def _seller_type(source, text="", author=None, not_for_agents=False):
+    """Эвристика: собственник / агентство / не определено."""
+    if isinstance(author, dict):
+        category = str(author.get("category") or author.get("userType") or "").upper()
+        if category == "AGENCY":
+            return "agency"
+        if category in ("OWNER", "PRIVATE", "USER"):
+            return "owner"
+    if not_for_agents:
+        return "owner"
+    value = str(text or "")
+    if OWNER_RE.search(value):
+        return "owner"
+    if AGENCY_RE.search(value):
+        return "agency"
+    if source in ("Циан", "БН.ру"):
+        return "unknown"
+    return "unknown"
+
+
+def _seller_name(author=None):
+    if not isinstance(author, dict):
+        return ""
+    return _clean(author.get("organization") or author.get("agentName") or author.get("name") or "")
 
 
 def _clean_city(value):
@@ -1664,6 +1706,7 @@ def build_avito():
         if item_id in seen:
             continue
         seen.add(item_id)
+        seller_type = _seller_type("Авито", text)
         items.append({
             "id": "avito:" + item_id,
             "source": "Авито",
@@ -1677,6 +1720,7 @@ def build_avito():
             "district": district,
             "metro": metro,
             "sub": "",
+            "sellerType": seller_type,
             "img": row.get("img") or "",
             "url": url,
         })
@@ -1686,7 +1730,10 @@ def build_avito():
 
 
 def build_cian():
-    rows = browser_json_pages(CIAN_URL, CIAN_JS, CIAN_PAGES, first_wait=10, wait=5)
+    rows = []
+    for region, city_name in CIAN_REGIONS:
+        url = f"https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region={region}"
+        rows.extend(browser_json_pages(url, CIAN_JS, CIAN_PAGES, first_wait=10, wait=4))
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
@@ -1704,7 +1751,8 @@ def build_cian():
         if not (1_000_000 <= price <= 500_000_000):
             continue
         lines = [_clean(x) for x in text.splitlines() if _clean(x)]
-        addr = next((line for line in lines if line.startswith("Санкт-Петербург")), "")
+        city_name = next((name for _, name in CIAN_REGIONS if any(line.startswith(name) for line in lines)), "")
+        addr = next((line for line in lines if line.startswith(city_name)), "") if city_name else ""
         if not addr:
             continue
         sale = re.search(r"/sale/flat/(\d+)/", url)
@@ -1719,7 +1767,7 @@ def build_cian():
         items.append({
             "id": "cian:" + sale.group(1),
             "source": "Циан",
-            "city": _clean_city(addr.split(",")[0]) or "Санкт-Петербург",
+            "city": _clean_city(city_name),
             "title": layout,
             "price": price,
             "priceM2": _digits(ppm.group(1)) if ppm else (round(price / area) if area else None),
@@ -1729,11 +1777,62 @@ def build_cian():
             "district": _clean(district_m.group(1)) if district_m else "",
             "metro": _clean(metro_m.group(1)) if metro_m else "",
             "sub": title if title != layout else "",
+            "sellerType": _seller_type("Циан", text),
             "img": row.get("img") or "",
             "url": url,
         })
     if not items:
         raise RuntimeError("Циан: не удалось получить объявления (антибот)")
+    return items
+
+
+def build_mirkvartir():
+    rows = browser_json_pages(MIRK_URL, MIRK_JS, MIRK_PAGES, first_wait=12, wait=5)
+    items, seen = [], set()
+    for row in rows:
+        url = (row.get("url") or "").split("?")[0]
+        m = re.search(r"mirkvartir\.ru/(\d+)/", url)
+        text = row.get("text") or ""
+        if not m or m.group(1) in seen:
+            continue
+        price_m = re.search(r"([\d\s\u00a0]+)\s*₽(?!\s*/)", text)
+        if not price_m:
+            continue
+        price = _digits(price_m.group(1))
+        if not (300_000 <= price <= 1_000_000_000):
+            continue
+        ppm = re.search(r"([\d\s\u00a0]+)\s*₽/м²", text)
+        area_m = re.search(r"([\d.,]+)\s*м²", text)
+        addr_m = re.search(r"^(Москва|Санкт-Петербург),.*$", text, re.M)
+        rooms_m = re.search(r"(\d+)-комнатная", text) or re.search(r"(\d+)\s*\n?Комнаты", text)
+        rooms = "Студия" if re.search(r"студи", text, re.I) else (rooms_m.group(1) if rooms_m else "")
+        area = _num(area_m.group(1)) if area_m else None
+        address = _clean(addr_m.group(0)) if addr_m else ""
+        city = _clean_city(addr_m.group(1)) if addr_m else "Москва"
+        if not address:
+            continue
+        seen.add(m.group(1))
+        title = (f"{rooms}-комн. квартира" if rooms and rooms != "Студия" else "Студия" if rooms else "Квартира") + (f", {area:g} м²" if area else "")
+        seller = _seller_type("Мир квартир", text)
+        items.append({
+            "id": "mirk:" + m.group(1),
+            "source": "Мир квартир",
+            "city": city,
+            "title": title,
+            "price": price,
+            "priceM2": _digits(ppm.group(1)) if ppm else (round(price / area) if area else None),
+            "area": area,
+            "rooms": rooms,
+            "address": address,
+            "district": "",
+            "metro": "",
+            "sub": "Новостройка" if re.search(r"новострой", text, re.I) else "Вторичка",
+            "sellerType": seller,
+            "img": row.get("img") or "",
+            "url": url,
+        })
+    if not items:
+        raise RuntimeError("Мир квартир: не удалось получить объявления")
     return items
 
 
@@ -1827,12 +1926,18 @@ def _parse_yandex(html: str, fallback_city: str = ""):
         if img.startswith("//"):
             img = "https:" + img
         flat = entity.get("flatType") or ""
+        author = entity.get("author") or {}
+        price_obj = entity.get("price") or {}
+        prev_price = price_obj.get("previous")
+        seller_type = _seller_type("Яндекс", "", author, entity.get("notForAgents"))
+        seller_name = _seller_name(author)
         items.append({
             "id": "yandex:" + str(entity.get("offerId")),
             "source": "Яндекс",
             "city": _clean_city(city),
             "title": title,
             "price": int(price),
+            "pricePrev": int(prev_price) if prev_price and 0 < int(prev_price) <= 2_000_000_000 else None,
             "priceM2": round(price / area) if area else None,
             "area": area,
             "rooms": rooms_text,
@@ -1840,6 +1945,8 @@ def _parse_yandex(html: str, fallback_city: str = ""):
             "district": "",
             "metro": _clean((location.get("metro") or {}).get("name") or ""),
             "sub": "Новостройка" if flat.startswith("NEW") else "Вторичка",
+            "sellerType": seller_type,
+            "sellerName": seller_name,
             "img": img,
             "url": f"https://realty.yandex.ru/offer/{entity.get('offerId')}/",
         })
@@ -1885,9 +1992,10 @@ def api_realty():
         ("realty_avito", 10800, build_avito),
         ("realty_cian", 10800, build_cian),
         ("realty_yandex", 10800, build_yandex),
+        ("realty_mirk", 10800, build_mirkvartir),
         ("realty_moscow", 21600, build_mirkvartir_stats),
     ]
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda job: _safe_source(*job), jobs))
 
     listings = []
@@ -1925,10 +2033,11 @@ def api_realty():
 
     sources = []
     scopes = {"realty_bn": "СПб", "realty_avito": "Россия", "realty_cian": "СПб",
-              "realty_yandex": "Россия", "realty_moscow": "Москва"}
+              "realty_yandex": "Россия", "realty_mirk": "Москва", "realty_moscow": "Москва"}
     for key, label, _ in (("realty_bn", "БН.ру", build_bn), ("realty_avito", "Авито", build_avito),
                           ("realty_cian", "Циан", build_cian), ("realty_yandex", "Яндекс", build_yandex),
-                          ("realty_moscow", "Мир квартир", build_mirkvartir_stats)):
+                          ("realty_mirk", "Мир квартир", build_mirkvartir),
+                          ("realty_moscow", "Мир квартир · цены", build_mirkvartir_stats)):
         data, meta = metas[key]
         count = len(data) if isinstance(data, list) else (1 if data else 0)
         sources.append({"key": key.replace("realty_", ""), "name": label, "scope": scopes[key],

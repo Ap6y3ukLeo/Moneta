@@ -895,7 +895,8 @@ table.data th.num { text-align: right; }
 .bento-card:hover { border-color: #c7ece2; box-shadow: 0 16px 38px rgba(28, 40, 74, .1); }
 .bento-card--deposit { grid-column: span 7; min-height: 280px; }
 .bento-card--portfolio { grid-column: span 5; min-height: 280px; }
-.bento-card--crypto, .bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--ai { grid-column: span 4; min-height: 260px; }
+.bento-card--crypto { grid-column: span 5; min-height: 260px; }
+.bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--ai { grid-column: span 4; min-height: 260px; }
 .bento-card.is-dragging { opacity: .55; transform: scale(.98) !important; box-shadow: 0 22px 48px rgba(28, 40, 74, .18); }
 body.is-home-dragging, body.is-home-dragging * { cursor: grabbing !important; user-select: none; }
 
@@ -1158,3 +1159,10 @@ body:has(dialog[open]) { overflow: hidden; }
 
 .spark-slot { display: block; width: 120px; height: 34px; }
 .spark-slot .spark { width: 100%; height: 34px; }
+.re-change { display: inline-block; margin-left: 6px; padding: 1px 5px; border-radius: 6px; font-size: 9px; font-weight: 700; vertical-align: 1px; background: #eef4f3; }
+.re-change.up { color: #0a7d5f; }
+.re-change.down { color: #b23a2e; }
+.re-seller { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .02em; }
+.re-seller--owner { background: #e8faf5; color: #0a7d5f; }
+.re-seller--agency { background: #eef4ff; color: #2f63cf; }
+.re-seller--unknown { background: #f2f5f5; color: #68788c; }
