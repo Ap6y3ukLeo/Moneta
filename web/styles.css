@@ -896,7 +896,7 @@ table.data th.num { text-align: right; }
 .bento-card--deposit { grid-column: span 7; min-height: 280px; }
 .bento-card--portfolio { grid-column: span 5; min-height: 280px; }
 .bento-card--crypto { grid-column: span 5; min-height: 260px; }
-.bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--ai { grid-column: span 4; min-height: 260px; }
+.bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--summary { grid-column: span 4; min-height: 260px; }
 .bento-card.is-dragging { opacity: .55; transform: scale(.98) !important; box-shadow: 0 22px 48px rgba(28, 40, 74, .18); }
 body.is-home-dragging, body.is-home-dragging * { cursor: grabbing !important; user-select: none; }
 
@@ -966,11 +966,11 @@ body.is-home-dragging, body.is-home-dragging * { cursor: grabbing !important; us
 .map-grid span:nth-child(4n) { background: rgba(28, 40, 74, .08); }
 @keyframes mapPulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 
-.ai-notes { display: flex; flex-direction: column; }
-.ai-note { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1px solid #f1f6f5; font-size: 12px; line-height: 1.5; color: #40536a; }
-.ai-note:last-child { border-bottom: 0; }
-.ai-note .ic { width: 13px; height: 13px; flex: none; margin-top: 3px; color: var(--teal-700); }
-.ai-note b { color: var(--navy); font-weight: 600; }
+.summary-notes { display: flex; flex-direction: column; }
+.summary-note { display: flex; gap: 9px; padding: 9px 0; border-bottom: 1px solid #f1f6f5; font-size: 12px; line-height: 1.5; color: #40536a; }
+.summary-note:last-child { border-bottom: 0; }
+.summary-note .ic { width: 13px; height: 13px; flex: none; margin-top: 3px; color: var(--teal-700); }
+.summary-note b { color: var(--navy); font-weight: 600; }
 
 /* ---------- shared motion */
 @keyframes rise { from { opacity: 0; translate: 0 14px; filter: blur(3px); } to { opacity: 1; translate: 0 0; filter: blur(0); } }
@@ -1024,7 +1024,7 @@ body.is-home-dragging, body.is-home-dragging * { cursor: grabbing !important; us
 @media (max-width: 1100px) {
   .bento { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bento-card--deposit { grid-column: span 2; }
-  .bento-card--portfolio, .bento-card--crypto, .bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--ai { grid-column: span 1; }
+  .bento-card--portfolio, .bento-card--crypto, .bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--summary { grid-column: span 1; }
 }
 @media (max-width: 900px) {
   .realty-body { grid-template-columns: minmax(0, 1fr); }
@@ -1037,7 +1037,7 @@ body.is-home-dragging, body.is-home-dragging * { cursor: grabbing !important; us
 }
 @media (max-width: 760px) {
   .bento { grid-template-columns: minmax(0, 1fr); }
-  .bento-card, .bento-card--deposit, .bento-card--portfolio, .bento-card--crypto, .bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--ai { grid-column: span 1; min-height: 0; }
+  .bento-card, .bento-card--deposit, .bento-card--portfolio, .bento-card--crypto, .bento-card--realty, .bento-card--metals, .bento-card--fx, .bento-card--stocks, .bento-card--summary { grid-column: span 1; min-height: 0; }
   .bento-deposit { gap: 18px; }
   .gauge { width: 112px; height: 112px; }
   .home-tools { align-items: flex-start; }
@@ -1166,3 +1166,15 @@ body:has(dialog[open]) { overflow: hidden; }
 .re-seller--owner { background: #e8faf5; color: #0a7d5f; }
 .re-seller--agency { background: #eef4ff; color: #2f63cf; }
 .re-seller--unknown { background: #f2f5f5; color: #68788c; }
+
+/* --- polish pass: typography, focus, press feedback, hit areas --- */
+h1, h2, h3 { text-wrap: balance; }
+p, li, .card-head .sub, .bento-sub, .re-addr, .re-meta, .price-history-value { text-wrap: pretty; }
+.re-img img, .realty-photo, .realty-thumb img, .photo-full { outline: 1px solid rgba(0, 0, 0, .1); outline-offset: -1px; }
+button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.btn:active, .icon-btn:active, .chip:active { scale: .96; transform: none; }
+.re-change { font-variant-numeric: tabular-nums; }
+.bento-tools { gap: 10px; }
+.bento-head { padding-right: 70px; }
+.bento-grip, .bento-remove { position: relative; width: 28px; height: 28px; }
+.bento-grip::after, .bento-remove::after { content: ""; position: absolute; inset: -5px; }

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Manrope:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20261105c">
+<link rel="stylesheet" href="styles.css?v=20261105f">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
@@ -55,7 +55,6 @@
       <a href="#/stocks" data-nav="stocks"><svg class="ic"><use href="#i-chart"/></svg>Акции</a>
       <a href="#/metals" data-nav="metals"><svg class="ic"><use href="#i-gold"/></svg>Драгметаллы</a>
       <a href="#/fx" data-nav="fx"><svg class="ic"><use href="#i-fx"/></svg>Валюта</a>
-      <a href="#/deposits?calc=1" data-nav="calc"><svg class="ic"><use href="#i-calc"/></svg>Калькулятор вкладов</a>
     </nav>
   </aside>
 
@@ -146,35 +145,8 @@
   </div>
 </dialog>
 
-<div class="ai-widget" id="ai-widget">
-  <section class="ai-panel" id="ai-panel" aria-label="Чат с нейросетью" hidden>
-    <header class="ai-panel-head">
-      <div class="ai-panel-title">
-        <span class="ai-panel-mark"><svg class="ic"><use href="#i-spark"/></svg></span>
-        <div><b>Нейросеть</b><small>анализ портфеля и рынка</small></div>
-      </div>
-      <button class="icon-btn" type="button" data-action="ai-close" aria-label="Закрыть чат"><svg class="ic"><use href="#i-close"/></svg></button>
-    </header>
-    <div class="ai-log" id="ai-log" role="log" aria-live="polite"></div>
-    <div class="ai-panel-presets">
-      <button class="chip" type="button" data-ai="Сравни лучшие вклады при сумме 300 000 ₽ на год.">Вклады</button>
-      <button class="chip" type="button" data-ai="Что происходит с долларом и что это значит для рынка?">Валюта</button>
-      <button class="chip" type="button" data-ai="Покажи средние цены на недвижимость по России и Москве.">Недвижимость</button>
-      <button class="chip" type="button" data-ai="Что ты умеешь?">Что умею</button>
-    </div>
-    <form class="ai-form" id="ai-form">
-      <input id="ai-question" type="text" maxlength="1200" placeholder="Спросите о портфеле или рынке" autocomplete="off">
-      <button class="ai-send" id="ai-send" type="submit" aria-label="Отправить"><svg class="ic"><use href="#i-arrow"/></svg></button>
-    </form>
-    <p class="ai-disclaimer">Нейросеть может ошибаться. Это не инвестиционная рекомендация.</p>
-  </section>
-  <button class="ai-fab" id="ai-fab" type="button" data-action="ai-toggle" aria-label="Открыть чат с нейросетью" aria-expanded="false" aria-controls="ai-panel">
-    <svg class="ic"><use href="#i-spark"/></svg>
-  </button>
-</div>
-
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=20261105c"></script>
+<script src="app.js?v=20261105f"></script>
 </body>
 </html>

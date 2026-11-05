@@ -507,11 +507,11 @@ function homePage() {
   const msk = S.realty?.stats?.moscow;
   const russia = S.realty?.stats?.russia;
   const bestCrypto = [...crypto.items].sort((a, b) => (b.change24h || 0) - (a.change24h || 0))[0];
-  const aiNotes = [];
-  if (topDep) aiNotes.push(`Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`);
-  if (xau) aiNotes.push(`Золото ${chg(xau.change24h)} за день, <b>${money(xau.price)}</b>/г.`);
-  if (btc) aiNotes.push(`BTC ${chg(btc.change24h)} за сутки, <b>${money(rub(btc.price))}</b>.`);
-  if (!aiNotes.length && bestCrypto) aiNotes.push(`Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`);
+  const summaryNotes = [];
+  if (topDep) summaryNotes.push(`Лучшая ставка — <b>${num(topDep.rate, 2)}%</b> у <b>${esc(topDep.bank)}</b>.`);
+  if (xau) summaryNotes.push(`Золото ${chg(xau.change24h)} за день, <b>${money(xau.price)}</b>/г.`);
+  if (btc) summaryNotes.push(`BTC ${chg(btc.change24h)} за сутки, <b>${money(rub(btc.price))}</b>.`);
+  if (!summaryNotes.length && bestCrypto) summaryNotes.push(`Лидер суток — <b>${esc(bestCrypto.name)}</b>, ${chg(bestCrypto.change24h)}.`);
   const tools = `<div class="bento-tools">
     <button class="bento-grip" type="button" data-home-drag aria-label="Перетащить карточку" title="Перетащить">⠿</button>
     <button class="bento-remove" type="button" data-remove-home aria-label="Убрать карточку" title="Убрать">${icon('close')}</button>
@@ -522,7 +522,7 @@ function homePage() {
   <section class="hero">
     <div class="hero-copy">
       <span class="eyebrow">Обзор рынка</span>
-      <h1><span class="hero-line"><span>Курс, ставка и цена метра</span></span><span class="hero-line"><em>— на одном экране</em></span></h1>
+      <h1><span class="hero-line"><span>Курс, ставка и цена метра</span></span><span class="hero-line"><em>на одном экране</em></span></h1>
       <p>Пять рынков в одном расчёте: крипта и валюта по бирже, металлы и ставка ЦБ, вклады банков и объявления по всей России.</p>
       <div class="hero-actions">
         <a class="btn" href="#/crypto">Смотреть рынки ${icon('arrow')}</a>
@@ -656,16 +656,15 @@ function homePage() {
       <footer class="bento-foot"><span>Все бумаги</span>${icon('arrow')}</footer>
     </article>
 
-    <article class="bento-card bento-card--ai card" data-home-card="summary">
+    <article class="bento-card bento-card--summary card" data-home-card="summary">
       ${tools}
       <header class="bento-head">
         <span class="bento-label">${icon('spark')} Сводка</span>
         <span class="bento-meta">live</span>
       </header>
-      <div class="ai-notes">
-        ${aiNotes.map((n) => `<div class="ai-note">${icon('spark')}<span>${n}</span></div>`).join('')}
+      <div class="summary-notes">
+        ${summaryNotes.map((n) => `<div class="summary-note">${icon('spark')}<span>${n}</span></div>`).join('')}
       </div>
-      <footer class="bento-foot"><button class="link-more" type="button" data-action="ai-open">Спросить ${icon('arrow')}</button></footer>
     </article>
   </section>`;
 }
@@ -1122,7 +1121,7 @@ function realtyPriceHtml(item) {
   const diff = last - first;
   const changePct = first ? (diff / first) * 100 : 0;
   const change = diff === 0
-    ? ''
+    ? '<span class="muted">Цена не изменялась</span>'
     : `<span class="${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${money(diff)} · ${pct(changePct)}</span>`;
   const spark = unique.length > 1
     ? sparkline(unique, diff >= 0 ? '#0fa97d' : '#e8564b', 300, 46)
@@ -1204,7 +1203,7 @@ function realtyRowsHtml() {
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
-    <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
+    <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="${esc(r.title || r.address || 'Квартира')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
     <div class="re-body">
       <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}${realtyChangeBadge(r)}</span></div>
       <div class="re-addr">${esc(r.address || r.district)}</div>
@@ -1354,10 +1353,10 @@ function realtyGalleryHtml() {
   const lowRes = /img\.avito\.st/.test(images[index]);
   return `<div class="realty-photo-wrap${lowRes ? ' is-lowres' : ''}"${lowRes ? ` style="--photo:url('${esc(images[index])}')"` : ''} data-photo-open tabindex="0" role="button" aria-label="Открыть фото на весь экран">
       <div class="realty-photo-empty">Нет фото</div>
-      <img class="realty-photo" src="${esc(images[index])}" alt="" loading="eager" referrerpolicy="no-referrer" onerror="this.remove()">
+      <img class="realty-photo" src="${esc(images[index])}" alt="${esc(realtyGallery.title || 'Фото квартиры')}" loading="eager" referrerpolicy="no-referrer" onerror="this.remove()">
       <span class="realty-photo-count">${index + 1} / ${images.length}</span>
     </div>
-    ${images.length > 1 ? `<div class="realty-thumbs">${images.map((src, i) => `<button class="realty-thumb${i === index ? ' is-active' : ''}" type="button" data-realty-photo="${i}" aria-label="Фото ${i + 1}"><img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"></button>`).join('')}</div>` : ''}`;
+    ${images.length > 1 ? `<div class="realty-thumbs">${images.map((src, i) => `<button class="realty-thumb${i === index ? ' is-active' : ''}" type="button" data-realty-photo="${i}" aria-label="Фото ${i + 1}"><img src="${esc(src)}" alt="Фото ${i + 1}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()"></button>`).join('')}</div>` : ''}`;
 }
 
 function renderRealtyGallery() {
@@ -1390,7 +1389,7 @@ function openRealty(id) {
   const sub = $('#realty-sub');
   if (!item || !dialog || !body) return;
   const rooms = item.rooms === 'Студия' ? 'Студия' : item.rooms ? `${item.rooms}-комн.` : 'Квартира';
-  realtyGallery = { id: item.id, images: (Array.isArray(item.images) && item.images.length ? item.images : (item.img ? [item.img] : [])).map(realtyHiRes), index: 0 };
+  realtyGallery = { id: item.id, title: item.title || item.address || item.city || 'Квартира', images: (Array.isArray(item.images) && item.images.length ? item.images : (item.img ? [item.img] : [])).map(realtyHiRes), index: 0 };
   if (title) title.textContent = item.title || rooms;
   if (sub) sub.textContent = [item.city, item.source].filter(Boolean).join(' · ');
   const details = [
@@ -1779,12 +1778,7 @@ function render() {
   if (page === 'home') applyHomeLayout();
   if (page === 'stocks') hydrateStockSparks();
 
-  if (page === 'deposits' && params.get('calc')) navKey = 'calc';
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === navKey));
-
-  if (page === 'deposits' && params.get('calc')) {
-    setTimeout(() => $('#dep-calc')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80);
-  }
   if (page === 'search') {
     const q = params.get('q') || '';
     const input = $('#search-input');
@@ -1932,181 +1926,6 @@ function addDemo() {
   savePortfolio();
   render();
   toast('Демо-портфель загружен');
-}
-
-function aiContext() {
-  const v = valuation();
-  const positions = v.rows.map((r) => ({
-    name: r.name,
-    type: r.kindLabel,
-    value: Math.round(r.cur),
-    cost: Math.round(r.cost),
-    pnl: Math.round(r.pnl),
-    sharePct: +(r.cur / (v.value || 1) * 100).toFixed(1),
-  }));
-  const crypto = cryptoList().slice(0, 6).map((c) => ({
-    symbol: c.symbol, name: c.name, priceUsd: c.price, change24h: c.change24h,
-  }));
-  const metals = metalList().map((m) => ({
-    code: m.code, name: m.name, rubPerGram: m.price, change24h: m.change24h,
-  }));
-  const fx = fxList().map((f) => ({
-    code: f.code, name: f.name, rub: f.value, change24h: f.change24h,
-  }));
-  const seenBanks = new Set();
-  const deposits = [...depositList()]
-    .sort((a, b) => b.rate - a.rate)
-    .filter((d) => { if (seenBanks.has(d.bank)) return false; seenBanks.add(d.bank); return true; })
-    .slice(0, 8)
-    .map((d) => ({
-      bank: d.bank, name: d.name, rate: d.rate, min: d.min, max: d.max, termDays: d.termDays, currency: d.currency,
-    }));
-  const byTypeMap = {};
-  for (const p of positions) byTypeMap[p.type] = (byTypeMap[p.type] || 0) + p.value;
-  const byType = Object.entries(byTypeMap).map(([type, value]) => ({
-    type, value: Math.round(value), sharePct: +(value / (v.value || 1) * 100).toFixed(1),
-  }));
-  const moscow = S.realty?.stats?.moscow;
-  const russia = S.realty?.stats?.russia;
-  const best = bestDeposit();
-  return JSON.stringify({
-    page: (location.hash || '#/').replace(/^#\/?/, '') || 'home',
-    portfolio: {
-      value: Math.round(v.value),
-      invested: Math.round(v.invested),
-      pnl: Math.round(v.pnl),
-      pnlPct: Number.isFinite(v.pnlPct) ? +v.pnlPct.toFixed(1) : 0,
-      changeDay: Math.round(v.changeDay),
-      changePct: Number.isFinite(v.changePct) ? +v.changePct.toFixed(2) : 0,
-      irrPct: v.irr == null ? null : +(v.irr * 100).toFixed(1),
-      depositIncome: Math.round(v.depositIncome),
-      byType,
-      positions,
-    },
-    market: {
-      keyRate: keyRateValue(),
-      crypto,
-      metals,
-      fx,
-      bestDeposit: best ? { bank: best.bank, rate: best.rate } : null,
-    },
-    deposits,
-    realty: {
-      moscow: moscow ? { avgPrice: moscow.avgPrice, avgM2: moscow.avgM2, count: moscow.count } : null,
-      russia: russia ? { median: russia.median, avgM2: russia.avgM2, count: russia.count, cities: russia.cities } : null,
-    },
-  });
-}
-
-const aiLog = [];
-let aiBusy = false;
-
-function formatAi(text) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const inline = (s) => esc(s)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-  let html = '';
-  let list = '';
-  const closeList = () => { if (list) { html += `</${list}>`; list = ''; } };
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) { closeList(); continue; }
-    if (/^[-—_]{3,}$/.test(line)) { closeList(); html += '<hr>'; continue; }
-    const heading = line.match(/^#{1,3}\s+(.+)$/);
-    if (heading) { closeList(); html += `<h4>${inline(heading[1])}</h4>`; continue; }
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    if (bullet) {
-      if (list !== 'ul') { closeList(); html += '<ul>'; list = 'ul'; }
-      html += `<li>${inline(bullet[1])}</li>`;
-      continue;
-    }
-    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-    if (numbered) {
-      if (list !== 'ol') { closeList(); html += '<ol>'; list = 'ol'; }
-      html += `<li>${inline(numbered[1])}</li>`;
-      continue;
-    }
-    closeList();
-    html += `<p>${inline(line)}</p>`;
-  }
-  closeList();
-  return html;
-}
-
-function renderAiLog() {
-  const log = $('#ai-log');
-  if (!log) return;
-  log.innerHTML = aiLog.length
-    ? aiLog.map((m) => {
-      const cls = `ai-msg ai-msg--${m.role === 'user' ? 'user' : m.error ? 'error' : 'bot'}${m.typing ? ' ai-msg--typing' : ''}`;
-      const body = m.role === 'user' || m.error ? esc(m.text) : formatAi(m.text);
-      return `<div class="${cls}">${body}</div>`;
-    }).join('')
-    : '<div class="ai-msg ai-msg--bot">Привет! Разберу портфель, сравню вклады, посмотрю валюты, металлы и недвижимость, посчитаю доходность. Спросите или выберите подсказку.</div>';
-  log.scrollTop = log.scrollHeight;
-}
-
-function openAi(show = true) {
-  const panel = $('#ai-panel');
-  const fab = $('#ai-fab');
-  if (!panel || !fab) return;
-  panel.hidden = !show;
-  fab.setAttribute('aria-expanded', show ? 'true' : 'false');
-  if (show) {
-    renderAiLog();
-    setTimeout(() => $('#ai-question')?.focus(), 30);
-  }
-}
-
-function toggleAi() {
-  const panel = $('#ai-panel');
-  openAi(panel ? panel.hidden : true);
-}
-
-async function askAi() {
-  const input = $('#ai-question');
-  if (!input || aiBusy) return;
-  const question = input.value.trim();
-  if (!question) {
-    input.focus();
-    return;
-  }
-  openAi(true);
-  const history = aiLog.filter((m) => !m.typing && !m.error).slice(-6).map(({ role, text }) => ({ role, text }));
-  input.value = '';
-  aiLog.push({ role: 'user', text: question });
-  aiLog.push({ role: 'assistant', text: 'Нейросеть думает…', typing: true });
-  aiBusy = true;
-  const send = $('#ai-send');
-  if (send) send.disabled = true;
-  renderAiLog();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
-  try {
-    const res = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({ question, context: aiContext(), history }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || `Нейросеть вернула ошибку ${res.status}`);
-    aiLog.pop();
-    aiLog.push({ role: 'assistant', text: data.answer });
-  } catch (err) {
-    aiLog.pop();
-    const text = err.name === 'AbortError'
-      ? 'Нейросеть не ответила вовремя. Попробуйте ещё раз.'
-      : (err.message || 'Не удалось получить ответ.');
-    aiLog.push({ role: 'assistant', text, error: true });
-  } finally {
-    clearTimeout(timer);
-    aiBusy = false;
-    if (send) send.disabled = false;
-    renderAiLog();
-    input.focus();
-  }
 }
 
 /* ------------------------------------------------------------------ ai forecast */
@@ -2606,14 +2425,6 @@ document.addEventListener('click', (e) => {
     $('#form-error').textContent = '';
     return;
   }
-  const aiPreset = e.target.closest('[data-ai]');
-  if (aiPreset) {
-    const input = $('#ai-question');
-    if (input) input.value = aiPreset.dataset.ai;
-    askAi();
-    return;
-  }
-
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   if (action === 'menu') document.body.classList.toggle('menu-open');
@@ -2627,9 +2438,6 @@ document.addEventListener('click', (e) => {
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh();
-  else if (action === 'ai-open') openAi(true);
-  else if (action === 'ai-toggle') toggleAi();
-  else if (action === 'ai-close') openAi(false);
   else if (action === 'bell') toast('Уведомлений пока нет — всё под контролем');
   else if (action === 'open-add') openAdd('crypto');
   else if (action === 'close-dialog') $('#add-dialog').close();
@@ -2697,7 +2505,6 @@ $('#search-form').addEventListener('submit', (e) => {
 
 $('#add-form')?.addEventListener('submit', handleSubmit);
 $('#profile-form')?.addEventListener('submit', saveProfileName);
-$('#ai-form').addEventListener('submit', (e) => { e.preventDefault(); askAi(); });
 $('#add-dialog')?.addEventListener('close', () => { const err = $('#form-error'); if (err) err.textContent = ''; });
 $('#realty-dialog').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) e.currentTarget.close();
@@ -2770,7 +2577,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.body.classList.remove('menu-open');
     closeCityPicker();
-    openAi(false);
   }
   if (e.key !== 'Enter' && e.key !== ' ') return;
   const card = e.target.closest('[data-deposit][role="button"], [data-realty][role="button"], [data-go][role="link"]');
@@ -2784,7 +2590,6 @@ window.addEventListener('hashchange', onRoute);
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
   render();
-  renderAiLog();
   await refresh({ silent: true });
   setInterval(() => refresh({ silent: true, marketOnly: true }), 3600000);
   setInterval(() => {
