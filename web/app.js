@@ -1171,6 +1171,19 @@ async function hydrateRealtyGeo(item) {
   if (info) info.innerHTML = geoInfoHtml(item, point, center, exact);
 }
 
+function realtyCardHtml(r, tokens = []) {
+  const hl = (value) => highlightText(value, tokens);
+  return `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
+    <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="${esc(r.title || r.address || 'Квартира')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${hl(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
+    <div class="re-body">
+      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}${realtyChangeBadge(r)}</span></div>
+      <div class="re-addr">${hl(r.address || r.district)}</div>
+      <div class="re-meta">${[r.metro, r.district, r.sub].filter(Boolean).map(hl).join(' · ') || hl(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
+      <div class="re-foot">${sellerBadge(r)}<span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
+    </div>
+  </article>`;
+}
+
 function realtyRowsHtml() {
   let items = realtyList();
   if (S.re.q) {
@@ -1188,15 +1201,7 @@ function realtyRowsHtml() {
     : a.price - b.price);
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
-  const html = `<div class="re-grid">${shown.map((r) => `<article class="re-card" data-realty="${esc(r.id)}" tabindex="0" role="button" aria-label="Подробнее: ${esc(r.title)}">
-    <div class="re-img${r.img ? '' : ' is-empty'}">${r.img ? `<img src="${esc(realtyHiRes(r.img))}" alt="${esc(r.title || r.address || 'Квартира')}" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : `<span class="re-img-empty">${icon('building')}<small>Нет фото</small></span>`}<span class="re-city">${esc(r.city === 'Санкт-Петербург' ? 'СПб' : (r.city || 'Россия'))}</span></div>
-    <div class="re-body">
-      <div class="re-top"><b>${r.rooms === 'Студия' ? 'Студия' : esc(r.rooms) + '-комн.'}${r.area ? ` · ${num(r.area, 1)} м²` : ''}${realtyFloor(r.title) ? ` · ${realtyFloor(r.title)} эт.` : ''}</b><span class="re-price">${money(r.price)}${realtyChangeBadge(r)}</span></div>
-      <div class="re-addr">${esc(r.address || r.district)}</div>
-      <div class="re-meta">${[r.metro, r.district, r.sub].filter(Boolean).map(esc).join(' · ') || esc(r.city || 'Россия')}${r.priceM2 ? ` · ${money(r.priceM2)}/м²` : ''}</div>
-      <div class="re-foot">${sellerBadge(r)}<span class="offer-src">${esc(r.source)}</span>${ext(r.url, 'Открыть объявление')}<span class="re-chev">${icon('chev')}</span></div>
-    </div>
-  </article>`).join('')}</div>`;
+  const html = `<div class="re-grid">${shown.map((r) => realtyCardHtml(r)).join('')}</div>`;
   const more = items.length - shown.length;
   return html + (more > 0 ? `<button class="btn btn--ghost offers-more" data-action="re-more">Показать ещё ${Math.min(more, S.re.limit)} из ${more}</button>` : '');
 }
@@ -1552,7 +1557,19 @@ function isSubsequence(needle, haystack) {
   return false;
 }
 
-function searchScore(tokens, fields) {
+function highlightText(value, tokens) {
+  const safe = esc(String(value ?? ''));
+  if (!tokens || !tokens.length) return safe;
+  let html = safe;
+  for (const token of tokens) {
+    if (token.length < 2) continue;
+    const pattern = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    html = html.replace(new RegExp(`(${pattern})`, 'gi'), '<mark>$1</mark>');
+  }
+  return html;
+}
+
+function searchScore(tokens, fields, fuzzy = true) {
   const texts = fields.map(normText).filter(Boolean);
   if (!texts.length) return 0;
   let total = 0;
@@ -1564,12 +1581,16 @@ function searchScore(tokens, fields) {
       else if (text.startsWith(token)) best = Math.max(best, 45);
       else if (text.split(' ').some((word) => word.startsWith(token))) best = Math.max(best, 40);
       else if (text.includes(token)) best = Math.max(best, 30);
-      else if (token.length >= 3 && isSubsequence(token, text)) best = Math.max(best, 15);
+      else if (fuzzy && token.length >= 3 && isSubsequence(token, text)) best = Math.max(best, 15);
     }
     if (!best) return 0;
     total += best;
   }
   return total;
+}
+
+function searchIcon(letter, logo) {
+  return `<span class="coin coin--logo">${esc(String(letter || '?').slice(0, 4))}${logo ? `<img src="${esc(logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="this.remove()">` : ''}</span>`;
 }
 
 function searchPage(params) {
@@ -1580,54 +1601,72 @@ function searchPage(params) {
   const tokens = needle.split(' ').filter(Boolean);
   const alias = SEARCH_ALIASES[needle] || '';
   const aliasTokens = alias ? alias.split(' ') : [];
-  const found = [];
+  const assets = [];
+  const flats = [];
 
-  const add = (score, entry) => {
-    if (score > 0) found.push({ ...entry, score });
-  };
+  const push = (score, entry, target) => { if (score > 0) target.push({ ...entry, score }); };
 
   cryptoList().forEach((c) => {
     let score = searchScore(tokens, [c.symbol, c.name]);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [c.symbol, c.name]) * 0.8;
-    add(score, { type: 'Криптовалюта', name: c.name, sub: c.symbol, value: money(rub(c.price)), chg: c.change24h, href: '#/crypto', url: c.tradeUrl });
+    push(score, { type: 'Криптовалюта', name: c.name, sub: c.symbol, value: money(rub(c.price)), chg: c.change24h,
+      icon: coin(c.symbol), chart: `crypto:${c.id}`, href: '#/crypto', url: c.tradeUrl }, assets);
+  });
+  (S.market?.stocks?.items || []).forEach((s) => {
+    let score = searchScore(tokens, [s.ticker, s.name]);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [s.ticker, s.name]) * 0.8;
+    push(score, { type: 'Акция', name: s.name, sub: s.ticker, value: money(s.price), chg: s.change24h,
+      icon: stockIcon(s), chart: `stock:${s.ticker}`, href: '#/stocks' }, assets);
   });
   metalList().forEach((m) => {
     let score = searchScore(tokens, [m.code, m.name]);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [m.code, m.name]) * 0.8;
-    add(score, { type: 'Драгметалл', name: m.name, sub: m.code, value: money(m.price) + '/г', chg: m.change24h, href: '#/metals' });
+    push(score, { type: 'Драгметалл', name: m.name, sub: m.code, value: money(m.price) + '/г', chg: m.change24h,
+      icon: coin(m.code), chart: `metal:${m.code}`, href: '#/metals' }, assets);
   });
   (S.market?.fx?.items || []).forEach((f) => {
     let score = searchScore(tokens, [f.code, f.name || '']);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [f.code, f.name || '']) * 0.8;
-    add(score, { type: 'Валюта', name: f.name || f.code, sub: f.code, value: num(f.value, 3) + ' ₽', chg: f.change24h, href: '#/fx' });
+    push(score, { type: 'Валюта', name: f.name || f.code, sub: f.code, value: num(f.value, 3) + ' ₽', chg: f.change24h,
+      icon: coin(f.code), chart: `fx:${f.code}`, href: '#/fx' }, assets);
   });
   depositList().forEach((d) => {
     let score = searchScore(tokens, [d.bank, d.name]);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [d.bank, d.name]) * 0.8;
-    add(score, { type: 'Вклад', name: d.name, sub: `${d.bank}${d.termDays ? ' · ' + d.termDays + ' дн.' : ''}`, value: num(d.rate, 2) + '%', chg: null, href: '#/deposits', url: d.url });
+    push(score, { type: 'Вклад', name: d.name, sub: `${d.bank}${d.termDays ? ' · ' + d.termDays + ' дн.' : ''}`,
+      value: num(d.rate, 2) + '%', chg: null, icon: searchIcon((d.bank || 'Б')[0], d.logo),
+      depositId: d.id, href: '#/deposits', url: d.url }, assets);
   });
   realtyList().forEach((r) => {
-    const score = searchScore(tokens, [r.title, r.address, r.district, r.metro, r.city]);
-    add(score, { type: 'Недвижимость', name: r.title, sub: `${r.city} · ${r.district || r.address}`, value: money(r.price), chg: null, href: '#/realty', url: r.url });
+    const score = searchScore(tokens, [r.title, r.address, r.district, r.metro, r.city], false);
+    if (score > 0) flats.push({ ...r, score });
   });
 
-  found.sort((a, b) => b.score - a.score);
-  const shown = found.slice(0, 60);
+  assets.sort((a, b) => b.score - a.score);
+  flats.sort((a, b) => b.score - a.score);
+  const shownAssets = assets.slice(0, 40);
+  const shownFlats = flats.slice(0, 24);
+  const total = assets.length + flats.length;
+
+  const rows = shownAssets.map((f) => {
+    const clickable = f.chart ? ` data-chart="${esc(f.chart)}" tabindex="0" role="button"` : f.depositId ? ` data-deposit="${esc(f.depositId)}" tabindex="0" role="button"` : '';
+    return `<div class="pos-row"${clickable} style="grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) 36px">
+      <div class="pos-asset">${f.icon}<span class="txt"><b>${esc(f.name)}</b><small>${esc(f.type)} · ${esc(f.sub)}</small></span></div>
+      <div class="cell num">${f.value}</div>
+      <div class="cell num">${chg(f.chg)}</div>
+      <div class="pos-actions">${f.url ? ext(f.url, 'Открыть источник') : `<a class="chev-link" href="${esc(f.href)}">${icon('chev')}</a>`}</div>
+    </div>`;
+  }).join('');
 
   return `${sourceWarning()}
-  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1>${found.length ? `<p class="muted" style="font-size:12px;margin-top:4px">Найдено ${found.length}${found.length > shown.length ? `, показаны первые ${shown.length}` : ''}</p>` : ''}</div></div>
-  <div class="card table-card">
-    ${shown.length ? `
+  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1>${total ? `<p class="muted" style="font-size:12px;margin-top:4px">Найдено ${total}${total > shownAssets.length + shownFlats.length ? `, показаны первые ${shownAssets.length + shownFlats.length}` : ''}</p>` : ''}</div></div>
+  ${shownAssets.length ? `<div class="card table-card">
     <div class="pos-row pos-row--head"><div>Инструмент</div><div class="num">Цена</div><div class="num">Изменение</div><div></div></div>
-    <div class="pos-list">
-      ${shown.map((f) => `<div class="pos-row" style="grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) 36px">
-        <div class="pos-asset"><span class="coin">${esc(f.sub.slice(0, 4))}</span><span class="txt"><b>${esc(f.name)}</b><small>${esc(f.type)} · ${esc(f.sub)}</small></span></div>
-        <div class="cell num">${f.value}</div>
-        <div class="cell num">${chg(f.chg)}</div>
-        <div class="pos-actions">${f.url ? ext(f.url, 'Открыть источник') : `<a class="chev-link" href="${f.href}">${icon('chev')}</a>`}</div>
-      </div>`).join('')}
-    </div>` : `<div class="empty-state">Ничего не найдено. Попробуйте другой запрос.</div>`}
-  </div>`;
+    <div class="pos-list">${rows}</div>
+  </div>` : ''}
+  ${shownFlats.length ? `<div class="search-block-title">Недвижимость · ${flats.length}</div>
+  <div class="re-grid">${shownFlats.map((r) => realtyCardHtml(r, tokens)).join('')}</div>` : ''}
+  ${!total ? `<div class="card table-card"><div class="empty-state">Ничего не найдено. Попробуйте другой запрос.</div></div>` : ''}`;
 }
 
 /* ------------------------------------------------------------------ router */
@@ -2631,7 +2670,7 @@ document.addEventListener('keydown', (e) => {
     closeCityPicker();
   }
   if (e.key !== 'Enter' && e.key !== ' ') return;
-  const card = e.target.closest('[data-deposit][role="button"], [data-realty][role="button"], [data-go][role="link"]');
+  const card = e.target.closest('[data-deposit][role="button"], [data-realty][role="button"], [data-chart][role="button"], [data-go][role="link"]');
   if (card && e.target === card) {
     e.preventDefault();
     card.click();

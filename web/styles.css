@@ -1178,3 +1178,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px soli
 .bento-head { padding-right: 70px; }
 .bento-grip, .bento-remove { position: relative; width: 28px; height: 28px; }
 .bento-grip::after, .bento-remove::after { content: ""; position: absolute; inset: -5px; }
+
+/* --- search results --- */
+mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; }
+.search-block-title { margin: 24px 0 12px; font-size: 16px; font-weight: 600; color: var(--navy); }
