@@ -96,9 +96,7 @@ function sparkline(values, color, w = 120, h = 44) {
 const coin = (txt, cls = '') => `<span class="coin ${cls}">${esc(String(txt).slice(0, 4))}</span>`;
 const cryptoIcon = (c) => {
   const symbol = String(c?.symbol || '').toLowerCase();
-  const primary = `https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/32/color/${encodeURIComponent(symbol)}.png`;
-  const fallback = `https://assets.coincap.io/assets/icons/${encodeURIComponent(symbol)}@2x.png`;
-  return `<span class="coin coin--logo">${esc(String(c?.symbol || '?').slice(0, 4))}${symbol ? `<img src="${primary}" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="if(this.dataset.fb){this.remove()}else{this.dataset.fb='1';this.src='${fallback}'}">` : ''}</span>`;
+  return `<span class="coin coin--logo">${esc(String(c?.symbol || '?').slice(0, 4))}${symbol ? `<img src="/logos/crypto/${encodeURIComponent(symbol)}.png" alt="" loading="lazy" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="this.remove()">` : ''}</span>`;
 };
 const metalIcon = (code) => coin(code === 'XAU' ? 'Au' : code === 'XAG' ? 'Ag' : code === 'XPT' ? 'Pt' : 'Pd',
   code === 'XAU' ? 'coin--gold' : code === 'XAG' ? 'coin--silver' : 'coin--platinum');
@@ -1610,7 +1608,7 @@ function searchPage(params) {
     let score = searchScore(tokens, [c.symbol, c.name]);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [c.symbol, c.name]) * 0.8;
     push(score, { type: 'Криптовалюта', name: c.name, sub: c.symbol, value: money(rub(c.price)), chg: c.change24h,
-      icon: coin(c.symbol), chart: `crypto:${c.id}`, href: '#/crypto', url: c.tradeUrl }, assets);
+      icon: cryptoIcon(c), chart: `crypto:${c.id}`, href: '#/crypto', url: c.tradeUrl }, assets);
   });
   (S.market?.stocks?.items || []).forEach((s) => {
     let score = searchScore(tokens, [s.ticker, s.name]);
