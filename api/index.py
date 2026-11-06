@@ -21,7 +21,9 @@ class handler(BaseHTTPRequestHandler):
         if not route:
             return False
         query = {key: values[0] for key, values in params.items() if key != "route"}
-        url = f"{backend}/api/{route}"
+        # В vercel.json роут называется realty_photos, а на бэкенде — realty-photos.
+        path = {"realty_photos": "realty-photos"}.get(route, route)
+        url = f"{backend}/api/{path}"
         if query:
             url += "?" + urlencode(query)
         headers = {
@@ -62,6 +64,8 @@ class handler(BaseHTTPRequestHandler):
                 payload = server.api_history({key: values[0] for key, values in params.items()})
             elif route == "realty_photos":
                 payload = server.api_realty_photos({key: values[0] for key, values in params.items()})
+            elif route == "bot":
+                payload = server.api_bot({key: values[0] for key, values in params.items() if key != "route"})
             elif route == "health":
                 payload = {"ok": True, "time": server.now_msk()}
             else:

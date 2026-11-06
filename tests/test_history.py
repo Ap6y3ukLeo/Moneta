@@ -31,9 +31,9 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(result["points"], points)
         self.assertEqual(result["unit"], "RUB")
 
-    def test_fx_history_only_major(self):
+    def test_unknown_fx_history_rejected(self):
         with self.assertRaises(ValueError):
-            server.api_history({"kind": "fx", "id": "CHF", "range": "1m"})
+            server.api_history({"kind": "fx", "id": "XYZ", "range": "1m"})
 
     def test_snapshot_fallback(self):
         points = [{"t": "2026-10-01", "c": 100.0}, {"t": "2026-10-02", "c": 101.0}]

@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import gzip
 import hmac
+import io
 import json
 import math
 import os
@@ -57,10 +58,45 @@ COINS = [
     ("avalanche-2", "avax-avalanche", "AVAX", "Avalanche"),
     ("chainlink", "link-chainlink", "LINK", "Chainlink"),
     ("tether", "usdt-tether", "USDT", "Tether"),
+    ("litecoin", "ltc-litecoin", "LTC", "Litecoin"),
+    ("bitcoin-cash", "bch-bitcoin-cash", "BCH", "Bitcoin Cash"),
+    ("the-open-network", "ton-the-open-network", "TON", "Toncoin"),
+    ("polkadot", "dot-polkadot", "DOT", "Polkadot"),
+    ("near", "near-near-protocol", "NEAR", "NEAR"),
+    ("aptos", "apt-aptos", "APT", "Aptos"),
+    ("arbitrum", "arb-arbitrum", "ARB", "Arbitrum"),
+    ("optimism", "op-optimism", "OP", "Optimism"),
+    ("filecoin", "fil-filecoin", "FIL", "Filecoin"),
+    ("uniswap", "uni-uniswap", "UNI", "Uniswap"),
+    ("cosmos", "atom-cosmos", "ATOM", "Cosmos"),
+    ("ethereum-classic", "etc-ethereum-classic", "ETC", "Ethereum Classic"),
+    ("stellar", "xlm-stellar", "XLM", "Stellar"),
+    ("algorand", "algo-algorand", "ALGO", "Algorand"),
+    ("vechain", "vet-vechain", "VET", "VeChain"),
+    ("hedera-hashgraph", "hbar-hedera-hashgraph", "HBAR", "Hedera"),
+    ("aave", "aave-aave", "AAVE", "Aave"),
+    ("injective-protocol", "inj-injective-protocol", "INJ", "Injective"),
+    ("sei-network", "sei-sei-network", "SEI", "Sei"),
+    ("celestia", "tia-celestia", "TIA", "Celestia"),
+    ("worldcoin-wld", "wld-worldcoin", "WLD", "Worldcoin"),
+    ("shiba-inu", "shib-shiba-inu", "SHIB", "Shiba Inu"),
+    ("pepe", "pepe-pepe", "PEPE", "Pepe"),
+    ("polygon-ecosystem-token", "pol-polygon-ecosystem-token", "POL", "Polygon"),
 ]
 METALS = {"1": ("XAU", "Золото"), "2": ("XAG", "Серебро"), "3": ("XPT", "Платина"), "4": ("XPD", "Палладий")}
 FX_CODES = ["USD", "EUR", "CNY", "GBP", "CHF", "JPY", "TRY", "KZT", "BYN", "AED"]
-FX_HISTORY_IDS = {"USD": "R01235", "EUR": "R01239", "CNY": "R01375", "GBP": "R01010"}
+FX_HISTORY_IDS = {
+    "USD": "R01235",
+    "EUR": "R01239",
+    "CNY": "R01375",
+    "GBP": "R01035",
+    "CHF": "R01775",
+    "JPY": "R01820",
+    "TRY": "R01700J",
+    "KZT": "R01335",
+    "BYN": "R01090B",
+    "AED": "R01230",
+}
 MOEX_FX = {
     "USDRUB_TOM": "USD",
     "EURRUB_TOM": "EUR",
@@ -254,6 +290,9 @@ def browser_json_many(urls, expression: str, waits, stealth: bool = False):
             "--no-default-browser-check", "--window-size=1400,1000",
             f"--remote-debugging-port={port}", f"--user-data-dir={profile}", "about:blank",
         ]
+        if os.name != "nt":
+            # root на VPS: без --no-sandbox Chrome не запускается.
+            args.append("--no-sandbox")
         if stealth:
             # Банки отсекают headless-браузер по UA и AutomationControlled.
             args += ["--disable-blink-features=AutomationControlled", f"--user-agent={BROWSER_UA}"]
@@ -352,6 +391,47 @@ def _snapshot(name: str):
     return None
 
 
+REFRESHING = set()
+
+
+def _store(name: str, ttl: int, value, meta: dict):
+    with LOCK:
+        MEM[name] = {"exp": time.time() + ttl, "value": value, "meta": meta}
+    try:
+        path = os.path.join(CACHE_DIR, name + ".json")
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"value": value, "meta": meta}, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def _refresh(name: str, ttl: int, builder):
+    """Пересобирает источник в фоне, чтобы посетитель не ждал медленный Chrome."""
+    with LOCK:
+        if name in REFRESHING:
+            return
+        REFRESHING.add(name)
+
+    def run():
+        try:
+            _store(name, ttl, builder(), {"ok": True, "updated": now_msk(), "stale": False})
+        except Exception as exc:  # noqa: BLE001 - фоновая попытка, старый кэш уже отдан
+            with LOCK:
+                hit = MEM.get(name)
+                if hit:
+                    hit["meta"] = dict(hit["meta"], ok=False, error=str(exc)[:300], stale=True)
+                    # Пауза перед повтором: заблокированный источник не должен
+                    # запускать тяжёлый Chrome на каждый запрос.
+                    hit["exp"] = time.time() + 600
+        finally:
+            with LOCK:
+                REFRESHING.discard(name)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def source(name: str, ttl: int, builder, force: bool = False):
     """Fetch with TTL cache and last-known-good fallback on disk."""
     # shortcut: на Vercel холодный live-сбор медленных источников не влезает в лимит функции,
@@ -369,30 +449,27 @@ def source(name: str, ttl: int, builder, force: bool = False):
         path = os.path.join(CACHE_DIR, name + ".json")
         try:
             age = time.time() - os.path.getmtime(path)
-            if age < ttl:
-                with open(path, encoding="utf-8") as f:
-                    cached = json.load(f)
-                if cached.get("value") is not None:
-                    meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
+            with open(path, encoding="utf-8") as f:
+                cached = json.load(f)
+            if cached.get("value") is not None:
+                meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
+                if age < ttl:
                     with LOCK:
                         MEM[name] = {"exp": time.time() + ttl - age, "value": cached["value"], "meta": meta}
                     return cached["value"], meta
+                # Кэш устарел: отдаём его сразу и обновляем в фоне.
+                stale_meta = dict(meta, stale=True)
+                with LOCK:
+                    MEM[name] = {"exp": time.time() + 30, "value": cached["value"], "meta": stale_meta}
+                _refresh(name, ttl, builder)
+                return cached["value"], stale_meta
         except Exception:
             pass
 
     try:
         value = builder()
         meta = {"ok": True, "updated": now_msk(), "stale": False}
-        with LOCK:
-            MEM[name] = {"exp": time.time() + ttl, "value": value, "meta": meta}
-        try:
-            path = os.path.join(CACHE_DIR, name + ".json")
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"value": value, "meta": meta}, f, ensure_ascii=False)
-            os.replace(tmp, path)
-        except OSError:
-            pass
+        _store(name, ttl, value, meta)
         return value, meta
     except Exception as exc:  # noqa: BLE001 - любая сетевая ошибка -> кэш
         cached = None
@@ -608,54 +685,56 @@ def build_stocks():
     return {"items": items, "provider": "MOEX"}
 
 
-# ---------------------------------------------------------------- fx (ЦБ РФ)
-def build_fx():
-    try:
-        data = http_json("https://www.cbr-xml-daily.ru/daily_json.js", timeout=8)
-        vals, d = data["Valute"], data["Date"][:10]
-    except Exception:
-        xml = http_text("https://www.cbr.ru/scripts/XML_daily.asp", "cp1251", timeout=8)
-        d = datetime.now(MSK).strftime("%Y-%m-%d")
-        vals = {}
-        for block in re.findall(r"<Valute\b.*?</Valute>", xml, re.S):
-            code = re.search(r"<CharCode>(\w+)</CharCode>", block)
-            if not code:
-                continue
-            nom = float(re.search(r"<Nominal>([\d.]+)</Nominal>", block).group(1))
-            val = float(re.search(r"<Value>([\d,]+)</Value>", block).group(1).replace(",", "."))
-            prev = re.search(r"<Previous>([\d,]+)</Previous>", block)
-            vals[code.group(1)] = {
-                "Nominal": nom,
-                "Value": val,
-                "Previous": float(prev.group(1).replace(",", ".")) if prev else val,
-            }
+# ---------------------------------------------------------------- fx (биржа и агрегаторы)
+FX_NAMES = {
+    "USD": "Доллар США",
+    "EUR": "Евро",
+    "CNY": "Китайский юань",
+    "GBP": "Фунт стерлингов",
+    "CHF": "Швейцарский франк",
+    "JPY": "Японская иена",
+    "TRY": "Турецкая лира",
+    "KZT": "Казахстанский тенге",
+    "BYN": "Белорусский рубль",
+    "AED": "Дирхам ОАЭ",
+}
 
+
+def build_fx():
+    live = build_fx_live()
     items = []
     for code in FX_CODES:
-        v = vals.get(code)
-        if not v:
+        rate = live.get(code) or {}
+        value = rate.get("value")
+        if not value:
             continue
-        nominal = float(v.get("Nominal") or 1)
-        value = float(v["Value"]) / nominal
-        prev = float(v.get("Previous") or v["Value"]) / nominal
-        items.append(
-            {
-                "code": code,
-                "name": v.get("Name") if isinstance(v.get("Name"), str) else code,
-                "value": value,
-                "prev": prev,
-                "nominal": nominal,
-                "change24h": (value / prev - 1) * 100 if prev else 0,
-                "spark": _snapshot_spark("fx", code),
-            }
-        )
-    live = build_fx_live()
-    for item in items:
-        item["live"] = live.get(item["code"])
-    live_updated = max((rate["updated"] for rate in live.values() if rate.get("updated")), default=None)
+        spark = _snapshot_spark("fx", code)
+        prev = rate.get("prev")
+        if prev is None and spark:
+            prev = spark[-1]
+        change = rate.get("change24h")
+        if change is None and prev:
+            change = (value / prev - 1) * 100
+        items.append({
+            "code": code,
+            "name": FX_NAMES.get(code, code),
+            "value": value,
+            "prev": prev,
+            "nominal": 1,
+            "change24h": change,
+            "spark": spark,
+            "source": rate.get("source"),
+            "updated": rate.get("updated"),
+        })
     if not items:
-        raise RuntimeError("Нет курсов ЦБ РФ")
-    return {"items": items, "date": d, "provider": "ЦБ РФ", "liveUpdated": live_updated}
+        raise RuntimeError("Нет курсов валют: все источники недоступны")
+    updated = max((item["updated"] for item in items if item.get("updated")), default=None)
+    return {
+        "items": items,
+        "date": (updated or "")[:10],
+        "provider": "MOEX / Coinbase / open.er-api",
+        "liveUpdated": updated,
+    }
 
 
 def _moex_iso(value):
@@ -743,22 +822,94 @@ def _fetch_many(fn, codes):
 
 
 def build_fx_live():
-    rates = {}
+    providers = []
+    moex = {}
     try:
         payload = http_json(
             "https://iss.moex.com/iss/engines/currency/markets/selt/securities.json"
             "?iss.meta=off&iss.only=securities,marketdata",
             timeout=8,
         )
-        rates = _parse_moex_rates(payload)
+        moex = {code: rate for code, rate in _parse_moex_rates(payload).items() if rate.get("traded")}
     except Exception:
         pass
-    for code in [code for code, rate in rates.items() if not rate.get("traded")]:
-        rates.pop(code, None)
-    rates.update(_fetch_many(_coinbase_rate, [code for code in LIVE_FX_FALLBACK if code not in rates]))
+    providers.append(moex)
+    providers.append(_fetch_many(_coinbase_rate, [code for code in LIVE_FX_FALLBACK if code not in moex]))
+    for source in (_erapi_rates, _fawaz_rates):
+        try:
+            providers.append(source())
+        except Exception:  # noqa: BLE001 - агрегатор может быть недоступен
+            continue
+    rates = _merge_rates(*providers)
     for rate in rates.values():
         rate.pop("traded", None)
     return rates
+
+
+def _erapi_rates():
+    """open.er-api.com: дневной фид, отдаёт время обновления."""
+    data = http_json("https://open.er-api.com/v6/latest/USD", timeout=8)
+    if data.get("result") != "success":
+        raise RuntimeError("open.er-api недоступен")
+    rub = float((data.get("rates") or {}).get("RUB") or 0)
+    if not rub:
+        raise RuntimeError("open.er-api без RUB")
+    stamp = datetime.fromtimestamp(int(data["time_last_update_unix"]), MSK).isoformat(timespec="seconds")
+    rates = {}
+    for code in FX_CODES:
+        rate = 1.0 if code == "USD" else float((data.get("rates") or {}).get(code) or 0)
+        if rate:
+            rates[code] = {"value": rub / rate, "prev": None, "change24h": None,
+                           "updated": stamp, "source": "open.er-api"}
+    return rates
+
+
+def _fawaz_rates():
+    """currency-api на jsDelivr: дневной фид, данные на дату."""
+    data = http_json(
+        "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json",
+        timeout=8,
+    )
+    usd = data.get("usd") or {}
+    rub = float(usd.get("rub") or 0)
+    if not rub:
+        raise RuntimeError("currency-api без RUB")
+    stamp = datetime.fromisoformat(str(data.get("date"))).replace(tzinfo=timezone.utc)
+    stamp = stamp.astimezone(MSK).isoformat(timespec="seconds")
+    rates = {}
+    for code in FX_CODES:
+        rate = 1.0 if code == "USD" else float(usd.get(code.lower()) or 0)
+        if rate:
+            rates[code] = {"value": rub / rate, "prev": None, "change24h": None,
+                           "updated": stamp, "source": "currency-api"}
+    return rates
+
+
+FX_FRESH_SECONDS = 900
+
+
+def _rate_seconds(rate):
+    try:
+        return datetime.fromisoformat(str(rate.get("updated"))).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _merge_rates(*providers):
+    """Берём самый свежий курс, но живой рынок не меняем на агрегатор 15 минут."""
+    best = {}
+    for rates in providers:
+        for code, rate in (rates or {}).items():
+            current = best.get(code)
+            if current is None:
+                best[code] = rate
+                continue
+            current_ts, new_ts = _rate_seconds(current), _rate_seconds(rate)
+            if current.get("source") == "MOEX" and new_ts - current_ts < FX_FRESH_SECONDS:
+                continue
+            if new_ts > current_ts:
+                best[code] = rate
+    return best
 
 
 def _fx_history_points(code, days=365):
@@ -997,31 +1148,47 @@ def _metal_history(asset_id, range_name):
     return points[-max(window, 2):] if window < 30 else points[-window:]
 
 
+def _guess_history_kind(asset_id: str) -> str:
+    key = asset_id.strip()
+    if any(key.lower() in (coin[0].lower(), coin[2].lower()) for coin in COINS):
+        return "crypto"
+    if key.upper() in {ticker for ticker, _ in METALS.values()}:
+        return "metal"
+    if key.upper() in FX_HISTORY_IDS:
+        return "fx"
+    return "stock"
+
+
 def api_history(params):
-    kind = str((params or {}).get("kind") or "").strip()
     asset_id = str((params or {}).get("id") or "").strip()
+    kind = str((params or {}).get("kind") or "").strip().lower() or _guess_history_kind(asset_id)
     range_name = str((params or {}).get("range") or "1m").strip()
     if range_name not in HISTORY_DAYS:
         raise ValueError("Неизвестный диапазон")
     if kind == "crypto":
-        coin = next((item for item in COINS if item[0] == asset_id), None)
+        coin = next((item for item in COINS
+                     if asset_id.lower() in (item[0].lower(), item[2].lower())), None)
         if not coin:
             raise ValueError("Актив не найден")
+        asset_id = coin[0]
         _, _, symbol, name = coin
         unit, base_source = "USD", "Bybit / CoinGecko"
     elif kind == "metal":
+        asset_id = asset_id.upper()
         metal = next(((ticker, title) for code, (ticker, title) in METALS.items() if ticker == asset_id), None)
         if not metal:
             raise ValueError("Актив не найден")
         symbol, name = metal
         unit, base_source = "RUB/g", "ЦБ РФ"
     elif kind == "fx":
+        asset_id = asset_id.upper()
         if asset_id not in FX_HISTORY_IDS:
             raise ValueError("История доступна для USD, EUR, CNY и GBP")
         symbol = name = asset_id
         unit, base_source = "RUB", "ЦБ РФ"
     elif kind == "stock":
-        stocks, _ = _safe_source("stocks", 900, build_stocks)
+        asset_id = asset_id.upper()
+        stocks, _ = _safe_source("stocks", STOCKS_TTL, build_stocks)
         item = next((x for x in (stocks or {}).get("items", []) if x["id"] == asset_id), None)
         if not item:
             raise ValueError("Актив не найден")
@@ -1282,8 +1449,31 @@ def _render_deposit_pages(keys):
     return dict(zip(keys, pages))
 
 
+DEP_BANK_CACHE = os.path.join(CACHE_DIR, "dep_banks.json")
+
+
+def _load_bank_cache():
+    try:
+        with open(DEP_BANK_CACHE, encoding="utf-8") as file:
+            return json.load(file)
+    except Exception:  # noqa: BLE001 - кэша может не быть
+        return {}
+
+
+def _save_bank_cache(data):
+    try:
+        tmp = DEP_BANK_CACHE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False)
+        os.replace(tmp, DEP_BANK_CACHE)
+    except OSError:
+        pass
+
+
 def build_direct_banks():
     items, errors = [], []
+    cached_banks = _load_bank_cache()
+    fresh_banks = {}
     browser_keys = [key for key, *_ in DIRECT_BANKS if key in BROWSER_BANK_KEYS]
     rendered = {}
     if browser_keys and not os.environ.get("VERCEL"):
@@ -1299,9 +1489,18 @@ def build_direct_banks():
                 rows = parser(rendered[key])
             else:
                 rows = parser(http_text(url, timeout=45))
+            if not rows:
+                raise RuntimeError("ставки не найдены")
         except Exception as exc:  # noqa: BLE001 - один банк не должен ронять выдачу
-            errors.append(f"{bank}: {exc}")
-            continue
+            # Банк заблокировал сервер: держим его прошлые ставки вместо потери.
+            rows = cached_banks.get(key) or []
+            if rows:
+                errors.append(f"{bank}: {exc} (кэш)")
+            else:
+                errors.append(f"{bank}: {exc}")
+                continue
+        else:
+            fresh_banks[key] = rows
         for index, (name, rate, min_amount, term_text, link) in enumerate(rows):
             if not _deposit_ok(rate):
                 continue
@@ -1324,12 +1523,11 @@ def build_direct_banks():
                 "termText": term_text,
                 "note": "",
             })
+    if fresh_banks:
+        _save_bank_cache({**cached_banks, **fresh_banks})
     if not items:
         raise RuntimeError("Прямые сайты банков: " + ("; ".join(errors) or "нет данных"))
     return items
-
-
-DEPOSIT_TTL = 10800
 
 
 # ---------------------------------------------------------------- api
@@ -1342,17 +1540,26 @@ def _fx_block(fx, meta):
     }
 
 
+# TTL источников: как часто данные пересобираются.
+CRYPTO_TTL = 300
+METALS_TTL = 300
+FX_TTL = 300
+STOCKS_TTL = 300
+REALTY_TTL = 43200
+DEPOSIT_TTL = 86400
+
+
 def api_market(force: bool = False, fx_only: bool = False):
     if fx_only:
-        fx, fx_meta = source("fx", 900, build_fx, force=force)
+        fx, fx_meta = source("fx", FX_TTL, build_fx, force=force)
         return {"fx": _fx_block(fx, fx_meta), "serverTime": now_msk()}
 
     with ThreadPoolExecutor(max_workers=5) as pool:
-        crypto_future = pool.submit(source, "crypto", 3600, build_crypto, force)
-        metals_future = pool.submit(source, "metals", 3600, build_metals, force)
-        fx_future = pool.submit(source, "fx", 900, build_fx, force)
+        crypto_future = pool.submit(source, "crypto", CRYPTO_TTL, build_crypto, force)
+        metals_future = pool.submit(source, "metals", METALS_TTL, build_metals, force)
+        fx_future = pool.submit(source, "fx", FX_TTL, build_fx, force)
         key_future = pool.submit(source, "key_rate", 21600, build_key_rate)
-        stocks_future = pool.submit(_safe_source, "stocks", 900, build_stocks, force)
+        stocks_future = pool.submit(_safe_source, "stocks", STOCKS_TTL, build_stocks, force)
         crypto, crypto_meta = crypto_future.result()
         metals, metals_meta = metals_future.result()
         fx, fx_meta = fx_future.result()
@@ -1361,7 +1568,7 @@ def api_market(force: bool = False, fx_only: bool = False):
 
     if crypto_meta.get("ok") is False:
         try:
-            fallback, fb_meta = source("crypto_fallback", 3600, build_crypto_fallback, force=force)
+            fallback, fb_meta = source("crypto_fallback", CRYPTO_TTL, build_crypto_fallback, force=force)
             crypto, crypto_meta = fallback, dict(fb_meta, note="Bybit недоступен, используются данные CoinPaprika")
         except Exception:
             pass
@@ -1989,12 +2196,12 @@ def build_yandex():
 
 def api_realty():
     jobs = [
-        ("realty_bn", 10800, build_bn),
-        ("realty_avito", 10800, build_avito),
-        ("realty_cian", 10800, build_cian),
-        ("realty_yandex", 10800, build_yandex),
-        ("realty_mirk", 10800, build_mirkvartir),
-        ("realty_moscow", 21600, build_mirkvartir_stats),
+        ("realty_bn", REALTY_TTL, build_bn),
+        ("realty_avito", REALTY_TTL, build_avito),
+        ("realty_cian", REALTY_TTL, build_cian),
+        ("realty_yandex", REALTY_TTL, build_yandex),
+        ("realty_mirk", REALTY_TTL, build_mirkvartir),
+        ("realty_moscow", REALTY_TTL, build_mirkvartir_stats),
     ]
     with ThreadPoolExecutor(max_workers=6) as pool:
         results = list(pool.map(lambda job: _safe_source(*job), jobs))
@@ -2111,6 +2318,487 @@ def api_realty_photos(params):
         with LOCK:
             PHOTOS_MEM[item_id] = {"exp": time.time() + 21600, "value": value}
     return value
+
+
+# ---------------------------------------------------------------- bot API
+BOT_TITLES = {
+    "crypto": "Криптовалюта",
+    "stocks": "Акции",
+    "metals": "Драгметаллы",
+    "fx": "Валюта",
+    "deposits": "Вклады",
+    "realty": "Недвижимость",
+}
+
+
+def _money(value, digits: int = 0) -> str:
+    if value is None:
+        return "—"
+    return f"{value:,.{digits}f}".replace(",", " ").replace(".", ",")
+
+
+def _pct(value) -> str:
+    if value is None:
+        return "—"
+    return f"{value:+.2f}".replace(".", ",") + "%"
+
+
+def _bot_date(iso) -> str:
+    try:
+        return datetime.fromisoformat(str(iso)).strftime("%d.%m.%Y %H:%M")
+    except (TypeError, ValueError):
+        return ""
+
+
+def _bot_crypto(limit):
+    data, meta = source("crypto", CRYPTO_TTL, build_crypto)
+    rows = [
+        {"symbol": i.get("symbol"), "name": i.get("name"), "price": i.get("price"), "change24h": i.get("change24h")}
+        for i in (data or {}).get("items", [])[:limit]
+    ]
+    return rows, [f"{r['symbol']} — ${_money(r['price'], 2)} ({_pct(r['change24h'])})" for r in rows], meta
+
+
+def _bot_stocks(limit):
+    data, meta = _safe_source("stocks", STOCKS_TTL, build_stocks)
+    rows = [
+        {"ticker": i.get("ticker"), "name": i.get("name"), "price": i.get("price"), "change24h": i.get("change24h")}
+        for i in (data or {}).get("items", [])[:limit]
+    ]
+    return rows, [f"{r['ticker']} {r['name']} — {_money(r['price'], 2)} ₽ ({_pct(r['change24h'])})" for r in rows], meta
+
+
+def _bot_metals(limit):
+    data, meta = source("metals", METALS_TTL, build_metals)
+    rows = [
+        {"code": i.get("code"), "name": i.get("name"), "price": i.get("price"), "change24h": i.get("change24h")}
+        for i in (data or {}).get("items", [])[:limit]
+    ]
+    return rows, [f"{r['name']} — {_money(r['price'], 2)} ₽/г ({_pct(r['change24h'])})" for r in rows], meta
+
+
+def _bot_fx(limit):
+    data, meta = source("fx", FX_TTL, build_fx)
+    rows = []
+    for item in (data or {}).get("items", [])[:limit]:
+        rows.append({
+            "code": item.get("code"),
+            "name": item.get("name"),
+            "value": item.get("value"),
+            "change24h": item.get("change24h"),
+            "source": item.get("source"),
+        })
+    return rows, [f"{r['code']} — {_money(r['value'], 2)} ₽ ({_pct(r['change24h'])})" for r in rows], meta
+
+
+def _bot_deposits(limit):
+    data = api_deposits()
+    rows = [
+        {"bank": i.get("bank"), "name": i.get("name"), "rate": i.get("rate"),
+         "termText": i.get("termText"), "min": i.get("min"), "url": i.get("url")}
+        for i in (data.get("items") or [])[:limit]
+    ]
+    lines = []
+    for r in rows:
+        parts = [r["bank"], r["name"], f"{_money(r['rate'], 2)}%", r["termText"],
+                 f"от {_money(r['min'])} ₽" if r["min"] else None]
+        lines.append(" · ".join(part for part in parts if part))
+    return rows, lines, data.get("meta") or {}
+
+
+def _bot_realty(limit):
+    data = api_realty()
+    stats = data.get("stats") or {}
+    moscow = stats.get("moscow") or {}
+    russia = stats.get("russia") or {}
+    lines = []
+    if moscow:
+        lines.append(f"Москва: средняя {_money(moscow.get('avgPrice'))} ₽ · "
+                     f"{_money(moscow.get('avgM2'))} ₽/м² · объявлений {_money(moscow.get('count'))}")
+    if russia:
+        lines.append(f"Россия: медиана {_money(russia.get('median'))} ₽ · "
+                     f"{_money(russia.get('avgM2'))} ₽/м² · выборка {_money(russia.get('count'))}")
+    items = data.get("items") or []
+    rows = [
+        {"id": i.get("id"), "source": i.get("source"), "city": i.get("city"),
+         "title": i.get("title"), "price": i.get("price"), "area": i.get("area"), "url": i.get("url")}
+        for i in items[:limit]
+    ]
+    counts = ", ".join(f"{s['name']}: {s['count']}" for s in data.get("sources") or [])
+    if counts:
+        lines.append("Источники — " + counts)
+    if rows:
+        lines.append("")
+        lines += [f"{_money(r['price'])} ₽ · {r['title']} · {r['city']}" for r in rows]
+    return rows, lines, data.get("meta") or {}
+
+
+BOT_BUILDERS = {
+    "crypto": _bot_crypto,
+    "stocks": _bot_stocks,
+    "metals": _bot_metals,
+    "fx": _bot_fx,
+    "deposits": _bot_deposits,
+    "realty": _bot_realty,
+}
+
+
+def api_bot(params):
+    """Данные для бота: готовый текст сообщения плюс те же строки в JSON."""
+    params = params or {}
+    category = str(params.get("category") or "").strip().lower()
+    try:
+        limit = int(params.get("limit") or 10)
+    except (TypeError, ValueError):
+        raise ValueError("limit должен быть числом") from None
+    limit = max(1, min(limit, 50))
+
+    if not category:
+        return {
+            "categories": [{"key": key, "title": title} for key, title in BOT_TITLES.items()],
+            "hint": "?category=crypto | stocks | metals | fx | deposits | realty, ?limit=10",
+            "serverTime": now_msk(),
+        }
+    if category not in BOT_BUILDERS:
+        raise ValueError("Неизвестная категория")
+
+    rows, lines, meta = BOT_BUILDERS[category](limit)
+    updated = _bot_date((meta or {}).get("updated"))
+    text = "\n".join([BOT_TITLES[category], ""] + lines)
+    if updated:
+        text += f"\n\nОбновлено: {updated}"
+    return {
+        "category": category,
+        "title": BOT_TITLES[category],
+        "text": text,
+        "items": rows,
+        "updated": updated,
+        "serverTime": now_msk(),
+    }
+
+
+# ---------------------------------------------------------------- chart image
+CHART_RANGE_TITLES = {
+    "1d": "за день",
+    "7d": "за неделю",
+    "1m": "за месяц",
+    "3m": "за 3 месяца",
+    "1y": "за год",
+    "all": "за всё время",
+}
+
+CHART_WIDTH, CHART_HEIGHT = 1200, 630
+
+
+def _chart_font(size: int, bold: bool = False):
+    from PIL import ImageFont
+
+    windows = os.environ.get("WINDIR", r"C:\Windows")
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/" + ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
+        os.path.join(windows, "Fonts", "segoeuib.ttf" if bold else "segoeui.ttf"),
+        os.path.join(windows, "Fonts", "arialbd.ttf" if bold else "arial.ttf"),
+    ):
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:  # старый Pillow без размера
+        return ImageFont.load_default()
+
+
+def _current_price(kind, asset_id):
+    """Текущая цена из тех же кэшей, что и сайт: нужна, чтобы график заканчивался на ней."""
+    try:
+        if kind == "crypto":
+            data, _ = source("crypto", CRYPTO_TTL, build_crypto)
+            item = next((i for i in (data or {}).get("items", []) if i.get("id") == asset_id), None)
+            return (item or {}).get("price")
+        if kind == "stock":
+            data, _ = _safe_source("stocks", STOCKS_TTL, build_stocks)
+            item = next((i for i in (data or {}).get("items", []) if i.get("id") == asset_id), None)
+            return (item or {}).get("price")
+        if kind == "metal":
+            data, _ = source("metals", METALS_TTL, build_metals)
+            item = next((i for i in (data or {}).get("items", []) if i.get("code") == asset_id), None)
+            return (item or {}).get("price")
+        data, _ = source("fx", FX_TTL, build_fx)
+        item = next((i for i in (data or {}).get("items", []) if i.get("code") == asset_id), None)
+        return (item or {}).get("value")
+    except Exception:  # noqa: BLE001 - график важнее последней точки
+        return None
+
+
+def _chart_points(data):
+    points = [p for p in data.get("points") or [] if isinstance(p.get("c"), (int, float))]
+    if len(points) < 2:
+        raise RuntimeError("Мало данных для графика: попробуйте другой диапазон")
+    current = _current_price(data.get("kind"), data.get("id"))
+    last = float(points[-1]["c"])
+    if current and last and abs(current / last - 1) > 0.0005:
+        points = points + [{"t": now_msk(), "c": float(current)}]
+    return points
+
+
+def api_chart(params):
+    """PNG-график актива в оформлении сайта: /api/chart?kind=crypto&id=bitcoin&range=7d."""
+    from PIL import Image, ImageDraw
+
+    data = api_history(params)
+    points = _chart_points(data)
+
+    closes = [float(p["c"]) for p in points]
+    unit = data.get("unit")
+    first, last = closes[0], closes[-1]
+    change = (last - first) / first * 100 if first else 0.0
+    color = "#0fa97d" if change >= 0 else "#e8564b"
+
+    def fmt(value, axis=False):
+        big = abs(value) >= 1000
+        text = _money(value, 0 if (axis and big) else 2)
+        if unit == "USD":
+            return "$" + text
+        if unit == "RUB/g":
+            return text + " ₽/г"
+        return text + " ₽"
+
+    # Рисуем в 2x и уменьшаем: так линии и текст выходят гладкими.
+    scale = 2
+    img = Image.new("RGB", (CHART_WIDTH * scale, CHART_HEIGHT * scale), "#f6faf9")
+    draw = ImageDraw.Draw(img)
+
+    def px(value):
+        return int(round(value * scale))
+
+    draw.rounded_rectangle(
+        [px(28), px(28), px(CHART_WIDTH - 28), px(CHART_HEIGHT - 28)],
+        radius=px(24), fill="#ffffff", outline="#e7efee", width=px(2),
+    )
+
+    title = f"{data.get('symbol')} · {data.get('name')}"[:44]
+    draw.text((px(72), px(62)), title, font=_chart_font(28 * scale, True), fill="#1c284a")
+
+    chip = CHART_RANGE_TITLES.get(data.get("range"), str(data.get("range")))
+    chip_font = _chart_font(19 * scale)
+    chip_w = draw.textlength(chip, font=chip_font) / scale
+    chip_x2 = CHART_WIDTH - 72
+    chip_x1 = chip_x2 - chip_w - 36
+    draw.rounded_rectangle([px(chip_x1), px(58), px(chip_x2), px(102)], radius=px(22), fill="#e8faf5")
+    draw.text((px(chip_x1 + 18), px(67)), chip, font=chip_font, fill="#0a9875")
+
+    price_font = _chart_font(52 * scale, True)
+    price_text = fmt(last)
+    draw.text((px(72), px(112)), price_text, font=price_font, fill="#1c284a")
+
+    change_font = _chart_font(24 * scale, True)
+    change_text = ("+" if change >= 0 else "") + f"{change:.2f}".replace(".", ",") + "%"
+    change_x = 72 + draw.textlength(price_text, font=price_font) / scale + 26
+    change_w = draw.textlength(change_text, font=change_font) / scale
+    draw.rounded_rectangle(
+        [px(change_x), px(126), px(change_x + change_w + 34), px(170)],
+        radius=px(22), fill="#e8faf5" if change >= 0 else "#fdeceb",
+    )
+    draw.text((px(change_x + 17), px(134)), change_text, font=change_font, fill=color)
+
+    left, right, top, bottom = 72, CHART_WIDTH - 190, 236, CHART_HEIGHT - 96
+    low, high = min(closes), max(closes)
+    spread = (high - low) * 0.12 or (abs(high) * 0.02 or 1)
+    low, high = low - spread, high + spread
+
+    def pos_x(index):
+        return left + index / (len(closes) - 1) * (right - left)
+
+    def pos_y(value):
+        return bottom - (value - low) / (high - low) * (bottom - top)
+
+    grid_font = _chart_font(17 * scale)
+    for step in range(4):
+        value = high - step / 3 * (high - low)
+        y = px(pos_y(value))
+        draw.line([(px(left), y), (px(right), y)], fill="#eef4f2", width=px(1))
+        draw.text((px(right + 14), y - px(9)), fmt(value, axis=True), font=grid_font, fill="#7c899b")
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    polygon = [(px(pos_x(i)), px(pos_y(v))) for i, v in enumerate(closes)]
+    polygon += [(px(right), px(bottom)), (px(left), px(bottom))]
+    ImageDraw.Draw(overlay).polygon(polygon, fill=color + "26")
+    img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(img)
+
+    draw.line([(px(pos_x(i)), px(pos_y(v))) for i, v in enumerate(closes)],
+              fill=color, width=px(4), joint="curve")
+    dot = [px(pos_x(len(closes) - 1)) - px(8), px(pos_y(last)) - px(8),
+           px(pos_x(len(closes) - 1)) + px(8), px(pos_y(last)) + px(8)]
+    draw.ellipse(dot, fill=color, outline="#ffffff", width=px(3))
+
+    def day(stamp):
+        try:
+            return datetime.fromisoformat(str(stamp)).strftime("%d.%m")
+        except (TypeError, ValueError):
+            return ""
+
+    draw.text((px(left), px(bottom + 16)), day(points[0]["t"]), font=grid_font, fill="#7c899b")
+    last_day = day(points[-1]["t"])
+    draw.text((px(right) - draw.textlength(last_day, font=grid_font), px(bottom + 16)),
+              last_day, font=grid_font, fill="#7c899b")
+
+    footer = "Монетка"
+    draw.text((px(72), px(CHART_HEIGHT - 56)), footer, font=_chart_font(17 * scale), fill="#a2adba")
+
+    image = img.resize((CHART_WIDTH, CHART_HEIGHT), Image.LANCZOS)
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG", optimize=True)
+    return buffer.getvalue()
+
+
+# ---------------------------------------------------------------- info card
+CARD_TITLES = {
+    "crypto": "Криптовалюта",
+    "stocks": "Акции",
+    "metals": "Драгметаллы",
+    "fx": "Валюта",
+    "deposits": "Вклады",
+    "realty": "Недвижимость",
+}
+
+CARD_WIDTH = 1200
+CARD_ROW_HEIGHT = 78
+
+
+def _change_color(value):
+    if value is None:
+        return "#7c899b"
+    return "#0fa97d" if value >= 0 else "#e8564b"
+
+
+def _card_rows(category: str, limit: int):
+    """Строки карточки: (заголовок, подпись, значение, примечание, цвет примечания)."""
+    if category == "realty":
+        data = api_realty()
+        rows = []
+        for key, label in (("moscow", "Москва"), ("russia", "Россия")):
+            stats = (data.get("stats") or {}).get(key) or {}
+            if not stats:
+                continue
+            rows.append((
+                label,
+                f"{_money(stats.get('count'))} объявлений",
+                f"{_money(stats.get('avgPrice') or stats.get('median'))} ₽",
+                f"{_money(stats.get('avgM2'))} ₽/м²",
+                "#7c899b",
+            ))
+        for item in (data.get("items") or [])[:limit]:
+            rows.append((
+                item.get("title") or item.get("city") or "",
+                " · ".join(part for part in (item.get("city"), item.get("source")) if part),
+                f"{_money(item.get('price'))} ₽",
+                f"{_money(item.get('priceM2'))} ₽/м²" if item.get("priceM2") else "",
+                "#7c899b",
+            ))
+        return rows, data.get("meta") or {}
+
+    if category == "deposits":
+        data = api_deposits()
+        rows = [
+            (
+                item.get("bank") or "",
+                " · ".join(part for part in (item.get("name"), item.get("termText")) if part),
+                f"{_money(item.get('rate'), 2)}%",
+                f"от {_money(item.get('min'))} ₽" if item.get("min") else "",
+                "#7c899b",
+            )
+            for item in (data.get("items") or [])[:limit]
+        ]
+        return rows, data.get("meta") or {}
+
+    builder = {"crypto": _bot_crypto, "stocks": _bot_stocks, "metals": _bot_metals, "fx": _bot_fx}[category]
+    items, _, meta = builder(limit)
+    rows = []
+    for item in items:
+        if category == "crypto":
+            rows.append((item["symbol"], item["name"], "$" + _money(item["price"], 2),
+                         _pct(item["change24h"]), _change_color(item["change24h"])))
+        elif category == "stocks":
+            rows.append((item["ticker"], item["name"], _money(item["price"], 2) + " ₽",
+                         _pct(item["change24h"]), _change_color(item["change24h"])))
+        elif category == "metals":
+            rows.append((item["name"], item["code"], _money(item["price"], 2) + " ₽/г",
+                         _pct(item["change24h"]), _change_color(item["change24h"])))
+        else:
+            rows.append((item["code"], item["name"], _money(item["value"], 2) + " ₽",
+                         _pct(item["change24h"]), _change_color(item["change24h"])))
+    return rows, meta
+
+
+def _fit(draw, text: str, font, width: int) -> str:
+    if draw.textlength(text, font=font) <= width:
+        return text
+    while text and draw.textlength(text + "…", font=font) > width:
+        text = text[:-1]
+    return text + "…"
+
+
+def api_card(params):
+    """PNG-карточка категории: /api/card?category=crypto&limit=10."""
+    from PIL import Image, ImageDraw
+
+    category = str((params or {}).get("category") or "").strip().lower()
+    if category not in CARD_TITLES:
+        raise ValueError("Неизвестная категория")
+    try:
+        limit = int((params or {}).get("limit") or 10)
+    except (TypeError, ValueError):
+        raise ValueError("limit должен быть числом") from None
+    limit = max(1, min(limit, 20))
+
+    rows, meta = _card_rows(category, limit)
+    if not rows:
+        raise RuntimeError("Нет данных для карточки")
+
+    height = 150 + len(rows) * CARD_ROW_HEIGHT + 70
+    scale = 2
+    img = Image.new("RGB", (CARD_WIDTH * scale, height * scale), "#f6faf9")
+    draw = ImageDraw.Draw(img)
+
+    def px(value):
+        return int(round(value * scale))
+
+    draw.rounded_rectangle([px(20), px(20), px(CARD_WIDTH - 20), px(height - 20)],
+                           radius=px(24), fill="#ffffff", outline="#e7efee", width=px(2))
+
+    title_font = _chart_font(30 * scale, True)
+    main_font = _chart_font(22 * scale, True)
+    sub_font = _chart_font(16 * scale)
+    value_font = _chart_font(22 * scale, True)
+    note_font = _chart_font(16 * scale, True)
+
+    draw.text((px(56), px(54)), CARD_TITLES[category], font=title_font, fill="#1c284a")
+    updated = _bot_date((meta or {}).get("updated"))
+    if updated:
+        draw.text((px(CARD_WIDTH - 56) - draw.textlength(updated, font=sub_font), px(64)),
+                  updated, font=sub_font, fill="#a2adba")
+
+    y = 132
+    for main, sub, value, note, note_color in rows:
+        draw.text((px(56), px(y)), _fit(draw, main, main_font, px(600)), font=main_font, fill="#1c284a")
+        if sub:
+            draw.text((px(56), px(y + 30)), _fit(draw, sub, sub_font, px(600)), font=sub_font, fill="#7c899b")
+        draw.text((px(CARD_WIDTH - 56) - draw.textlength(value, font=value_font), px(y)),
+                  value, font=value_font, fill="#1c284a")
+        if note:
+            draw.text((px(CARD_WIDTH - 56) - draw.textlength(note, font=note_font), px(y + 30)),
+                      note, font=note_font, fill=note_color)
+        y += CARD_ROW_HEIGHT
+        draw.line([(px(56), px(y - 12)), (px(CARD_WIDTH - 56), px(y - 12))], fill="#eef4f2", width=px(1))
+
+    draw.text((px(56), px(height - 62)), "Монетка", font=_chart_font(16 * scale), fill="#a2adba")
+
+    image = img.resize((CARD_WIDTH, height), Image.LANCZOS)
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG", optimize=True)
+    return buffer.getvalue()
 
 
 # ---------------------------------------------------------------- ai (YandexGPT)
@@ -2573,6 +3261,18 @@ class Handler(SimpleHTTPRequestHandler):
                 query = parse_qs(self.path.partition("?")[2])
                 self.send_json(api_realty_photos({key: values[0] for key, values in query.items()}))
                 return
+            if path == "/api/bot":
+                query = parse_qs(self.path.partition("?")[2])
+                self.send_json(api_bot({key: values[0] for key, values in query.items()}))
+                return
+            if path == "/api/chart":
+                query = parse_qs(self.path.partition("?")[2])
+                self.send_raw(api_chart({key: values[0] for key, values in query.items()}), "image/png")
+                return
+            if path == "/api/card":
+                query = parse_qs(self.path.partition("?")[2])
+                self.send_raw(api_card({key: values[0] for key, values in query.items()}), "image/png")
+                return
             if path == "/api/health":
                 self.send_json({"ok": True, "time": now_msk()})
                 return
@@ -2604,15 +3304,19 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def send_raw(self, body, content_type, status=200):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def end_headers(self):
-        if self.path.startswith("/api/"):
-            self.send_header("Cache-Control", "no-store")
-        else:
-            self.send_header("Cache-Control", "no-cache")
+        cache = "no-store" if getattr(self, "path", "").startswith("/api/") else "no-cache"
+        self.send_header("Cache-Control", cache)
         super().end_headers()
 
     def log_message(self, fmt, *args):  # тихий лог

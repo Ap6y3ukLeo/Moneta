@@ -301,21 +301,6 @@ async function refresh({ silent = false, marketOnly = false } = {}) {
   }
 }
 
-async function refreshFx() {
-  if (!S.market || S.refreshing) return;
-  try {
-    const data = await fetchJson('/api/market?force=1&fx=1', 20000);
-    if (!data.fx) return;
-    S.market.fx = data.fx;
-    const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
-      && document.activeElement.closest('#view');
-    if (!typing) render();
-    updateSideStatus();
-  } catch {
-    // тихо: при следующем обновлении попробуем снова
-  }
-}
-
 /* ------------------------------------------------------------------ money math */
 function depositCalc(p, at = new Date()) {
   const start = parseDate(p.date);
@@ -812,6 +797,8 @@ function stocksPage() {
 }
 
 /* ------------------------------------------------------------------ pages: fx */
+const FX_CHART_CODES = ['USD', 'EUR', 'CNY', 'GBP', 'CHF', 'JPY', 'TRY', 'KZT', 'BYN', 'AED'];
+
 function fxPage() {
   if (!S.market) return loadingView();
   const fx = S.market.fx;
@@ -820,27 +807,26 @@ function fxPage() {
   ${sourceWarning()}
   <div class="page-head">
     <div><h1>Валюта</h1></div>
-    <div class="head-meta">${sourcePill(fx.liveUpdated ? 'ЦБ РФ · биржа' : 'ЦБ РФ', liveMeta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
+    <div class="head-meta">${sourcePill('MOEX · Coinbase · агрегаторы', liveMeta)}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Валюта</th><th class="num">Курс ЦБ, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Было, ₽</th><th>Номинал</th><th>Источник</th></tr></thead>
+        <thead><tr><th>Валюта</th><th class="num">Курс, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Было, ₽</th><th>Источник</th></tr></thead>
         <tbody>
-        ${fx.items.map((f) => `<tr class="${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? 'row-click' : ''}"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
+        ${fx.items.map((f) => `<tr class="${FX_CHART_CODES.includes(f.code) ? 'row-click' : ''}"${FX_CHART_CODES.includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
           <td><div class="asset-cell">${coin(f.code, 'coin--silver')}<span class="txt"><b>${esc(f.name || f.code)}</b><small>${esc(f.code)}</small></span></div></td>
-          <td class="num"><b>${num(f.value, 4)}</b>${f.live ? `<small class="fx-live">${esc(f.live.source || 'биржа')} ${num(f.live.value, 4)}${f.live.change24h != null ? ` · ${chg(f.live.change24h)}` : ''}</small>` : ''}</td>
+          <td class="num"><b>${num(f.value, 4)}</b></td>
           <td class="num">${chg(f.change24h)}</td>
-          <td style="width:120px">${f.spark?.length > 1 ? `<button class="spark-btn" type="button"${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''} title="Открыть график" aria-label="Открыть график ${esc(f.code)}">${sparkline(f.spark, (f.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button>` : '<span class="muted">—</span>'}</td>
+          <td style="width:120px">${f.spark?.length > 1 ? `<button class="spark-btn" type="button"${FX_CHART_CODES.includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''} title="Открыть график" aria-label="Открыть график ${esc(f.code)}">${sparkline(f.spark, (f.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button>` : '<span class="muted">—</span>'}</td>
           <td class="num muted">${num(f.prev, 4)}</td>
-          <td class="muted">${f.nominal} ${esc(f.code)}</td>
-          <td><div class="row-actions">${['USD', 'EUR', 'CNY', 'GBP'].includes(f.code) ? `<button class="icon-btn" data-chart="fx:${esc(f.code)}" title="График" aria-label="График ${esc(f.code)}">${icon('chart')}</button>` : ''}${ext('https://www.cbr.ru/currency_base/daily/', 'Курсы ЦБ РФ')}</div></td>
+          <td class="muted">${esc(f.source || '—')}${f.updated ? `<small class="fx-live">${esc(f.updated.slice(11, 16))}</small>` : ''}</td>
         </tr>`).join('')}
         </tbody>
       </table>
     </div>
   </div>
-  <p class="muted" style="font-size:11px;margin-top:12px">Курс ЦБ РФ — официальный, обновляется по рабочим дням. Биржевой курс — справочная котировка MOEX (для EUR и других пар, которых нет на MOEX, — Coinbase), обновляется каждые 15 минут. В расчётах портфеля используется курс ЦБ.</p>`;
+  <p class="muted" style="font-size:11px;margin-top:12px">Курс — самая свежая котировка из доступных источников: MOEX, Coinbase, open.er-api или currency-api. У каждой валюты подписан источник и время обновления. Данные пересобираются каждые 5 минут. График «7 дней» — по официальной истории ЦБ РФ.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: deposits */
@@ -1540,35 +1526,101 @@ function portfolioPage() {
 }
 
 /* ------------------------------------------------------------------ pages: search */
+const SEARCH_ALIASES = {
+  'биткоин': 'btc bitcoin', 'биткойн': 'btc bitcoin', 'бтс': 'btc',
+  'эфир': 'eth ethereum', 'эфириум': 'eth ethereum',
+  'солана': 'sol solana', 'додж': 'doge dogecoin', 'догикоин': 'doge dogecoin',
+  'сбер': 'sber сбербанк', 'сбербанк': 'sber', 'газпром': 'gazp газпром',
+  'лукойл': 'lkoh лукойл', 'яндекс': 'ydex яндекс', 'норникель': 'gmkn',
+  'доллар': 'usd доллар', 'бакс': 'usd доллар', 'евро': 'eur евро',
+  'юань': 'cny юань', 'фунт': 'gbp фунт', 'иена': 'jpy иена',
+  'тенге': 'kzt тенге', 'лира': 'try лира', 'дирхам': 'aed дирхам',
+  'золото': 'xau золото', 'серебро': 'xag серебро', 'платина': 'xpt платина',
+  'палладий': 'xpd палладий',
+};
+
+function normText(value) {
+  return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/g, ' ').trim();
+}
+
+function isSubsequence(needle, haystack) {
+  let index = 0;
+  for (const char of haystack) {
+    if (char === needle[index]) index += 1;
+    if (index === needle.length) return true;
+  }
+  return false;
+}
+
+function searchScore(tokens, fields) {
+  const texts = fields.map(normText).filter(Boolean);
+  if (!texts.length) return 0;
+  let total = 0;
+  for (const token of tokens) {
+    let best = 0;
+    for (const text of texts) {
+      if (text === token) best = Math.max(best, 60);
+      else if (text.split(' ').includes(token)) best = Math.max(best, 50);
+      else if (text.startsWith(token)) best = Math.max(best, 45);
+      else if (text.split(' ').some((word) => word.startsWith(token))) best = Math.max(best, 40);
+      else if (text.includes(token)) best = Math.max(best, 30);
+      else if (token.length >= 3 && isSubsequence(token, text)) best = Math.max(best, 15);
+    }
+    if (!best) return 0;
+    total += best;
+  }
+  return total;
+}
+
 function searchPage(params) {
   const q = (params.get('q') || '').trim();
   $('#search-input').value = q;
   if (!q) return `<div class="page-head"><div><h1>Поиск</h1></div></div>`;
-  const needle = q.toLowerCase();
+  const needle = normText(q);
+  const tokens = needle.split(' ').filter(Boolean);
+  const alias = SEARCH_ALIASES[needle] || '';
+  const aliasTokens = alias ? alias.split(' ') : [];
   const found = [];
+
+  const add = (score, entry) => {
+    if (score > 0) found.push({ ...entry, score });
+  };
+
   cryptoList().forEach((c) => {
-    if ((c.name + ' ' + c.symbol).toLowerCase().includes(needle)) found.push({ type: 'Криптовалюта · Bybit', name: c.name, sub: c.symbol, value: money(rub(c.price)), chg: c.change24h, href: '#/crypto', url: c.tradeUrl });
+    let score = searchScore(tokens, [c.symbol, c.name]);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [c.symbol, c.name]) * 0.8;
+    add(score, { type: 'Криптовалюта', name: c.name, sub: c.symbol, value: money(rub(c.price)), chg: c.change24h, href: '#/crypto', url: c.tradeUrl });
   });
   metalList().forEach((m) => {
-    if ((m.name + ' ' + m.code).toLowerCase().includes(needle)) found.push({ type: 'Драгметалл', name: m.name, sub: m.code, value: money(m.price) + '/г', chg: m.change24h, href: '#/metals' });
+    let score = searchScore(tokens, [m.code, m.name]);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [m.code, m.name]) * 0.8;
+    add(score, { type: 'Драгметалл', name: m.name, sub: m.code, value: money(m.price) + '/г', chg: m.change24h, href: '#/metals' });
   });
   (S.market?.fx?.items || []).forEach((f) => {
-    if ((f.code + ' ' + (f.name || '')).toLowerCase().includes(needle)) found.push({ type: 'Валюта', name: f.name || f.code, sub: f.code, value: num(f.value, 3) + ' ₽', chg: f.change24h, href: '#/fx' });
+    let score = searchScore(tokens, [f.code, f.name || '']);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [f.code, f.name || '']) * 0.8;
+    add(score, { type: 'Валюта', name: f.name || f.code, sub: f.code, value: num(f.value, 3) + ' ₽', chg: f.change24h, href: '#/fx' });
   });
   depositList().forEach((d) => {
-    if ((d.bank + ' ' + d.name).toLowerCase().includes(needle)) found.push({ type: 'Вклад', name: d.name, sub: `${d.bank}${d.termDays ? ' · ' + d.termDays + ' дн.' : ''}`, value: num(d.rate, 2) + '%', chg: null, href: '#/deposits', url: d.url });
+    let score = searchScore(tokens, [d.bank, d.name]);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [d.bank, d.name]) * 0.8;
+    add(score, { type: 'Вклад', name: d.name, sub: `${d.bank}${d.termDays ? ' · ' + d.termDays + ' дн.' : ''}`, value: num(d.rate, 2) + '%', chg: null, href: '#/deposits', url: d.url });
   });
   realtyList().forEach((r) => {
-    if ((r.title + ' ' + r.address + ' ' + r.district + ' ' + r.metro + ' ' + r.city).toLowerCase().includes(needle)) found.push({ type: 'Недвижимость', name: r.title, sub: `${r.city} · ${r.district || r.address}`, value: money(r.price), chg: null, href: '#/realty', url: r.url });
+    const score = searchScore(tokens, [r.title, r.address, r.district, r.metro, r.city]);
+    add(score, { type: 'Недвижимость', name: r.title, sub: `${r.city} · ${r.district || r.address}`, value: money(r.price), chg: null, href: '#/realty', url: r.url });
   });
 
+  found.sort((a, b) => b.score - a.score);
+  const shown = found.slice(0, 60);
+
   return `${sourceWarning()}
-  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1></div></div>
+  <div class="page-head"><div><h1>Результаты: «${esc(q)}»</h1>${found.length ? `<p class="muted" style="font-size:12px;margin-top:4px">Найдено ${found.length}${found.length > shown.length ? `, показаны первые ${shown.length}` : ''}</p>` : ''}</div></div>
   <div class="card table-card">
-    ${found.length ? `
+    ${shown.length ? `
     <div class="pos-row pos-row--head"><div>Инструмент</div><div class="num">Цена</div><div class="num">Изменение</div><div></div></div>
     <div class="pos-list">
-      ${found.map((f) => `<div class="pos-row" style="grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) 36px">
+      ${shown.map((f) => `<div class="pos-row" style="grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) 36px">
         <div class="pos-asset"><span class="coin">${esc(f.sub.slice(0, 4))}</span><span class="txt"><b>${esc(f.name)}</b><small>${esc(f.type)} · ${esc(f.sub)}</small></span></div>
         <div class="cell num">${f.value}</div>
         <div class="cell num">${chg(f.chg)}</div>
@@ -2591,8 +2643,7 @@ window.addEventListener('hashchange', onRoute);
 (async function boot() {
   render();
   await refresh({ silent: true });
-  setInterval(() => refresh({ silent: true, marketOnly: true }), 3600000);
   setInterval(() => {
-    if (!document.hidden) refreshFx();
-  }, 900000);
+    if (!document.hidden) refresh({ silent: true, marketOnly: true });
+  }, 300000);
 })();
