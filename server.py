@@ -3245,7 +3245,8 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/market":
                 query = parse_qs(self.path.partition("?")[2])
                 fx_only = str((query.get("fx") or ["0"])[0]).lower() in ("1", "true", "yes")
-                self.send_json(api_market(force=True, fx_only=fx_only))
+                force = str((query.get("force") or ["0"])[0]).lower() in ("1", "true", "yes")
+                self.send_json(api_market(force=force, fx_only=fx_only))
                 return
             if path == "/api/deposits":
                 self.send_json(api_deposits())
@@ -3324,6 +3325,25 @@ class Handler(SimpleHTTPRequestHandler):
             print("[http]", fmt % args)
 
 
+# ---------------------------------------------------------------- warm up
+WARM_SECONDS = 300
+
+
+def _warm_once():
+    """Держит кэш тёплым, чтобы посетитель никогда не ждал сборку."""
+    for name, build in (("market", api_market), ("deposits", api_deposits), ("realty", api_realty)):
+        try:
+            build()
+        except Exception as exc:  # noqa: BLE001 - один источник не должен ронять прогрев
+            print(f"[warm] {name}: {exc}", flush=True)
+
+
+def _warm_loop():
+    while True:
+        _warm_once()
+        time.sleep(WARM_SECONDS)
+
+
 def main():
     port = int(os.environ.get("PORT", "8787"))
     host = os.environ.get("HOST", "127.0.0.1")
@@ -3331,6 +3351,8 @@ def main():
     url = f"http://127.0.0.1:{port}"
     print(f"Monetka is running: {url}")
     print("Ctrl+C to stop")
+    if os.environ.get("MONETKA_WARM", "1") != "0":
+        threading.Thread(target=_warm_loop, daemon=True).start()
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

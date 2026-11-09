@@ -256,11 +256,11 @@ async function fetchJson(url, timeout = 30000) {
     clearTimeout(timer);
   }
 }
-async function refresh({ silent = false, marketOnly = false } = {}) {
+async function refresh({ silent = false, marketOnly = false, force = false } = {}) {
   if (S.refreshing) return;
   S.refreshing = true;
   document.body.classList.add('is-refreshing');
-  const jobs = [['market', '/api/market?force=1', 'рыночные котировки', 30000]];
+  const jobs = [['market', `/api/market${force ? '?force=1' : ''}`, 'рыночные котировки', 30000]];
   if (!marketOnly) {
     jobs.push(
       ['deposits', '/api/deposits', 'вклады банков', 60000],
@@ -2526,7 +2526,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'close-deposit') $('#deposit-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
-  else if (action === 'refresh') refresh();
+  else if (action === 'refresh') refresh({ force: true });
   else if (action === 'bell') toast('Уведомлений пока нет — всё под контролем');
   else if (action === 'open-add') openAdd('crypto');
   else if (action === 'close-dialog') $('#add-dialog').close();
