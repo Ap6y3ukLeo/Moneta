@@ -628,18 +628,162 @@ def build_metals():
     return {"items": items, "provider": "ЦБ РФ"}
 
 
-# ---------------------------------------------------------------- stocks (MOEX)
+# ---------------------------------------------------------------- stocks (MOEX + NASDAQ)
 MOEX_SHARES = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.json"
 MOEX_CANDLES = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities/{}/candles.json"
+
+# Мировые акции: тикер, название, домен для логотипа.
+WORLD_STOCKS = [
+    ("NVDA", "NVIDIA", "nvidia.com"),
+    ("AAPL", "Apple", "apple.com"),
+    ("MSFT", "Microsoft", "microsoft.com"),
+    ("GOOGL", "Alphabet", "abc.xyz"),
+    ("AMZN", "Amazon", "amazon.com"),
+    ("META", "Meta", "meta.com"),
+    ("TSLA", "Tesla", "tesla.com"),
+    ("AVGO", "Broadcom", "broadcom.com"),
+    ("AMD", "AMD", "amd.com"),
+    ("NFLX", "Netflix", "netflix.com"),
+    ("ORCL", "Oracle", "oracle.com"),
+    ("CRM", "Salesforce", "salesforce.com"),
+    ("TSM", "TSMC", "tsmc.com"),
+    ("BABA", "Alibaba", "alibaba.com"),
+    ("JPM", "JPMorgan", "jpmorgan.com"),
+    ("V", "Visa", "visa.com"),
+]
+
+WORLD_HISTORY = {}
+WORLD_LOCK = threading.Lock()
+
+
+def _money_num(value):
+    try:
+        return float(re.sub(r"[^\d.\-]", "", str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct_num(value):
+    try:
+        return float(re.sub(r"[^\d.\-]", "", str(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _nasdaq_quote(ticker):
+    today = datetime.now(MSK).date()
+    start = today - timedelta(days=120)
+    url = (
+        f"https://api.nasdaq.com/api/quote/{ticker}/chart?assetclass=stocks"
+        f"&fromdate={start:%Y-%m-%d}&todate={today:%Y-%m-%d}"
+    )
+    request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
+    with urllib.request.urlopen(request, timeout=25) as response:
+        payload = json.loads(response.read().decode("utf-8", "replace"))
+    data = payload.get("data") or {}
+    points = []
+    last_volume = None
+    for row in data.get("chart") or []:
+        try:
+            close = float(row["y"])
+            stamp = datetime.fromtimestamp(float(row["x"]) / 1000, MSK).date().isoformat()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if close > 0:
+            points.append({"t": stamp, "c": round(close, 4)})
+            try:
+                last_volume = float(re.sub(r"[^\d.]", "", str(row["z"].get("volume") or "")))
+            except (KeyError, TypeError, ValueError):
+                pass
+    if not points:
+        raise RuntimeError(f"NASDAQ: нет данных по {ticker}")
+    price = _money_num(data.get("lastSalePrice")) or points[-1]["c"]
+    prev = _money_num(data.get("previousClose"))
+    if prev is None and len(points) > 1:
+        prev = points[-2]["c"]
+    change = _pct_num(data.get("percentageChange"))
+    if change is None and prev:
+        change = (price / prev - 1) * 100
+    return points, price, prev, change, last_volume
+
+
+def _world_stocks():
+    items = []
+    usd = _usd_rate()
+
+    def one(entry):
+        ticker, name, domain = entry
+        points, price, prev, change, volume = _nasdaq_quote(ticker)
+        with WORLD_LOCK:
+            WORLD_HISTORY[ticker] = points
+        # Оборот приводим к рублям, чтобы сортировка «по обороту» сравнивала одно с другим.
+        turnover = volume * price * usd if volume and price else None
+        return {
+            "id": ticker,
+            "ticker": ticker,
+            "symbol": ticker,
+            "name": name,
+            "price": price,
+            "prev": prev,
+            "change24h": change,
+            "turnover": turnover,
+            "lot": 1,
+            "currency": "USD",
+            "market": "NASDAQ",
+            "logo": _stock_logo_for(domain),
+            "spark": [point["c"] for point in points[-30:]],
+            "buyLinks": [],
+        }
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for item in pool.map(lambda entry: _safe_call(one, entry), WORLD_STOCKS):
+            if item:
+                items.append(item)
+    return items
+
+
+def _usd_rate():
+    try:
+        data, _ = source("fx", FX_TTL, build_fx)
+        item = next((i for i in (data or {}).get("items", []) if i.get("code") == "USD"), None)
+        return (item or {}).get("value") or 80
+    except Exception:  # noqa: BLE001 - без курса считаем по грубой оценке
+        return 80
+
+
+def _safe_call(fn, arg):
+    try:
+        return fn(arg)
+    except Exception:  # noqa: BLE001 - одна бумага не должна ронять список
+        return None
+
+
+def _stock_logo_for(domain):
+    # shortcut: favicon-сервис Google, своего CDN с логотипами нет
+    return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else None
 
 
 def _stock_logo(ticker):
     domain = STOCK_DOMAINS.get(ticker)
-    # shortcut: favicon-сервис Google, своего CDN с логотипами у MOEX нет
-    return f"https://www.google.com/s2/favicons?domain={domain}&sz=128" if domain else None
+    return _stock_logo_for(domain)
 
 
 def build_stocks():
+    items, errors = [], []
+    try:
+        items.extend(_moex_stocks())
+    except Exception as exc:  # noqa: BLE001 - российский рынок может быть недоступен
+        errors.append(f"MOEX: {exc}")
+    try:
+        items.extend(_world_stocks())
+    except Exception as exc:  # noqa: BLE001 - мировые акции тоже не гарантированы
+        errors.append(f"NASDAQ: {exc}")
+    if not items:
+        raise RuntimeError("Котировки акций: " + ("; ".join(errors) or "нет данных"))
+    return {"items": items, "provider": "MOEX + NASDAQ", "errors": errors}
+
+
+def _moex_stocks():
     data = http_json(f"{MOEX_SHARES}?iss.meta=off&iss.only=securities,marketdata", timeout=25)
     sec_cols = data["securities"]["columns"]
     mkt_cols = data["marketdata"]["columns"]
@@ -672,6 +816,8 @@ def build_stocks():
                 "change24h": change,
                 "turnover": _num(m.get("VALTODAY")),
                 "lot": _num(s.get("LOTSIZE")) or 1,
+                "currency": "RUB",
+                "market": "MOEX",
                 "logo": _stock_logo(ticker),
                 "buyLinks": [
                     {"label": label, "url": url.format(ticker.lower())}
@@ -682,7 +828,7 @@ def build_stocks():
     if not items:
         raise RuntimeError("MOEX не вернул котировки акций")
     items.sort(key=lambda x: x.get("turnover") or 0, reverse=True)
-    return {"items": items, "provider": "MOEX"}
+    return items
 
 
 # ---------------------------------------------------------------- fx (биржа и агрегаторы)
@@ -1014,6 +1160,18 @@ def _crypto_history(cg_id, symbol, range_name):
 
 
 def _stock_history(ticker, range_name):
+    with WORLD_LOCK:
+        world = list(WORLD_HISTORY.get(ticker) or [])
+    if not world and any(ticker == entry[0] for entry in WORLD_STOCKS):
+        # Кэш акций мог прийти с диска, минуя сборку — историю дозапрашиваем.
+        try:
+            world, *_ = _nasdaq_quote(ticker)
+            with WORLD_LOCK:
+                WORLD_HISTORY[ticker] = world
+        except Exception:  # noqa: BLE001 - без истории покажем ошибку выше
+            world = []
+    if world:
+        return _slice_history(world, range_name)
     interval = {"1d": 10, "7d": 60}.get(range_name, 24)
     fetch_days = 3 if interval == 10 else 10 if interval == 60 else _range_days(range_name) + 5
     today = datetime.now(MSK).date()
@@ -1194,7 +1352,10 @@ def api_history(params):
             raise ValueError("Актив не найден")
         symbol = asset_id
         name = (item or {}).get("name") or asset_id
-        unit, base_source = "RUB", "MOEX"
+        if item.get("currency") == "USD":
+            unit, base_source = "USD", "NASDAQ"
+        else:
+            unit, base_source = "RUB", "MOEX"
     else:
         raise ValueError("Неизвестный тип актива")
     points, used = _history_points(kind, asset_id, range_name)
@@ -2359,13 +2520,20 @@ def _bot_crypto(limit):
     return rows, [f"{r['symbol']} — ${_money(r['price'], 2)} ({_pct(r['change24h'])})" for r in rows], meta
 
 
+def _stock_value(item) -> str:
+    text = _money(item.get("price"), 2)
+    return "$" + text if item.get("currency") == "USD" else text + " ₽"
+
+
 def _bot_stocks(limit):
     data, meta = _safe_source("stocks", STOCKS_TTL, build_stocks)
     rows = [
-        {"ticker": i.get("ticker"), "name": i.get("name"), "price": i.get("price"), "change24h": i.get("change24h")}
+        {"ticker": i.get("ticker"), "name": i.get("name"), "price": i.get("price"),
+         "change24h": i.get("change24h"), "currency": i.get("currency") or "RUB",
+         "market": i.get("market") or "MOEX"}
         for i in (data or {}).get("items", [])[:limit]
     ]
-    return rows, [f"{r['ticker']} {r['name']} — {_money(r['price'], 2)} ₽ ({_pct(r['change24h'])})" for r in rows], meta
+    return rows, [f"{r['ticker']} {r['name']} — {_stock_value(r)} ({_pct(r['change24h'])})" for r in rows], meta
 
 
 def _bot_metals(limit):
@@ -2721,7 +2889,7 @@ def _card_rows(category: str, limit: int):
             rows.append((item["symbol"], item["name"], "$" + _money(item["price"], 2),
                          _pct(item["change24h"]), _change_color(item["change24h"])))
         elif category == "stocks":
-            rows.append((item["ticker"], item["name"], _money(item["price"], 2) + " ₽",
+            rows.append((item["ticker"], item["name"], _stock_value(item),
                          _pct(item["change24h"]), _change_color(item["change24h"])))
         elif category == "metals":
             rows.append((item["name"], item["code"], _money(item["price"], 2) + " ₽/г",

@@ -25,6 +25,7 @@ function price(v) {
   const d = a >= 10 ? 2 : a >= 1 ? 3 : a >= 0.01 ? 4 : 6;
   return nf(d).format(v);
 }
+const stockMoney = (s) => (s?.currency === 'USD' ? '$' + price(s.price) : money(s.price));
 function pct(v) {
   if (v == null || !isFinite(v)) return '—';
   return (v > 0 ? '+' : '') + nf(2).format(v) + '%';
@@ -634,7 +635,7 @@ function homePage() {
         <span class="bento-meta">MOEX · сегодня</span>
       </header>
       <div class="mini-rows">
-        ${topStocks.map((s) => `<div class="mini-row">${stockIcon(s)}<span class="name">${esc(s.name)}</span><span class="price">${money(s.price)}</span><span class="chg">${chg(s.change24h)}</span></div>`).join('') || '<div class="muted">Нет данных</div>'}
+        ${topStocks.map((s) => `<div class="mini-row">${stockIcon(s)}<span class="name">${esc(s.name)}</span><span class="price">${stockMoney(s)}</span><span class="chg">${chg(s.change24h)}</span></div>`).join('') || '<div class="muted">Нет данных</div>'}
       </div>
       <footer class="bento-foot"><span>Все бумаги</span>${icon('arrow')}</footer>
     </article>
@@ -753,8 +754,8 @@ function stockRowsHtml() {
   if (!items.length) return '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
   return items.map((s, i) => `<tr class="row-click" data-chart="stock:${esc(s.id)}">
     <td class="muted">${i + 1}</td>
-    <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · MOEX</small></span></div></td>
-    <td class="num"><b>${money(s.price)}</b></td>
+    <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · ${esc(s.market || 'MOEX')}</small></span></div></td>
+    <td class="num"><b>${stockMoney(s)}</b></td>
     <td class="num">${chg(s.change24h)}</td>
     <td style="width:120px"><span class="spark-slot" data-spark-stock="${esc(s.id)}"></span></td>
     <td class="num muted">${s.turnover ? money(s.turnover, 0) : '—'}</td>
@@ -786,12 +787,12 @@ function stocksPage() {
   <div class="card table-card">
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Оборот</th></tr></thead>
+        <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена</th><th class="num">За день</th><th>7 дней</th><th class="num">Оборот, ₽</th></tr></thead>
         <tbody id="stocks-rows">${stockRowsHtml()}</tbody>
       </table>
     </div>
   </div>` : `<div class="empty-state"><h3>Котировки акций недоступны</h3><p>MOEX не ответил. Попробуйте обновить данные.</p><button class="btn" data-action="refresh">Повторить</button></div>`}
-  <p class="muted" style="font-size:11px;margin-top:12px">Цены MOEX — справочные, могут отставать от биржи в реальном времени. Логотипы есть у крупнейших компаний, у остальных — тикер. Откройте бумагу, чтобы посмотреть график и перейти к покупке у брокера. Это не инвестиционная рекомендация.</p>`;
+  <p class="muted" style="font-size:11px;margin-top:12px">MOEX — российские акции, NASDAQ — мировые (цена в долларах, оборот пересчитан в рубли). Данные справочные и могут отставать от биржи. Логотипы есть у крупнейших компаний, у остальных — тикер. Откройте бумагу, чтобы посмотреть график. Это не инвестиционная рекомендация.</p>`;
 }
 
 /* ------------------------------------------------------------------ pages: fx */
@@ -1613,7 +1614,7 @@ function searchPage(params) {
   (S.market?.stocks?.items || []).forEach((s) => {
     let score = searchScore(tokens, [s.ticker, s.name]);
     if (!score && aliasTokens.length) score = searchScore(aliasTokens, [s.ticker, s.name]) * 0.8;
-    push(score, { type: 'Акция', name: s.name, sub: s.ticker, value: money(s.price), chg: s.change24h,
+    push(score, { type: 'Акция', name: s.name, sub: s.ticker, value: stockMoney(s), chg: s.change24h,
       icon: stockIcon(s), chart: `stock:${s.ticker}`, href: '#/stocks' }, assets);
   });
   metalList().forEach((m) => {
