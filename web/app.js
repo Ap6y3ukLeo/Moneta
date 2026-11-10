@@ -754,7 +754,7 @@ function stockRowsHtml() {
   if (!items.length) return '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">Ничего не найдено</td></tr>';
   return items.map((s, i) => `<tr class="row-click" data-chart="stock:${esc(s.id)}">
     <td class="muted">${i + 1}</td>
-    <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · ${esc(s.market || 'MOEX')}</small></span></div></td>
+    <td><div class="asset-cell">${stockIcon(s)}<span class="txt"><b>${esc(s.name)}</b><small>${esc(s.ticker)} · ${esc(s.market || 'MOEX')}${s.stale ? ' · кэш' : ''}</small></span></div></td>
     <td class="num"><b>${stockMoney(s)}</b></td>
     <td class="num">${chg(s.change24h)}</td>
     <td style="width:120px"><span class="spark-slot" data-spark-stock="${esc(s.id)}"></span></td>

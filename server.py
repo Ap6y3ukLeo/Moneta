@@ -768,12 +768,24 @@ def _stock_logo(ticker):
     return _stock_logo_for(domain)
 
 
+def _cached_moex_items():
+    """MOEX недоступен: показываем прошлые российские котировки с пометкой «кэш»."""
+    try:
+        with open(os.path.join(CACHE_DIR, "stocks.json"), encoding="utf-8") as file:
+            value = json.load(file).get("value") or {}
+        return [dict(item, stale=True) for item in value.get("items", [])
+                if (item.get("market") or "MOEX") != "NASDAQ"]
+    except Exception:  # noqa: BLE001 - кэша может не быть
+        return []
+
+
 def build_stocks():
     items, errors = [], []
     try:
         items.extend(_moex_stocks())
     except Exception as exc:  # noqa: BLE001 - российский рынок может быть недоступен
         errors.append(f"MOEX: {exc}")
+        items.extend(_cached_moex_items())
     try:
         items.extend(_world_stocks())
     except Exception as exc:  # noqa: BLE001 - мировые акции тоже не гарантированы
