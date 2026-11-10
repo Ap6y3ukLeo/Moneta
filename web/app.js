@@ -1237,6 +1237,26 @@ function closeCityPicker() {
   $('#re-city-btn')?.setAttribute('aria-expanded', 'false');
 }
 
+function openCityPicker(btn) {
+  const pop = $('#re-city-pop');
+  if (!pop) return;
+  pop.hidden = false;
+  const rect = btn.getBoundingClientRect();
+  const width = Math.min(310, window.innerWidth - 36);
+  const height = pop.offsetHeight || 320;
+  const left = Math.max(18, Math.min(rect.left, window.innerWidth - width - 18));
+  let top = rect.bottom + 6;
+  if (top + height > window.innerHeight - 12 && rect.top > height + 12) {
+    top = rect.top - height - 6;
+  }
+  pop.style.width = `${Math.round(width)}px`;
+  pop.style.left = `${Math.round(left)}px`;
+  pop.style.top = `${Math.round(top)}px`;
+  btn.setAttribute('aria-expanded', 'true');
+  const q = $('#re-city-q');
+  if (q) { q.value = ''; filterCityOptions(''); q.focus(); }
+}
+
 function setRealtyCity(city) {
   S.re.city = city;
   S.re.limit = 24;
@@ -2392,12 +2412,8 @@ document.addEventListener('click', (e) => {
   if (cityBtn) {
     const pop = $('#re-city-pop');
     if (pop) {
-      pop.hidden = !pop.hidden;
-      cityBtn.setAttribute('aria-expanded', pop.hidden ? 'false' : 'true');
-      if (!pop.hidden) {
-        const q = $('#re-city-q');
-        if (q) { q.value = ''; filterCityOptions(''); q.focus(); }
-      }
+      if (pop.hidden) openCityPicker(cityBtn);
+      else closeCityPicker();
     }
     return;
   }
@@ -2675,6 +2691,8 @@ document.addEventListener('keydown', (e) => {
     card.click();
   }
 });
+window.addEventListener('scroll', closeCityPicker, { passive: true });
+window.addEventListener('resize', closeCityPicker);
 window.addEventListener('hashchange', onRoute);
 
 /* ------------------------------------------------------------------ boot */
