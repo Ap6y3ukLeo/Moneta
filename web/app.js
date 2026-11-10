@@ -116,6 +116,7 @@ const S = {
   realty: null,
   errors: {},
   loading: true,
+  pending: { market: true, deposits: true, realty: true },
   refreshing: false,
   profiles: loadProfiles(),
   portfolio: [],
@@ -268,11 +269,13 @@ async function refresh({ silent = false, marketOnly = false, force = false } = {
       ['realty', '/api/realty', 'недвижимость', 45000],
     );
   }
+  jobs.forEach(([key]) => { S.pending[key] = !S[key]; });
   const results = await Promise.all(jobs.map(async ([key, url, label, timeout]) => {
     try {
       S[key] = await fetchJson(url, timeout);
       if (key === 'realty') trackAllRealtyPrices();
       delete S.errors[key];
+      S.pending[key] = false;
       if (key === 'market') S.loading = false;
       const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
         && document.activeElement.closest('#view');
@@ -281,6 +284,7 @@ async function refresh({ silent = false, marketOnly = false, force = false } = {
       return true;
     } catch (err) {
       S.errors[key] = label;
+      S.pending[key] = false;
       if (key === 'market') S.loading = false;
       const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)
         && document.activeElement.closest('#view');
@@ -457,15 +461,40 @@ function sourceWarning() {
   if (!bad.length) return '';
   return `<div class="alert">${icon('shield')}<div><strong>Не удалось обновить: ${bad.join(', ')}.</strong> Показаны последние сохранённые данные из кэша. <a href="#" class="link-more" data-action="refresh">Повторить</a></div></div>`;
 }
-function loadingView() {
-  if (!S.loading) {
-    return `<div class="empty-state">
-      <h3>Не удалось загрузить данные</h3>
-      <p>Проверьте интернет-соединение и попробуйте снова. Курсы ЦБ РФ и Bybit доступны без ключей; вклады и недвижимость парсятся с сайтов банков и площадок объявлений.</p>
-      <button class="btn" data-action="refresh">Повторить</button>
-    </div>`;
+function skeletonLine(className = '') {
+  return `<span class="skeleton ${className}" aria-hidden="true"></span>`;
+}
+
+function skeletonTable(rows = 7) {
+  return `<div class="card table-card sk-table" aria-hidden="true">
+    <div class="sk-table-head">${skeletonLine('sk-cell sk-cell--wide')}${skeletonLine('sk-cell')}${skeletonLine('sk-cell')}${skeletonLine('sk-cell sk-cell--short')}</div>
+    ${Array.from({ length: rows }, () => `<div class="sk-table-row"><div class="sk-asset">${skeletonLine('sk-avatar')}<div>${skeletonLine('sk-name')}${skeletonLine('sk-caption')}</div></div>${skeletonLine('sk-value')}${skeletonLine('sk-value sk-value--short')}${skeletonLine('sk-spark')}</div>`).join('')}
+  </div>`;
+}
+
+function loadingView(kind = 'market') {
+  const key = ['home', 'portfolio', 'metals'].includes(kind) ? 'market' : kind;
+  if (S.pending?.[key]) {
+    const heading = `<div class="sk-page-head" aria-hidden="true">${skeletonLine('sk-title')}${skeletonLine('sk-button')}</div>`;
+    let content = skeletonTable();
+
+    if (kind === 'home') {
+      content = `<div class="sk-hero" aria-hidden="true"><div>${skeletonLine('sk-caption')}${skeletonLine('sk-title sk-title--hero')}${skeletonLine('sk-copy')}${skeletonLine('sk-button')}</div>${skeletonLine('sk-hero-side')}</div><div class="sk-home-grid" aria-hidden="true">${Array.from({ length: 6 }, () => `<div class="card sk-home-card">${skeletonLine('sk-caption')}${skeletonLine('sk-metric')}${skeletonLine('sk-copy')}${skeletonLine('sk-spark')}</div>`).join('')}</div>`;
+    } else if (kind === 'realty') {
+      content = `<div class="sk-stats" aria-hidden="true">${Array.from({ length: 3 }, () => `<div class="card sk-stat">${skeletonLine('sk-caption')}${skeletonLine('sk-metric')}${skeletonLine('sk-copy')}</div>`).join('')}</div><div class="sk-filters" aria-hidden="true">${skeletonLine('sk-filter sk-filter--wide')}${skeletonLine('sk-filter')}${skeletonLine('sk-filter')}${skeletonLine('sk-filter')}</div><div class="sk-re-grid" aria-hidden="true">${Array.from({ length: 6 }, () => `<div class="re-card sk-re-card">${skeletonLine('sk-re-image')}<div class="sk-re-body">${skeletonLine('sk-name')}${skeletonLine('sk-caption')}${skeletonLine('sk-caption sk-copy--short')}</div></div>`).join('')}</div>`;
+    } else if (kind === 'deposits') {
+      content = `<div class="sk-filters" aria-hidden="true">${skeletonLine('sk-filter')}${skeletonLine('sk-filter')}${skeletonLine('sk-filter sk-filter--wide')}</div><div class="sk-deposits" aria-hidden="true">${Array.from({ length: 6 }, () => `<div class="offer sk-offer">${skeletonLine('sk-avatar')}<div>${skeletonLine('sk-name')}${skeletonLine('sk-caption')}${skeletonLine('sk-copy')}</div>${skeletonLine('sk-rate')}</div>`).join('')}</div>`;
+    } else if (kind === 'metals') {
+      content = `<div class="sk-metal-grid" aria-hidden="true">${Array.from({ length: 4 }, () => `<div class="card sk-metal-card">${skeletonLine('sk-caption')}${skeletonLine('sk-metric')}${skeletonLine('sk-copy')}${skeletonLine('sk-spark')}</div>`).join('')}</div>${skeletonTable(5)}`;
+    }
+
+    return `<div class="sk-page" role="status" aria-label="Загружаем данные" aria-busy="true">${kind === 'home' ? '' : heading}${content}</div>`;
   }
-  return `<div class="empty-state"><span class="loader"></span><p>Загружаем котировки, вклады и недвижимость…</p></div>`;
+  return `<div class="empty-state">
+    <h3>Не удалось загрузить данные</h3>
+    <p>Проверьте интернет-соединение и попробуйте снова.</p>
+    <button class="btn" data-action="refresh">Повторить</button>
+  </div>`;
 }
 function sourcePill(label, meta) {
   const cls = meta?.ok === false ? 'pill--warn' : 'pill--mint';
@@ -473,7 +502,7 @@ function sourcePill(label, meta) {
 }
 /* ------------------------------------------------------------------ pages: home */
 function homePage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('home');
   const { crypto, metals, fx } = S.market;
   const usd = fx.items.find((i) => i.code === 'USD');
   const eur = fx.items.find((i) => i.code === 'EUR');
@@ -655,7 +684,7 @@ function homePage() {
 
 /* ------------------------------------------------------------------ pages: crypto */
 function cryptoPage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('market');
   const meta = S.market.crypto.meta;
   const provider = meta?.provider || S.market.crypto.provider || 'Bybit';
   return `
@@ -693,7 +722,7 @@ function cryptoPage() {
 
 /* ------------------------------------------------------------------ pages: metals */
 function metalsPage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('metals');
   const meta = S.market.metals.meta;
   return `
   ${sourceWarning()}
@@ -763,7 +792,7 @@ function stockRowsHtml() {
 }
 
 function stocksPage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('market');
   const block = S.market.stocks || {};
   const meta = block.meta;
   const provider = meta?.provider || block.provider || 'MOEX';
@@ -799,7 +828,7 @@ function stocksPage() {
 const FX_CHART_CODES = ['USD', 'EUR', 'CNY', 'GBP', 'CHF', 'JPY', 'TRY', 'KZT', 'BYN', 'AED'];
 
 function fxPage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('market');
   const fx = S.market.fx;
   const liveMeta = fx.liveUpdated ? { ...fx.meta, updated: fx.liveUpdated } : fx.meta;
   return `
@@ -906,7 +935,7 @@ function calcSummaryHtml() {
 }
 
 function depositsPage() {
-  if (!S.deposits) return loadingView();
+  if (!S.deposits) return loadingView('deposits');
   ensureCalc();
   const items = depositMatches();
   const banks = new Set(items.map((d) => d.bank)).size;
@@ -1280,7 +1309,7 @@ function filterCityOptions(query) {
 }
 
 function realtyPage() {
-  if (!S.realty) return loadingView();
+  if (!S.realty) return loadingView('realty');
   const msk = S.realty.stats?.moscow;
   const russia = S.realty.stats?.russia;
   const sources = S.realty.sources || [];
@@ -1450,7 +1479,7 @@ function openRealty(id) {
 
 /* ------------------------------------------------------------------ pages: portfolio */
 function portfolioPage() {
-  if (!S.market) return loadingView();
+  if (!S.market) return loadingView('portfolio');
   const v = valuation();
   if (!v.rows.length) {
     return `${sourceWarning()}
@@ -2188,11 +2217,22 @@ function chartSvg(all) {
   </svg>${tip}`;
 }
 
+function chartLoadingSkeleton() {
+  return `<div class="chart-skeleton" role="status" aria-label="Загружаем историю" aria-busy="true">
+    <div class="chart-skeleton-head">${skeletonLine('sk-chart-title')}${skeletonLine('sk-chart-price')}</div>
+    <div class="chart-skeleton-plot" aria-hidden="true">
+      ${Array.from({ length: 4 }, () => '<span></span>').join('')}
+      <svg viewBox="0 0 600 180" preserveAspectRatio="none"><path d="M0 142 C45 132 54 148 92 118 S150 130 190 96 S246 115 292 78 S352 90 395 61 S455 83 496 42 S552 54 600 18"/></svg>
+    </div>
+    <div class="chart-skeleton-foot">${skeletonLine('sk-chart-date')}${skeletonLine('sk-chart-date')}</div>
+  </div>`;
+}
+
 function renderChartStage() {
   const stage = $('#chart-stage');
   if (!stage) return;
   if (chartState.historyLoading) {
-    stage.innerHTML = '<div class="chart-loading"><span class="loader"></span>Загружаем историю…</div>';
+    stage.innerHTML = chartLoadingSkeleton();
     return;
   }
   if (chartState.historyError) {
@@ -2391,7 +2431,7 @@ async function openChart(kind, id) {
   const buyBlock = kind === 'stock'
     ? `<div class="chart-buy"><div class="chart-buy-title">Купить ${esc(asset.name)}</div>${stockBuyMenu(asset)}<p class="chart-buy-note">Ссылки ведут на страницы бумаги у брокеров. Комиссии и доступность сделки уточняйте в приложении брокера.</p></div>`
     : '';
-  body.innerHTML = `<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage"><div class="chart-loading"><span class="loader"></span>Загружаем историю…</div></div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг</div>${buyBlock}`;
+  body.innerHTML = `<div id="chart-toolbar"></div><div id="chart-stage" class="chart-stage">${chartLoadingSkeleton()}</div><div id="chart-legend" class="chart-legend"></div><div class="chart-hint">Колесо — зум · перетаскивание — сдвиг</div>${buyBlock}`;
   if (!dialog.open) dialog.showModal();
   bindChartEvents();
   renderChartToolbar();
