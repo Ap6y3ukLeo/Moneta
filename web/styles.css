@@ -1249,3 +1249,26 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
   .sk-table-head, .sk-table-row { grid-template-columns: minmax(120px, 1.4fr) minmax(72px, 1fr) 36px; gap: 10px; padding-inline: 12px; }
   .sk-table-head > :nth-child(3), .sk-table-row > :nth-child(3), .sk-table-head > :nth-child(4), .sk-table-row > :nth-child(4) { display: none; }
 }
+
+/* --- mobile asset tables: keep three columns, no horizontal scroll --- */
+@media (max-width: 620px) {
+  table.data { min-width: 0; }
+  table.data th, table.data td { padding: 11px 9px; }
+  table.data .asset-cell { min-width: 0; gap: 8px; }
+  table.data .asset-cell .txt b { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .data--crypto th:nth-child(1), .data--crypto td:nth-child(1),
+  .data--crypto th:nth-child(5), .data--crypto td:nth-child(5),
+  .data--crypto th:nth-child(6), .data--crypto td:nth-child(6),
+  .data--crypto th:nth-child(7), .data--crypto td:nth-child(7),
+  .data--crypto th:nth-child(8), .data--crypto td:nth-child(8),
+  .data--stocks th:nth-child(1), .data--stocks td:nth-child(1),
+  .data--stocks th:nth-child(5), .data--stocks td:nth-child(5),
+  .data--stocks th:nth-child(6), .data--stocks td:nth-child(6),
+  .data--fx th:nth-child(4), .data--fx td:nth-child(4),
+  .data--fx th:nth-child(5), .data--fx td:nth-child(5),
+  .data--fx th:nth-child(6), .data--fx td:nth-child(6),
+  .data--metals th:nth-child(3), .data--metals td:nth-child(3),
+  .data--metals th:nth-child(4), .data--metals td:nth-child(4),
+  .data--metals th:nth-child(6), .data--metals td:nth-child(6),
+  .data--metals th:nth-child(7), .data--metals td:nth-child(7) { display: none; }
+}

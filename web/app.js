@@ -695,7 +695,7 @@ function cryptoPage() {
   </div>
   <div class="card table-card">
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data--crypto">
         <thead><tr><th>#</th><th>Актив</th><th class="num">Цена</th><th class="num">24 часа</th><th>7 дней</th><th class="num">Оборот 24ч</th><th>Купить</th><th></th></tr></thead>
         <tbody>
         ${cryptoList().map((c, i) => {
@@ -742,7 +742,7 @@ function metalsPage() {
   </div>
   <div class="card table-card">
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data--metals">
         <thead><tr><th>Металл</th><th class="num">₽ / грамм</th><th class="num">₽ / унция</th><th class="num">$ / унция</th><th class="num">За день</th><th>Котировка</th><th></th></tr></thead>
         <tbody>
         ${metalList().map((m) => `<tr class="row-click" data-chart="metal:${esc(m.id)}">
@@ -815,7 +815,7 @@ function stocksPage() {
   </div>
   <div class="card table-card">
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data--stocks">
         <thead><tr><th>#</th><th>Бумага</th><th class="num">Цена</th><th class="num">За день</th><th>7 дней</th><th class="num">Оборот, ₽</th></tr></thead>
         <tbody id="stocks-rows">${stockRowsHtml()}</tbody>
       </table>
@@ -839,7 +839,7 @@ function fxPage() {
   </div>
   <div class="card table-card">
     <div class="table-wrap">
-      <table class="data">
+      <table class="data data--fx">
         <thead><tr><th>Валюта</th><th class="num">Курс, ₽</th><th class="num">За день</th><th>7 дней</th><th class="num">Было, ₽</th><th>Источник</th></tr></thead>
         <tbody>
         ${fx.items.map((f) => `<tr class="${FX_CHART_CODES.includes(f.code) ? 'row-click' : ''}"${FX_CHART_CODES.includes(f.code) ? ` data-chart="fx:${esc(f.code)}"` : ''}>
@@ -1740,6 +1740,23 @@ async function currentPushSubscription() {
   }
 }
 
+async function subscribePush() {
+  const response = await fetch('/api/push/key');
+  const data = await response.json();
+  if (!data.key) return false;
+  const registration = await navigator.serviceWorker.ready;
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(data.key),
+  });
+  await fetch('/api/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription }),
+  });
+  return true;
+}
+
 async function togglePush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
     toast('Браузер не поддерживает уведомления', true);
@@ -1765,36 +1782,31 @@ async function togglePush() {
       return;
     }
 
-    const response = await fetch('/api/push/key');
-    const data = await response.json();
-    if (!data.key) {
+    if (await subscribePush()) {
+      updateBellState(true);
+      toast('Уведомления включены: скачки цен, вклады, сводка');
+    } else {
       toast('Уведомления не настроены на сервере', true);
-      return;
     }
-
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(data.key),
-    });
-
-    await fetch('/api/push/subscribe', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription }),
-    });
-    updateBellState(true);
-    toast('Уведомления включены: скачки цен, вклады, сводка');
   } catch (err) {
     toast(`Не удалось включить уведомления: ${err.message}`, true);
   }
 }
 
 async function initPush() {
-  if (!('serviceWorker' in navigator)) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
   try {
     await navigator.serviceWorker.register('/sw.js');
-    updateBellState(Boolean(await currentPushSubscription()));
+    const existing = await currentPushSubscription();
+    updateBellState(Boolean(existing));
+    if (existing) return;
+    // Просим разрешение сразу при открытии, но только один раз: отказ не переспрашиваем.
+    if ('Notification' in window && Notification.permission === 'default') {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted' && await subscribePush()) {
+        updateBellState(true);
+      }
+    }
   } catch {
     // без service worker сайт работает как обычно
   }
