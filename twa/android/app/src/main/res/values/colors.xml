@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="background">#F6FAF9</color>
+    <color name="white">#FFFFFF</color>
     <color name="brand">#14D1A3</color>
 </resources>

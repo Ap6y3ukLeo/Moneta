@@ -1272,3 +1272,21 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
   .data--metals th:nth-child(6), .data--metals td:nth-child(6),
   .data--metals th:nth-child(7), .data--metals td:nth-child(7) { display: none; }
 }
+
+/* --- mobile chart dialog --- */
+@media (max-width: 620px) {
+  .forecast-dialog { width: 100vw; max-width: 100vw; height: 100%; max-height: 100%; }
+  .forecast-dialog::backdrop { background: #fff; }
+  .forecast-card { border-radius: 0; height: 100%; max-height: 100%; padding: 14px 14px 18px; gap: 10px; }
+  .forecast-body { gap: 10px; }
+  .dialog-head h2 { font-size: 17px; }
+  .dialog-head p { font-size: 11px; }
+  .chart-toolbar { gap: 6px; }
+  .chart-ranges, .chart-horizons { gap: 4px; }
+  .chart-tab { height: 28px; padding: 0 8px; font-size: 10.5px; }
+  .chart-hint { display: none; }
+  .chart-stage { min-height: 240px; border-radius: 12px; }
+  .chart-legend { font-size: 10px; gap: 6px 10px; }
+  .chart-buy { padding: 12px; }
+  .chart-buy-title { font-size: 12px; }
+}

@@ -3720,6 +3720,42 @@ def _push_tick():
         _send_push(subs, payload)
 
 
+PUSH_TEST_UNTIL = os.environ.get("PUSH_TEST_UNTIL", "")
+
+
+def _push_test_loop():
+    """Временный режим: тестовый пуш каждые 30 секунд до указанного времени (МСК)."""
+    if not PUSH_TEST_UNTIL:
+        return
+    while True:
+        try:
+            stamp = datetime.now(MSK)
+            if stamp.strftime("%Y-%m-%dT%H:%M") >= PUSH_TEST_UNTIL:
+                print("[push] test window closed", flush=True)
+                return
+            subs = _read_json(PUSH_SUBS, {})
+            if subs:
+                market = api_market()
+                btc = next((i for i in (market.get("crypto", {}).get("items") or [])
+                            if i.get("symbol") == "BTC"), None)
+                usd = next((i for i in (market.get("fx", {}).get("items") or [])
+                            if i.get("code") == "USD"), None)
+                parts = []
+                if btc:
+                    parts.append(f"BTC ${_money(btc.get('price'), 0)}")
+                if usd:
+                    parts.append(f"USD {_money(usd.get('value'), 2)} ₽")
+                _send_push(subs, {
+                    "title": f"Монетка · {stamp.strftime('%H:%M:%S')}",
+                    "body": " · ".join(parts) or "тестовое уведомление",
+                    "url": "/#/crypto",
+                    "tag": "test",
+                })
+        except Exception as exc:  # noqa: BLE001 - тестовый режим не должен ронять сервер
+            print(f"[push-test] {exc}", flush=True)
+        time.sleep(30)
+
+
 # ---------------------------------------------------------------- warm up
 WARM_SECONDS = 300
 
@@ -3752,6 +3788,8 @@ def main():
     print("Ctrl+C to stop")
     if os.environ.get("MONETKA_WARM", "1") != "0":
         threading.Thread(target=_warm_loop, daemon=True).start()
+    if os.environ.get("PUSH_TEST_UNTIL"):
+        threading.Thread(target=_push_test_loop, daemon=True).start()
     if os.environ.get("NO_BROWSER") != "1":
         threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:
