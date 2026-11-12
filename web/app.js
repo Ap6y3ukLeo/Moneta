@@ -1717,6 +1717,89 @@ function searchPage(params) {
   ${!total ? `<div class="card table-card"><div class="empty-state">Ничего не найдено. Попробуйте другой запрос.</div></div>` : ''}`;
 }
 
+/* ------------------------------------------------------------------ push */
+function urlBase64ToUint8Array(value) {
+  const padding = '='.repeat((4 - (value.length % 4)) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
+}
+
+function updateBellState(enabled) {
+  const bell = document.querySelector('[data-action="bell"]');
+  if (bell) bell.classList.toggle('has-dot', Boolean(enabled));
+}
+
+async function currentPushSubscription() {
+  if (!('serviceWorker' in navigator)) return null;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    return (await registration?.pushManager?.getSubscription()) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function togglePush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    toast('Браузер не поддерживает уведомления', true);
+    return;
+  }
+  try {
+    const existing = await currentPushSubscription();
+    if (existing) {
+      await fetch('/api/push/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: existing.endpoint }),
+      }).catch(() => {});
+      await existing.unsubscribe();
+      updateBellState(false);
+      toast('Уведомления выключены');
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      toast('Без разрешения уведомления не придут', true);
+      return;
+    }
+
+    const response = await fetch('/api/push/key');
+    const data = await response.json();
+    if (!data.key) {
+      toast('Уведомления не настроены на сервере', true);
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(data.key),
+    });
+
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription }),
+    });
+    updateBellState(true);
+    toast('Уведомления включены: скачки цен, вклады, сводка');
+  } catch (err) {
+    toast(`Не удалось включить уведомления: ${err.message}`, true);
+  }
+}
+
+async function initPush() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    await navigator.serviceWorker.register('/sw.js');
+    updateBellState(Boolean(await currentPushSubscription()));
+  } catch {
+    // без service worker сайт работает как обычно
+  }
+}
+
 /* ------------------------------------------------------------------ router */
 function route() {
   const hash = location.hash.replace(/^#\/?/, '');
@@ -2584,7 +2667,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh({ force: true });
-  else if (action === 'bell') toast('Уведомлений пока нет — всё под контролем');
+  else if (action === 'bell') togglePush();
   else if (action === 'open-add') openAdd('crypto');
   else if (action === 'close-dialog') $('#add-dialog').close();
   else if (action === 'demo') addDemo();
@@ -2738,6 +2821,7 @@ window.addEventListener('hashchange', onRoute);
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
   render();
+  initPush();
   await refresh({ silent: true });
   setInterval(() => {
     if (!document.hidden) refresh({ silent: true, marketOnly: true });

@@ -3,5 +3,5 @@
     <string name="app_name">Монетка</string>
     <string name="launch_url" translatable="false">https://moneta-livid-one.vercel.app/</string>
     <string name="host" translatable="false">moneta-livid-one.vercel.app</string>
-    <string name="asset_statements" translatable="false">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"android_app","package_name":"ru.monetka.app","sha256_cert_fingerprints":["24C02C86C47E01F8FA8DF0F54A820A884386A971AC86898E4EF35D3BBFA78FD4"]}}]</string>
+    <string name="asset_statements" translatable="false">[{\"relation\":[\"delegate_permission/common.handle_all_urls\"],\"target\":{\"namespace\":\"android_app\",\"package_name\":\"ru.monetka.app\",\"sha256_cert_fingerprints\":[\"24C02C86C47E01F8FA8DF0F54A820A884386A971AC86898E4EF35D3BBFA78FD4\"]}}]</string>
 </resources>

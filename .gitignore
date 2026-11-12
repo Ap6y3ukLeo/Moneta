@@ -11,3 +11,8 @@ twa/android/local.properties
 twa/android/.gradle/
 twa/android/build/
 twa/android/app/build/
+
+# push
+vapid_private.pem
+data/push_subs.json
+data/push_state.json

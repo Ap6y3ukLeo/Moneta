@@ -3454,6 +3454,9 @@ class Handler(SimpleHTTPRequestHandler):
                 query = parse_qs(self.path.partition("?")[2])
                 self.send_raw(api_card({key: values[0] for key, values in query.items()}), "image/png")
                 return
+            if path in ("/api/push_key", "/api/push/key"):
+                self.send_json(api_push_key())
+                return
             if path == "/api/health":
                 self.send_json({"ok": True, "time": now_msk()})
                 return
@@ -3466,15 +3469,25 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         path = self.path.split("?")[0]
-        if path not in ("/api/ai", "/api/forecast"):
-            self.send_json({"error": "unknown route"}, status=404)
+        token = os.environ.get("MONETKA_TOKEN")
+        if token and not hmac.compare_digest(self.headers.get("X-Monetka-Token", ""), token):
+            self.send_json({"error": "unauthorized"}, status=401)
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if length > 32_000:
                 raise ValueError("Слишком большой запрос")
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-            self.send_json(api_ai(payload) if path == "/api/ai" else api_forecast(payload))
+            if path in ("/api/push_subscribe", "/api/push/subscribe"):
+                self.send_json(api_push_subscribe(payload))
+            elif path in ("/api/push_unsubscribe", "/api/push/unsubscribe"):
+                self.send_json(api_push_unsubscribe(payload))
+            elif path == "/api/ai":
+                self.send_json(api_ai(payload))
+            elif path == "/api/forecast":
+                self.send_json(api_forecast(payload))
+            else:
+                self.send_json({"error": "unknown route"}, status=404)
         except ValueError as exc:
             self.send_json({"error": str(exc)}, status=400)
         except Exception as exc:  # noqa: BLE001
@@ -3505,6 +3518,208 @@ class Handler(SimpleHTTPRequestHandler):
             print("[http]", fmt % args)
 
 
+# ---------------------------------------------------------------- web push
+PUSH_SUBS = os.path.join(CACHE_DIR, "push_subs.json")
+PUSH_STATE = os.path.join(CACHE_DIR, "push_state.json")
+VAPID_PRIVATE = os.environ.get("VAPID_PRIVATE_KEY") or os.path.join(ROOT, "vapid_private.pem")
+VAPID_SUBJECT = os.environ.get("VAPID_SUBJECT", "https://moneta-livid-one.vercel.app")
+PUSH_COOLDOWN = 3 * 3600
+PUSH_THRESHOLDS = {"crypto": 3.0, "metals": 1.5, "fx": 0.5, "stocks": 3.0}
+
+
+def _read_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as file:
+            return json.load(file)
+    except Exception:  # noqa: BLE001 - файла может не быть
+        return default
+
+
+def _write_json(path, value):
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as file:
+            json.dump(value, file, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
+def api_push_key():
+    return {"key": os.environ.get("VAPID_PUBLIC_KEY", "")}
+
+
+def api_push_subscribe(payload):
+    subscription = (payload or {}).get("subscription") or {}
+    endpoint = str(subscription.get("endpoint") or "").strip()
+    if not endpoint.startswith("https://"):
+        raise ValueError("Некорректная подписка")
+    subs = _read_json(PUSH_SUBS, {})
+    subs[endpoint] = {"subscription": subscription, "created": now_msk()}
+    _write_json(PUSH_SUBS, subs)
+    return {"ok": True, "subscriptions": len(subs)}
+
+
+def api_push_unsubscribe(payload):
+    endpoint = str((payload or {}).get("endpoint") or "").strip()
+    subs = _read_json(PUSH_SUBS, {})
+    subs.pop(endpoint, None)
+    _write_json(PUSH_SUBS, subs)
+    return {"ok": True, "subscriptions": len(subs)}
+
+
+def _push_price_text(kind, item, value):
+    if kind == "crypto":
+        return "$" + _money(value, 2)
+    if kind == "metals":
+        return _money(value, 2) + " ₽/г"
+    if kind == "fx":
+        return _money(value, 4) + " ₽"
+    if item.get("currency") == "USD":
+        return "$" + _money(value, 2)
+    return _money(value, 2) + " ₽"
+
+
+def _push_messages(state):
+    """Что отправить прямо сейчас: скачки цен, ставка вкладов, утренняя сводка."""
+    now = time.time()
+    cooldowns = state.setdefault("cooldowns", {})
+    prices = state.setdefault("prices", {})
+    messages = []
+
+    def allowed(key, window=PUSH_COOLDOWN):
+        return now - float(cooldowns.get(key) or 0) > window
+
+    def mark(key):
+        cooldowns[key] = now
+
+    try:
+        market = api_market()
+    except Exception:
+        market = {}
+
+    groups = (
+        ("crypto", market.get("crypto", {}).get("items") or [], "symbol", "/#/crypto"),
+        ("metals", market.get("metals", {}).get("items") or [], "code", "/#/metals"),
+        ("fx", market.get("fx", {}).get("items") or [], "code", "/#/fx"),
+        ("stocks", market.get("stocks", {}).get("items") or [], "ticker", "/#/stocks"),
+    )
+    for kind, items, key_field, url in groups:
+        threshold = PUSH_THRESHOLDS[kind]
+        for item in items[:40]:
+            item_id = item.get(key_field)
+            value = item.get("value") if kind == "fx" else item.get("price")
+            if not item_id or not value:
+                continue
+            key = f"{kind}:{item_id}"
+            previous = prices.get(key)
+            prices[key] = {"price": float(value), "ts": now}
+            if not previous or not allowed(key):
+                continue
+            change = (float(value) / float(previous["price"]) - 1) * 100
+            if abs(change) < threshold:
+                continue
+            mark(key)
+            minutes = max(1, int((now - float(previous.get("ts") or now)) / 60))
+            verb = "вырос" if change > 0 else "упал"
+            messages.append({
+                "title": f"{item_id} {verb} на {abs(change):.1f}%",
+                "body": f"{_push_price_text(kind, item, value)} за {minutes} мин · было "
+                        f"{_push_price_text(kind, item, previous['price'])}",
+                "url": url,
+                "tag": key,
+            })
+
+    try:
+        deposits = api_deposits()
+        top = (deposits.get("items") or [])[:1]
+        if top:
+            best = top[0]
+            signature = f"{best.get('bank')}|{best.get('name')}|{best.get('rate')}"
+            if state.get("deposits_top") and state["deposits_top"] != signature and allowed("deposits", 12 * 3600):
+                mark("deposits")
+                messages.append({
+                    "title": f"{best.get('bank')} · {_money(best.get('rate'), 2)}%",
+                    "body": f"{best.get('name')} · {best.get('termText') or ''} · от {_money(best.get('min'))} ₽",
+                    "url": "/#/deposits",
+                    "tag": "deposits",
+                })
+            state["deposits_top"] = signature
+    except Exception:  # noqa: BLE001 - вклады могут быть недоступны
+        pass
+
+    stamp = datetime.now(MSK)
+    if 10 <= stamp.hour < 11 and state.get("digest_day") != stamp.strftime("%Y-%m-%d"):
+        state["digest_day"] = stamp.strftime("%Y-%m-%d")
+        parts = []
+        usd = next((i for i in (market.get("fx", {}).get("items") or []) if i.get("code") == "USD"), None)
+        btc = next((i for i in (market.get("crypto", {}).get("items") or []) if i.get("symbol") == "BTC"), None)
+        rate = (market.get("keyRate") or {}).get("value")
+        if usd:
+            parts.append(f"USD {_money(usd.get('value'), 2)} ₽")
+        if btc:
+            parts.append(f"BTC ${_money(btc.get('price'), 0)}")
+        if rate:
+            parts.append(f"ставка {_money(rate, 2)}%")
+        if parts:
+            messages.append({
+                "title": "Монетка: сводка за утро",
+                "body": " · ".join(parts),
+                "url": "/#/",
+                "tag": "digest",
+            })
+
+    for group in ("crypto", "fx", "stocks"):
+        meta = (market.get(group) or {}).get("meta") or {}
+        key = f"stale:{group}"
+        if meta.get("ok") is False and allowed(key, 12 * 3600):
+            mark(key)
+            messages.append({
+                "title": "Данные из кэша",
+                "body": f"{group}: источник не отвечает, показаны последние сохранённые значения",
+                "url": "/#/" + ("fx" if group == "fx" else group),
+                "tag": key,
+            })
+
+    return messages
+
+
+def _send_push(subs, payload):
+    try:
+        from pywebpush import webpush
+    except ImportError:
+        return
+    dead = []
+    for endpoint, entry in list(subs.items()):
+        try:
+            webpush(
+                subscription_info=entry["subscription"],
+                data=json.dumps(payload, ensure_ascii=False),
+                vapid_private_key=VAPID_PRIVATE,
+                vapid_claims={"sub": VAPID_SUBJECT},
+                timeout=15,
+            )
+        except Exception as exc:  # noqa: BLE001 - одна подписка не должна ломать рассылку
+            status = getattr(getattr(exc, "response", None), "status_code", 0)
+            if status in (404, 410):
+                dead.append(endpoint)
+    if dead:
+        for endpoint in dead:
+            subs.pop(endpoint, None)
+        _write_json(PUSH_SUBS, subs)
+
+
+def _push_tick():
+    subs = _read_json(PUSH_SUBS, {})
+    if not subs or not os.environ.get("VAPID_PUBLIC_KEY"):
+        return
+    state = _read_json(PUSH_STATE, {})
+    messages = _push_messages(state)
+    _write_json(PUSH_STATE, state)
+    for payload in messages:
+        _send_push(subs, payload)
+
+
 # ---------------------------------------------------------------- warm up
 WARM_SECONDS = 300
 
@@ -3516,6 +3731,10 @@ def _warm_once():
             build()
         except Exception as exc:  # noqa: BLE001 - один источник не должен ронять прогрев
             print(f"[warm] {name}: {exc}", flush=True)
+    try:
+        _push_tick()
+    except Exception as exc:  # noqa: BLE001 - уведомления не должны ронять прогрев
+        print(f"[push] {exc}", flush=True)
 
 
 def _warm_loop():
