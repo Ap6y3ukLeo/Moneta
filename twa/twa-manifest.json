@@ -1,0 +1,54 @@
+{
+  "packageId": "ru.monetka.app",
+  "host": "moneta-livid-one.vercel.app",
+  "name": "Монетка",
+  "launcherName": "Монетка",
+  "display": "standalone",
+  "themeColor": "#14d1a3",
+  "themeColorDark": "#0b1220",
+  "navigationColor": "#f6faf9",
+  "navigationColorDark": "#0b1220",
+  "navigationDividerColor": "#e7efee",
+  "navigationDividerColorDark": "#1a2433",
+  "backgroundColor": "#f6faf9",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://moneta-livid-one.vercel.app/icons/icon-512.png",
+  "maskableIconUrl": "https://moneta-livid-one.vercel.app/icons/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Криптовалюта",
+      "shortName": "Крипта",
+      "url": "/#/crypto",
+      "chosenIconUrl": "https://moneta-livid-one.vercel.app/icons/icon-192.png"
+    },
+    {
+      "name": "Вклады банков",
+      "shortName": "Вклады",
+      "url": "/#/deposits",
+      "chosenIconUrl": "https://moneta-livid-one.vercel.app/icons/icon-192.png"
+    },
+    {
+      "name": "Недвижимость",
+      "shortName": "Квартиры",
+      "url": "/#/realty",
+      "chosenIconUrl": "https://moneta-livid-one.vercel.app/icons/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://moneta-livid-one.vercel.app/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": { "enabled": false },
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://moneta-livid-one.vercel.app/",
+  "minSdkVersion": 21,
+  "orientation": "portrait-primary",
+  "fingerprints": [],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": []
+}
