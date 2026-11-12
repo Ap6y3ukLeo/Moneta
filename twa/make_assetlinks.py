@@ -16,9 +16,12 @@ PACKAGE = "ru.monetka.app"
 def main():
     if len(sys.argv) < 2:
         raise SystemExit("укажите SHA-256 отпечаток первым аргументом")
-    fingerprint = " ".join(sys.argv[1:]).replace(" ", "").upper()
-    if len(fingerprint.replace(":", "")) != 64:
+    raw = "".join(sys.argv[1:]).replace(":", "").replace(" ", "").upper()
+    if len(raw) != 64:
         raise SystemExit("отпечаток должен быть 32 байта в hex, например AB:CD:...")
+    # Digital Asset Links принимает только формат с двоеточиями; слитный hex
+    # отвергается как malformed cert fingerprint.
+    fingerprint = ":".join(raw[index:index + 2] for index in range(0, 64, 2))
 
     target = Path(__file__).resolve().parent.parent / "web" / ".well-known" / "assetlinks.json"
     target.parent.mkdir(parents=True, exist_ok=True)
