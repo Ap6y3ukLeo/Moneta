@@ -11,7 +11,7 @@
     { "source": "/api/go", "destination": "/api/index?route=go" },
     { "source": "/api/click", "destination": "/api/index?route=click" },
     { "source": "/api/realty", "destination": "/api/index?route=realty" },
-    { "source": "/api/history", "destination": "/api/index?route=history" },
+    { "source": "/api/realty_import", "destination": "/api/index?route=realty_import" },    { "source": "/api/history", "destination": "/api/index?route=history" },
     { "source": "/api/realty-photos", "destination": "/api/index?route=realty_photos" },
     { "source": "/api/bot", "destination": "/api/index?route=bot" },
     { "source": "/api/push/key", "destination": "/api/index?route=push_key" },

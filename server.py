@@ -2074,6 +2074,84 @@ def api_click(payload):
     return {"ok": True, "key": key, "clicks": entry["clicks"]}
 
 
+REALTY_IMPORT = {
+    "yandex": "realty_yandex",
+    "avito": "realty_avito",
+    "mirk": "realty_mirk",
+    "bn": "realty_bn",
+    "cian": "realty_cian",
+}
+
+
+def api_realty_import(payload):
+    """Принимает объявления, собранные вручную в браузере (там нет капчи), и кладёт их в кэш источника."""
+    payload = payload or {}
+    kind = str(payload.get("source") or "").strip()
+    target = REALTY_IMPORT.get(kind)
+    if not target:
+        raise ValueError("Неизвестный источник")
+    rows = payload.get("items")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("Нет объявлений")
+    if len(rows) > 2000:
+        raise ValueError("Слишком много объявлений за раз")
+
+    items = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("id") or "").strip()[:120]
+        url = str(row.get("url") or "").strip()
+        title = str(row.get("title") or "").strip()[:200]
+        try:
+            price = int(float(row.get("price") or 0))
+        except (TypeError, ValueError):
+            price = 0
+        if not item_id or not title or price <= 0 or not url.startswith("https://"):
+            continue
+        items.append({
+            "id": item_id,
+            "source": str(row.get("source") or "Яндекс")[:40],
+            "city": str(row.get("city") or "")[:60],
+            "title": title,
+            "price": price,
+            "priceM2": int(float(row.get("priceM2") or 0)) or None,
+            "area": row.get("area") if isinstance(row.get("area"), (int, float)) else None,
+            "rooms": str(row.get("rooms") or "")[:10],
+            "address": str(row.get("address") or "")[:200],
+            "district": str(row.get("district") or "")[:120],
+            "metro": str(row.get("metro") or "")[:120],
+            "sub": str(row.get("sub") or "")[:60],
+            "sellerType": str(row.get("sellerType") or "")[:30],
+            "img": _img_url(row.get("img")),
+            "url": url,
+        })
+    if not items:
+        raise ValueError("Все объявления отбракованы")
+
+    if not payload.get("reset"):
+        existing = _read_json(os.path.join(CACHE_DIR, target + ".json"), {}).get("value")
+        if isinstance(existing, list):
+            fresh_ids = {item["id"] for item in items}
+            items = items + [item for item in existing if item.get("id") not in fresh_ids]
+    meta = {"ok": True, "updated": now_msk(), "stale": False}
+    _store(target, REALTY_TTL, items, meta)
+
+    saved = 0
+    galleries = payload.get("galleries")
+    if isinstance(galleries, dict) and galleries:
+        global REALTY_IMAGES
+        if REALTY_IMAGES is None:
+            _local_offer_images("")
+        for item_id, urls in galleries.items():
+            clean = [url for url in urls or [] if isinstance(url, str) and url.startswith("https://")][:12]
+            if clean:
+                REALTY_IMAGES[str(item_id)] = clean
+                saved += 1
+        _write_json(os.path.join(BUNDLED_CACHE_DIR, "realty_images.json"), REALTY_IMAGES)
+    return {"ok": True, "source": kind, "items": len(items), "galleries": saved}
+
+
 def api_go(params):
     """Считает переход по «Оформить» и отдаёт адрес банка."""
     item_id = str((params or {}).get("id") or "").strip()
@@ -3941,6 +4019,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_push_send(payload))
             elif path == "/api/click":
                 self.send_json(api_click(payload))
+            elif path == "/api/realty_import":
+                self.send_json(api_realty_import(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":
