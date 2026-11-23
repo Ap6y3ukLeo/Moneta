@@ -1322,7 +1322,10 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 }
 .prod-card__bank { font-size: 10px; font-weight: 700; opacity: .92; }
 .prod-card__name { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
-.prod-card--lg { width: 100%; height: 150px; border-radius: 16px; padding: 16px 18px; }
+.prod-card--lg {
+  width: min(100%, 340px); height: auto; aspect-ratio: 1.586; align-self: center;
+  border-radius: 16px; padding: 16px 18px;
+}
 .prod-card--lg .prod-card__bank { font-size: 12px; }
 .prod-card--lg .prod-card__name { font-size: 19px; }
 .prod-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -1338,6 +1341,7 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 .prod-detail-grid span { display: block; color: var(--muted); font-size: 10px; }
 .prod-detail-grid b { display: block; margin-top: 2px; font-size: 12px; }
 .product-dialog { width: min(560px, calc(100vw - 28px)); }
+.product-dialog .dialog-card { max-height: calc(100vh - 28px); overflow-y: auto; }
 
 @media (max-width: 620px) {
   .prod-row { grid-template-columns: 96px minmax(0, 1fr) 16px; gap: 12px; padding: 12px; }
@@ -1362,4 +1366,9 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 .prod-pin {
   font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
   color: var(--teal-700); background: #e6f8f2; border-radius: 6px; padding: 2px 7px; white-space: nowrap;
+}
+
+/* large card mockup keeps card proportions on phones too */
+@media (max-width: 620px) {
+  .prod-card--lg { width: min(100%, 300px); height: auto; }
 }
