@@ -2073,16 +2073,23 @@ def api_go(params):
 
 
 def api_clicks():
-    items = [
-        {
+    cards = None
+    items = []
+    for key, entry in _load_clicks().items():
+        title = entry["title"]
+        # у старых кликов заголовка не было — подставляем название продукта
+        if entry["kind"] == "cards" and title == key.split(":", 1)[-1]:
+            cards = cards if cards is not None else {item["id"]: item for item in api_cards()["items"]}
+            item = cards.get(title)
+            if item:
+                title = f"{item.get('bank')} · {item.get('name')}"
+        items.append({
             "key": key,
             "kind": entry["kind"],
             "section": CLICK_SECTIONS.get(entry["kind"], entry["kind"]),
-            "title": entry["title"],
+            "title": title,
             "clicks": entry["clicks"],
-        }
-        for key, entry in _load_clicks().items()
-    ]
+        })
     items.sort(key=lambda entry: (-entry["clicks"], entry["title"]))
     return {"items": items, "total": sum(entry["clicks"] for entry in items), "meta": {"ok": True}}
 
