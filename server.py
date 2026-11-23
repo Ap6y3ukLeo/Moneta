@@ -272,7 +272,7 @@ def _cdp_call(sock: socket.socket, msg_id: int, method: str, params: dict | None
             return data
 
 
-def browser_json_many(urls, expression: str, waits, stealth: bool = False):
+def browser_json_many(urls, expression: str, waits, stealth: bool = False, scroll: bool = False):
     """Открывает несколько URL в одном Chrome и возвращает JSON с каждой страницы."""
     if os.environ.get("VERCEL"):
         raise RuntimeError("Авито/Циан недоступны на Vercel: нужен локальный Chrome")
@@ -314,6 +314,8 @@ def browser_json_many(urls, expression: str, waits, stealth: bool = False):
             if not target:
                 raise RuntimeError("Chrome не запустился")
             sock = _ws_connect(target["webSocketDebuggerUrl"])
+            # Без таймаута зависшая страница держит сборку бесконечно.
+            sock.settimeout(120)
             values = []
             try:
                 _cdp_call(sock, 1, "Page.enable")
@@ -322,6 +324,15 @@ def browser_json_many(urls, expression: str, waits, stealth: bool = False):
                     _cdp_call(sock, msg_id, "Page.navigate", {"url": url})
                     msg_id += 1
                     time.sleep(wait)
+                    if scroll:
+                        # Ленивые картинки грузятся только после прокрутки карточек в зону видимости.
+                        for _ in range(3):
+                            _cdp_call(sock, msg_id, "Runtime.evaluate", {
+                                "expression": "window.scrollBy(0, document.body.scrollHeight)",
+                                "returnByValue": True,
+                            })
+                            msg_id += 1
+                            time.sleep(1.2)
                     result = _cdp_call(sock, msg_id, "Runtime.evaluate", {"expression": expression, "returnByValue": True})
                     msg_id += 1
                     if result.get("result", {}).get("exceptionDetails"):
@@ -356,10 +367,11 @@ def _page_url(url: str, page: int) -> str:
     return url + ("&" if "?" in url else "?") + f"p={page}"
 
 
-def browser_json_pages(url: str, expression: str, pages: int, first_wait: float = 10, wait: float = 5):
+def browser_json_pages(url: str, expression: str, pages: int, first_wait: float = 10, wait: float = 5,
+                       scroll: bool = False):
     """Собирает JSON с нескольких страниц выдачи, пока страница не опустеет."""
     urls = [_page_url(url, page) for page in range(1, pages + 1)]
-    values = browser_json_many(urls, expression, [first_wait] + [wait] * (pages - 1))
+    values = browser_json_many(urls, expression, [first_wait] + [wait] * (pages - 1), scroll=scroll)
     rows = []
     for value in values:
         if isinstance(value, list):
@@ -2234,7 +2246,7 @@ def _parse_bn(html):
             "metro": _clean(metro.group(1)) if metro else "",
             "sub": subtext,
             "sellerType": _seller_type("БН.ру", seg),
-            "img": img,
+            "img": _img_url(img),
             "url": "https://www.bn.ru" + m.group(1),
         })
     return items
@@ -2282,7 +2294,8 @@ AVITO_URL = "https://www.avito.ru/rossiya/kvartiry/prodam"
 AVITO_PAGES = 8
 AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"]')].map((card) => {
   const img = card.querySelector('img');
-  const srcset = img?.getAttribute('srcset') || '';
+  const source = card.querySelector('picture source');
+  const srcset = img?.getAttribute('srcset') || source?.getAttribute('srcset') || img?.getAttribute('data-srcset') || '';
   const best = srcset.split(',').map((part) => {
     const [url, size] = part.trim().split(/\s+/);
     return { url, w: parseInt(size, 10) || 0 };
@@ -2292,7 +2305,7 @@ AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"
     title: card.querySelector('[itemprop="name"]')?.innerText,
     url: card.querySelector('a[itemprop="url"]')?.href,
     price: card.querySelector('[itemprop="price"]')?.content,
-    img: best?.url || img?.src || img?.currentSrc,
+    img: best?.url || img?.getAttribute('data-src') || img?.getAttribute('src') || img?.currentSrc,
     addr: card.querySelector('[data-marker="item-address"]')?.innerText,
     text: card.innerText
   };
@@ -2306,11 +2319,21 @@ MIRK_URL = "https://www.mirkvartir.ru/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0/"
 MIRK_PAGES = 2
 MIRK_JS = r"""JSON.stringify([...document.querySelectorAll('a[href^="https://www.mirkvartir.ru/"]')]
   .filter((a) => /\/\d+\/$/.test(a.pathname))
-  .map((a) => ({
-    url: a.href,
-    text: (a.parentElement?.parentElement || a.parentElement || a).innerText,
-    img: (a.parentElement?.parentElement || a.parentElement || a).querySelector('img')?.src
-  })))"""
+  .map((a) => {
+    const root = a.parentElement?.parentElement || a.parentElement || a;
+    const img = root.querySelector('img');
+    const source = root.querySelector('picture source');
+    const srcset = img?.getAttribute('srcset') || source?.getAttribute('srcset') || img?.getAttribute('data-srcset') || '';
+    const best = srcset.split(',').map((part) => {
+      const [url, size] = part.trim().split(/\s+/);
+      return { url, w: parseInt(size, 10) || 0 };
+    }).sort((one, two) => two.w - one.w)[0];
+    return {
+      url: a.href,
+      text: root.innerText,
+      img: best?.url || img?.getAttribute('data-src') || img?.getAttribute('src') || img?.currentSrc
+    };
+  }))"""
 CIAN_JS = r"""JSON.stringify([...document.querySelectorAll('article[data-name="CardComponent"]')].map((card) => ({
   url: card.querySelector('a[href*="/sale/flat/"]')?.href,
   title: card.querySelector('[data-mark="OfferTitle"]')?.innerText,
@@ -2425,7 +2448,7 @@ def _avito_city(parts, addr, url):
 
 
 def build_avito():
-    rows = browser_json_pages(AVITO_URL, AVITO_JS, AVITO_PAGES, first_wait=14, wait=6)
+    rows = browser_json_pages(AVITO_URL, AVITO_JS, AVITO_PAGES, first_wait=14, wait=6, scroll=True)
     if not rows:
         rows = browser_json_pages(AVITO_URL, AVITO_JS, 1, first_wait=18)
     items, seen = [], set()
@@ -2488,7 +2511,7 @@ def build_avito():
             "metro": metro,
             "sub": "",
             "sellerType": seller_type,
-            "img": row.get("img") or "",
+            "img": _img_url(row.get("img")),
             "url": url,
         })
     if not items:
@@ -2545,7 +2568,7 @@ def build_cian():
             "metro": _clean(metro_m.group(1)) if metro_m else "",
             "sub": title if title != layout else "",
             "sellerType": _seller_type("Циан", text),
-            "img": row.get("img") or "",
+            "img": _img_url(row.get("img")),
             "url": url,
         })
     if not items:
@@ -2553,8 +2576,14 @@ def build_cian():
     return items
 
 
+def _img_url(value):
+    """Оставляем только настоящие http-ссылки: ленивые картинки иногда отдают data:/blob:."""
+    value = str(value or "").strip()
+    return value if value.startswith(("https://", "http://")) else ""
+
+
 def build_mirkvartir():
-    rows = browser_json_pages(MIRK_URL, MIRK_JS, MIRK_PAGES, first_wait=12, wait=5)
+    rows = browser_json_pages(MIRK_URL, MIRK_JS, MIRK_PAGES, first_wait=12, wait=5, scroll=True)
     items, seen = [], set()
     for row in rows:
         url = (row.get("url") or "").split("?")[0]
@@ -2595,7 +2624,7 @@ def build_mirkvartir():
             "metro": "",
             "sub": "Новостройка" if re.search(r"новострой", text, re.I) else "Вторичка",
             "sellerType": seller,
-            "img": row.get("img") or "",
+            "img": _img_url(row.get("img")),
             "url": url,
         })
     if not items:
@@ -2714,7 +2743,7 @@ def _parse_yandex(html: str, fallback_city: str = ""):
             "sub": "Новостройка" if flat.startswith("NEW") else "Вторичка",
             "sellerType": seller_type,
             "sellerName": seller_name,
-            "img": img,
+            "img": _img_url(img),
             "url": f"https://realty.yandex.ru/offer/{entity.get('offerId')}/",
         })
     return items

@@ -25,6 +25,12 @@ class RealtyPhotosTest(unittest.TestCase):
         result = server.api_realty_photos({"id": "avito:123"})
         self.assertEqual(result["images"], [])
 
+    def test_img_url_filters_lazy_placeholders(self):
+        self.assertEqual(server._img_url("https://img.example/a.jpg"), "https://img.example/a.jpg")
+        self.assertEqual(server._img_url("//img.example/a.jpg"), "")
+        self.assertEqual(server._img_url("data:image/png;base64,AAA"), "")
+        self.assertEqual(server._img_url(None), "")
+
 
 if __name__ == "__main__":
     unittest.main()
