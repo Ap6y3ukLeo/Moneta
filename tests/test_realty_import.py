@@ -63,6 +63,32 @@ class RealtyImportTest(unittest.TestCase):
             saved = json.load(file)
         self.assertEqual(saved["yandex:1"], ["https://img.example/a.jpg"])
 
+    def test_images_only_update(self):
+        server.api_realty_import({"source": "yandex", "items": [ROW], "reset": True})
+        result = server.api_realty_import({
+            "source": "yandex",
+            "images": {"yandex:1": "https://avatars.mds.yandex.net/b/app_large"},
+        })
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(self.cached()[0]["img"], "https://avatars.mds.yandex.net/b/app_large")
+
+    def test_avito_raw_rows(self):
+        row = {
+            "id": "123456",
+            "title": "2-к. квартира, 54,2 м², 12/22 эт.",
+            "url": "https://www.avito.ru/moskva/kvartiry/2-k_kvartira_54_m_123456",
+            "price": "12000000",
+            "img": "https://img.avito.st/image/1/1.abc",
+            "addr": "Москва, ул. Тверская",
+            "text": "2-к. квартира, 54,2 м²\n12 000 000 ₽",
+        }
+        result = server.api_realty_import({"source": "avito", "rows": [row], "reset": True})
+        self.assertEqual(result["items"], 1)
+        with open(os.path.join(self.cache, "realty_avito.json"), encoding="utf-8") as file:
+            cached = json.load(file)["value"]
+        self.assertEqual(cached[0]["id"], "avito:123456")
+        self.assertEqual(cached[0]["img"], "https://img.avito.st/image/1/1.abc")
+
     def test_rejects_bad_rows(self):
         with self.assertRaises(ValueError):
             server.api_realty_import({"source": "nope", "items": [ROW]})

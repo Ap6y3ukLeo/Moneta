@@ -2090,7 +2090,28 @@ def api_realty_import(payload):
     target = REALTY_IMPORT.get(kind)
     if not target:
         raise ValueError("Неизвестный источник")
+    raw_rows = payload.get("rows")
+    if kind == "avito" and isinstance(raw_rows, list) and raw_rows:
+        if len(raw_rows) > 600:
+            raise ValueError("Слишком много строк за раз")
+        payload = dict(payload, items=_avito_items(raw_rows))
     rows = payload.get("items")
+    images = payload.get("images")
+    if isinstance(images, dict) and images and not rows:
+        cached = _read_json(os.path.join(CACHE_DIR, target + ".json"), {}).get("value")
+        if not isinstance(cached, list) or not cached:
+            raise ValueError("Некуда обновлять фото: кэш источника пуст")
+        updated = 0
+        for item in cached:
+            clean = _img_url(images.get(item.get("id")))
+            if clean:
+                item["img"] = clean
+                updated += 1
+        _write_json(os.path.join(CACHE_DIR, target + ".json"),
+                    {"value": cached, "meta": {"ok": True, "updated": now_msk(), "stale": False}})
+        with LOCK:
+            MEM.pop(target, None)
+        return {"ok": True, "source": kind, "updated": updated}
     if not isinstance(rows, list) or not rows:
         raise ValueError("Нет объявлений")
     if len(rows) > 2000:
@@ -2525,10 +2546,7 @@ def _avito_city(parts, addr, url):
     return ""
 
 
-def build_avito():
-    rows = browser_json_pages(AVITO_URL, AVITO_JS, AVITO_PAGES, first_wait=14, wait=6, scroll=True)
-    if not rows:
-        rows = browser_json_pages(AVITO_URL, AVITO_JS, 1, first_wait=18)
+def _avito_items(rows):
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
@@ -2595,6 +2613,13 @@ def build_avito():
     if not items:
         raise RuntimeError("Авито: не удалось получить объявления (антибот)")
     return items
+
+
+def build_avito():
+    rows = browser_json_pages(AVITO_URL, AVITO_JS, AVITO_PAGES, first_wait=14, wait=6, scroll=True)
+    if not rows:
+        rows = browser_json_pages(AVITO_URL, AVITO_JS, 1, first_wait=18)
+    return _avito_items(rows)
 
 
 def build_cian():
