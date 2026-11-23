@@ -5,12 +5,22 @@ import sys
 from http.server import BaseHTTPRequestHandler
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402
 
 BACKEND_URL_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "backend_url.txt")
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Редирект «Оформить» должен уйти в браузер, а не выполняться на Vercel."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_opener = build_opener(_NoRedirect)
 
 
 def _backend_urls():
@@ -50,7 +60,7 @@ class handler(BaseHTTPRequestHandler):
                 url += "?" + urlencode(query)
             request = Request(url, data=body, headers=headers, method=method)
             try:
-                with urlopen(request, timeout=90) as response:
+                with _opener.open(request, timeout=90) as response:
                     data = response.read()
                     ctype = response.headers.get("Content-Type") or "application/json; charset=utf-8"
                     self._send_raw(data, response.status, ctype, response.headers.get("Location"))
