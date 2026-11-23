@@ -16,3 +16,7 @@ twa/android/app/build/
 vapid_private.pem
 data/push_subs.json
 data/push_state.json
+
+# admin data
+data/links.json
+data/custom_cards.json

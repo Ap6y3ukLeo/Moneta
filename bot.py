@@ -4,6 +4,7 @@
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -59,10 +60,14 @@ HELP = (
 
 
 class Bot:
-    def __init__(self, token: str, api: str, api_token: str):
+    def __init__(self, token: str, api: str, api_token: str, admin_id: int = 0, admin_ids=None):
         self.token = token
         self.api = api.rstrip("/")
         self.api_token = api_token
+        self.admin_ids = {int(value) for value in (admin_ids or [])}
+        if admin_id:
+            self.admin_ids.add(int(admin_id))
+        self.pending = {}
 
     def call(self, method: str, **params):
         url = f"https://api.telegram.org/bot{self.token}/{method}"
@@ -91,6 +96,152 @@ class Bot:
 
     def chart(self, asset: str, period: str):
         return self.fetch(f"/api/chart?{urlencode({'id': asset, 'range': period})}")
+
+    def post(self, path: str, payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self.api}{path}",
+            data=body,
+            headers={"Content-Type": "application/json", "X-Monetka-Token": self.api_token},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            try:
+                message = json.loads(exc.read().decode("utf-8")).get("error")
+            except Exception:  # noqa: BLE001 - тело ошибки может быть не JSON
+                message = None
+            raise RuntimeError(message or f"HTTP {exc.code}") from None
+
+    def is_admin(self, chat_id) -> bool:
+        return int(chat_id) in self.admin_ids
+
+    def products(self):
+        return json.loads(self.fetch("/api/cards")).get("items") or []
+
+    def admin_menu(self, chat_id):
+        if not self.is_admin(chat_id):
+            self.send(chat_id, "Раздел только для администратора.")
+            return
+        rows, row = [], []
+        for item in self.products():
+            row.append({"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"})
+            if len(row) == 2:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+        rows.insert(0, [{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
+        self.send(chat_id, "Панель управления. Выбери продукт, чтобы поменять ссылку «Оформить», "
+                  "или создай новую карточку.", {"inline_keyboard": rows})
+
+    def admin_open(self, chat_id, product_id):
+        item = next((entry for entry in self.products() if entry["id"] == product_id), None)
+        if not item:
+            self.send(chat_id, "Продукт не найден.")
+            return
+        text = f"{item['bank']} · {item['name']}\n\nСсылка: {item.get('url') or '—'}"
+        keyboard = {"inline_keyboard": [
+            [{"text": "🔗 Изменить ссылку", "callback_data": f"adm:set:{product_id}"}],
+            [{"text": "♻️ Сбросить", "callback_data": f"adm:reset:{product_id}"}],
+            [{"text": "← Назад", "callback_data": "adm:menu"}],
+        ]}
+        self.send(chat_id, text, keyboard)
+
+    def admin_await_link(self, chat_id, product_id):
+        self.pending[chat_id] = {"mode": "link", "id": product_id}
+        self.send(chat_id, "Пришли новую ссылку, начиная с https://\nОтмена: /cancel")
+
+    def admin_new(self, chat_id):
+        if not self.is_admin(chat_id):
+            self.send(chat_id, "Раздел только для администратора.")
+            return
+        self.pending[chat_id] = {"mode": "new", "step": "bank", "data": {}}
+        self.send(chat_id, "Новая карточка, 1/8.\n\nБанк? Например: Т-Банк\nОтмена: /cancel")
+
+    def admin_new_type(self, chat_id, kind):
+        pending = self.pending.get(chat_id)
+        if not pending or pending.get("mode") != "new" or pending.get("step") != "type":
+            self.send(chat_id, "Начни заново: /admin → «➕ Новая карточка».")
+            return
+        if kind not in ("debit", "credit", "business"):
+            self.send(chat_id, "Неизвестный тип.")
+            return
+        pending["data"]["type"] = kind
+        pending["step"] = "payout"
+        self.send(chat_id, "4/8 Сколько клиент получит за оформление, в рублях? Например: 3000")
+
+    def new_step(self, chat_id, pending, raw):
+        step = pending["step"]
+        data = pending["data"]
+        if step == "bank":
+            data["bank"] = raw
+            pending["step"] = "name"
+            self.send(chat_id, "2/8 Название продукта? Например: Black")
+        elif step == "name":
+            data["name"] = raw
+            pending["step"] = "type"
+            self.send(chat_id, "3/8 Тип продукта:", {"inline_keyboard": [[
+                {"text": "Дебетовая", "callback_data": "adm:newtype:debit"},
+                {"text": "Кредитная", "callback_data": "adm:newtype:credit"},
+            ], [
+                {"text": "Для бизнеса", "callback_data": "adm:newtype:business"},
+            ]]})
+        elif step == "type":
+            self.send(chat_id, "Выбери тип кнопкой выше.")
+        elif step == "payout":
+            digits = re.sub(r"[^\d]", "", raw)
+            if not digits or int(digits) <= 0:
+                self.send(chat_id, "Нужна сумма числом, например 3000")
+                return
+            data["payout"] = int(digits)
+            pending["step"] = "benefit"
+            self.send(chat_id, "5/8 Выгода одной строкой. Например: до 30% кэшбэка")
+        elif step == "benefit":
+            data["benefit"] = raw
+            pending["step"] = "terms"
+            self.send(chat_id, "6/8 Условия через запятую, в виде «Поле=Значение».\n"
+                               "Например: Кэшбэк=до 5%, Обслуживание=0 ₽")
+        elif step == "terms":
+            terms = []
+            for chunk in re.split(r"[,\n;]", raw):
+                if "=" not in chunk:
+                    continue
+                label, value = chunk.split("=", 1)
+                if label.strip() and value.strip():
+                    terms.append({"label": label.strip(), "value": value.strip()})
+            if not terms:
+                self.send(chat_id, "Не нашёл ни одного «Поле=Значение». Пришли ещё раз.")
+                return
+            data["terms"] = terms
+            pending["step"] = "perks"
+            self.send(chat_id, "7/8 Плюшки через запятую. Или «-», чтобы пропустить.")
+        elif step == "perks":
+            data["perks"] = [] if raw == "-" else [part.strip() for part in raw.split(",") if part.strip()]
+            pending["step"] = "url"
+            self.send(chat_id, "8/8 Ссылка на оформление, начиная с https://\nОтмена: /cancel")
+        elif step == "url":
+            if not raw.startswith("https://"):
+                self.send(chat_id, "Ссылка должна начинаться с https://")
+                return
+            data["url"] = raw
+            try:
+                result = self.post("/api/cards", data)
+            except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+                self.send(chat_id, f"Не получилось: {exc}")
+                return
+            self.pending.pop(chat_id, None)
+            self.send(chat_id, f"Готово. {data['bank']} · {data['name']} добавлена в раздел «Карты и счета».\n"
+                               f"Выплата: {data['payout']} ₽\nid: {result.get('id')}")
+
+    def admin_reset(self, chat_id, product_id):
+        try:
+            self.post("/api/links", {"id": product_id, "url": ""})
+            self.send(chat_id, "Ссылка сброшена на исходную.")
+        except Exception as exc:  # noqa: BLE001 - бот не должен падать
+            self.send(chat_id, f"Не получилось: {exc}")
 
     def card(self, category: str, limit: int = 12):
         return self.fetch(f"/api/card?{urlencode({'category': category, 'limit': limit})}")
@@ -152,15 +303,58 @@ class Bot:
     def on_callback(self, callback):
         self.call("answerCallbackQuery", callback_query_id=callback.get("id"))
         data = (callback.get("data") or "").split(":")
-        if len(data) != 3 or data[0] != "chart":
-            return
         chat_id = ((callback.get("message") or {}).get("chat") or {}).get("id")
-        if chat_id:
+        if not chat_id:
+            return
+        if data[0] == "chart" and len(data) == 3:
             self.send_chart(chat_id, data[1], data[2])
+            return
+        if data[0] != "adm":
+            return
+        action = data[1] if len(data) > 1 else ""
+        if action == "menu":
+            self.admin_menu(chat_id)
+        elif action == "new":
+            self.admin_new(chat_id)
+        elif action == "newtype" and len(data) == 3:
+            self.admin_new_type(chat_id, data[2])
+        elif action == "open" and len(data) == 3:
+            self.admin_open(chat_id, data[2])
+        elif action == "set" and len(data) == 3:
+            self.admin_await_link(chat_id, data[2])
+        elif action == "reset" and len(data) == 3:
+            self.admin_reset(chat_id, data[2])
 
     def handle(self, chat_id, text):
         parts = str(text or "").strip().split()
         word = parts[0].lstrip("/").lower() if parts else ""
+        raw = str(text or "").strip()
+
+        if chat_id in self.pending:
+            if word == "cancel":
+                self.pending.pop(chat_id, None)
+                self.send(chat_id, "Отменено.")
+                return
+            pending = self.pending[chat_id]
+            if pending.get("mode") == "new":
+                self.new_step(chat_id, pending, raw)
+                return
+            if raw.startswith("http"):
+                product_id = pending["id"]
+                try:
+                    self.post("/api/links", {"id": product_id, "url": raw})
+                    self.pending.pop(chat_id, None)
+                    self.send(chat_id, f"Сохранено.\n{raw}")
+                except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+                    self.send(chat_id, f"Не получилось: {exc}")
+                return
+
+        if word == "admin":
+            self.admin_menu(chat_id)
+            return
+        if word == "id":
+            self.send(chat_id, f"Ваш Telegram ID: {chat_id}")
+            return
         if not parts or word in ("start", "help", "menu"):
             self.send(chat_id, HELP, KEYBOARD)
             return
@@ -203,10 +397,16 @@ class Bot:
 
 
 def main():
+    admin_ids = {int(value) for value in os.environ.get("MONETKA_ADMIN_IDS", "").replace(" ", "").split(",") if value.strip().isdigit()}
+    single = int(os.environ.get("MONETKA_ADMIN_ID", "0") or 0)
+    if single:
+        admin_ids.add(single)
+
     bot = Bot(
         token=os.environ["BOT_TOKEN"],
         api=os.environ.get("MONETKA_API", "http://127.0.0.1:8787"),
         api_token=os.environ.get("MONETKA_TOKEN", ""),
+        admin_ids=admin_ids,
     )
     print("bot started:", bot.call("getMe")["result"]["username"], flush=True)
     bot.run()

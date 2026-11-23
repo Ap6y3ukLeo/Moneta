@@ -1290,3 +1290,73 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
   .chart-buy { padding: 12px; }
   .chart-buy-title { font-size: 12px; }
 }
+
+/* --- bank products: cards, credit, business --- */
+.card-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.prod-list { display: flex; flex-direction: column; gap: 10px; }
+.prod-row {
+  display: grid; grid-template-columns: 128px minmax(0, 1fr) 20px; gap: 16px; align-items: center;
+  padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 18px;
+  cursor: pointer; transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.prod-row:hover { border-color: #c7ece2; box-shadow: 0 10px 24px rgba(28, 40, 74, .06); }
+.prod-row:active { transform: scale(.995); }
+.prod-row:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; }
+.prod-card {
+  position: relative; width: 128px; height: 80px; border-radius: 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; justify-content: space-between; overflow: hidden;
+  background-color: var(--tint, #24314f);
+  background-image: linear-gradient(135deg, var(--tint, #24314f), rgba(0, 0, 0, .55));
+  color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 6px 16px rgba(28, 40, 74, .18);
+}
+.prod-card::after {
+  content: ""; position: absolute; inset: -40% -20% auto auto; width: 80%; height: 140%;
+  background: radial-gradient(circle at 60% 20%, rgba(255, 255, 255, .35), transparent 60%);
+  pointer-events: none;
+}
+.prod-card--dark { color: #1c284a; }
+.prod-card__chip {
+  position: absolute; right: 12px; bottom: 12px; width: 22px; height: 16px; border-radius: 3px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .9), rgba(255, 255, 255, .45));
+  opacity: .85;
+}
+.prod-card__bank { font-size: 10px; font-weight: 700; opacity: .92; }
+.prod-card__name { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
+.prod-card--lg { width: 100%; height: 150px; border-radius: 16px; padding: 16px 18px; }
+.prod-card--lg .prod-card__bank { font-size: 12px; }
+.prod-card--lg .prod-card__name { font-size: 19px; }
+.prod-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.prod-title { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.prod-title b { font-size: 13.5px; white-space: nowrap; }
+.prod-title span { color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prod-terms { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11px; color: var(--muted); }
+.prod-terms b { color: var(--navy); font-weight: 600; }
+.prod-benefit { font-size: 13.5px; font-weight: 700; color: var(--teal-700); }
+.prod-chev { color: #9aabbb; justify-self: end; }
+.prod-detail-benefit { font-size: 22px; font-weight: 800; letter-spacing: -.5px; color: var(--teal-700); }
+.prod-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.prod-detail-grid > div { padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdfc; min-width: 0; }
+.prod-detail-grid span { display: block; color: var(--muted); font-size: 10px; }
+.prod-detail-grid b { display: block; margin-top: 2px; font-size: 12px; }
+.prod-detail-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.prod-detail-perks li { display: flex; gap: 8px; font-size: 12px; color: #40536a; }
+.prod-detail-perks .ic { width: 15px; height: 15px; color: var(--teal-700); flex: none; margin-top: 1px; }
+.product-dialog { width: min(560px, calc(100vw - 28px)); }
+
+@media (max-width: 620px) {
+  .prod-row { grid-template-columns: 96px minmax(0, 1fr) 16px; gap: 12px; padding: 12px; }
+  .prod-card { width: 96px; height: 62px; padding: 8px; border-radius: 10px; }
+  .prod-card__name { font-size: 10.5px; }
+  .prod-card__chip { width: 18px; height: 13px; right: 8px; bottom: 8px; }
+  .prod-terms { font-size: 10.5px; gap: 2px 10px; }
+  .prod-detail-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.card-filters--tabs { margin-bottom: 8px; }
+
+/* --- product rows: payout line and sorting --- */
+.card-sort { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.card-sort__label { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.prod-payout { color: var(--teal-700); font-size: 15px; font-weight: 800; letter-spacing: -.2px; }
+.prod-detail-payout { font-size: 26px; font-weight: 800; letter-spacing: -.8px; color: var(--teal-700); }
+.prod-detail-payout span { font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0; }

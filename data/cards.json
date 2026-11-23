@@ -1,0 +1,599 @@
+{
+  "updated": "2026-11-23",
+  "note": "Справочник банковских продуктов. Условия меняются: проверяйте на сайте банка перед оформлением.",
+  "items": [
+    {
+      "id": "debit-tbank-black",
+      "type": "debit",
+      "bank": "Т-Банк",
+      "name": "Black",
+      "logo": "/logos/tbank.svg",
+      "tint": "#2f2f2f",
+      "benefit": "до 30% кэшбэка",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 30%"
+        },
+        {
+          "label": "Снятие",
+          "value": "без комиссии"
+        }
+      ],
+      "perks": [
+        "Кэшбэк рублями сразу",
+        "Бесплатные переводы по СБП",
+        "Подписка Pro на 3 месяца"
+      ],
+      "url": "https://www.tbank.ru/cards/debit/",
+      "payout": 3000
+    },
+    {
+      "id": "debit-alfa-card",
+      "type": "debit",
+      "bank": "Альфа-Банк",
+      "name": "Alfa-Card",
+      "logo": "/logos/alfa.ico",
+      "tint": "#ef3124",
+      "benefit": "кэшбэк до 5%",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 5%"
+        },
+        {
+          "label": "Проценты на остаток",
+          "value": "есть"
+        }
+      ],
+      "perks": [
+        "Кэшбэк в любимых категориях",
+        "Бесплатное снятие в банкоматах партнёров",
+        "Рассрочка на покупки"
+      ],
+      "url": "https://alfabank.ru/everyday/debit-cards/",
+      "payout": 2500
+    },
+    {
+      "id": "debit-vtb-multicard",
+      "type": "debit",
+      "bank": "ВТБ",
+      "name": "Мультикарта",
+      "logo": "/logos/vtb.svg",
+      "tint": "#0a2896",
+      "benefit": "кэшбэк до 3%",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽ при покупках"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 3%"
+        },
+        {
+          "label": "Снятие",
+          "value": "в банкоматах ВТБ"
+        }
+      ],
+      "perks": [
+        "Мультибонусы за покупки",
+        "Скидки у партнёров",
+        "Бесплатные уведомления"
+      ],
+      "url": "https://www.vtb.ru/personal/karty/",
+      "payout": 2000
+    },
+    {
+      "id": "debit-gazprom-smart",
+      "type": "debit",
+      "bank": "Газпромбанк",
+      "name": "Умная карта",
+      "logo": "/logos/gazprombank.svg",
+      "tint": "#1f4e9c",
+      "benefit": "до 5% кэшбэка",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 5%"
+        },
+        {
+          "label": "Проценты на остаток",
+          "value": "до 5%"
+        }
+      ],
+      "perks": [
+        "Кэшбэк в 4 категориях",
+        "Проценты на остаток",
+        "Бесплатные переводы"
+      ],
+      "url": "https://www.gazprombank.ru/personal/cards/",
+      "payout": 2500
+    },
+    {
+      "id": "debit-sber-card",
+      "type": "debit",
+      "bank": "Сбер",
+      "name": "СберКарта",
+      "tint": "#0f9d58",
+      "benefit": "бонусы Спасибо",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Бонусы",
+          "value": "до 10%"
+        },
+        {
+          "label": "Снятие",
+          "value": "в банкоматах Сбера"
+        }
+      ],
+      "perks": [
+        "Бонусы Спасибо за покупки",
+        "Оплата по QR",
+        "Крупная сеть банкоматов"
+      ],
+      "url": "https://www.sberbank.ru/ru/person/bank_cards/debit",
+      "payout": 1500
+    },
+    {
+      "id": "debit-rshb-svoya",
+      "type": "debit",
+      "bank": "Россельхозбанк",
+      "name": "Своя карта",
+      "logo": "/logos/rshb.svg",
+      "tint": "#0a7d3e",
+      "benefit": "кэшбэк до 3%",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 3%"
+        },
+        {
+          "label": "Снятие",
+          "value": "в банкоматах банка"
+        }
+      ],
+      "perks": [
+        "Кэшбэк в категориях",
+        "Проценты на остаток",
+        "Сельские отделения"
+      ],
+      "url": "https://www.rshb.ru/natural/cards/",
+      "payout": 2000
+    },
+    {
+      "id": "debit-otp-card",
+      "type": "debit",
+      "bank": "ОТП Банк",
+      "name": "ОТП Карта",
+      "logo": "/logos/otp.png",
+      "tint": "#00843d",
+      "benefit": "кэшбэк до 5%",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 5%"
+        },
+        {
+          "label": "Проценты на остаток",
+          "value": "есть"
+        }
+      ],
+      "perks": [
+        "Кэшбэк в 3 категориях",
+        "Проценты на остаток",
+        "Бесплатное снятие"
+      ],
+      "url": "https://www.otpbank.ru/retail/cards/",
+      "payout": 1500
+    },
+    {
+      "id": "debit-sovcom-halva",
+      "type": "debit",
+      "bank": "Совкомбанк",
+      "name": "Халва",
+      "tint": "#ff5a00",
+      "benefit": "рассрочка 0%",
+      "terms": [
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Рассрочка",
+          "value": "0%"
+        },
+        {
+          "label": "Кэшбэк",
+          "value": "до 10%"
+        }
+      ],
+      "perks": [
+        "Рассрочка у партнёров",
+        "Кэшбэк баллами",
+        "Бесплатное обслуживание"
+      ],
+      "url": "https://sovcombank.ru/cards/halva",
+      "payout": 2000
+    },
+    {
+      "id": "credit-tbank-platinum",
+      "type": "credit",
+      "bank": "Т-Банк",
+      "name": "Платинум",
+      "logo": "/logos/tbank.svg",
+      "tint": "#2f2f2f",
+      "benefit": "120 дней без процентов",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 1 млн ₽"
+        },
+        {
+          "label": "Льготный период",
+          "value": "120 дней"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Рассрочка на покупки",
+        "Кэшбэк рублями",
+        "Снятие без комиссии в лимите"
+      ],
+      "url": "https://www.tbank.ru/credit/cards/",
+      "payout": 5000
+    },
+    {
+      "id": "credit-alfa-100",
+      "type": "credit",
+      "bank": "Альфа-Банк",
+      "name": "100 дней без процентов",
+      "logo": "/logos/alfa.ico",
+      "tint": "#ef3124",
+      "benefit": "100 дней без процентов",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 500 тыс. ₽"
+        },
+        {
+          "label": "Льготный период",
+          "value": "100 дней"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Кэшбэк в категориях",
+        "Беспроцентный период на переводы",
+        "Мобильное приложение"
+      ],
+      "url": "https://alfabank.ru/get-money/credit-cards/",
+      "payout": 4500
+    },
+    {
+      "id": "credit-vtb-card",
+      "type": "credit",
+      "bank": "ВТБ",
+      "name": "Кредитная карта",
+      "logo": "/logos/vtb.svg",
+      "tint": "#0a2896",
+      "benefit": "110 дней без процентов",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 1 млн ₽"
+        },
+        {
+          "label": "Льготный период",
+          "value": "110 дней"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Кэшбэк мультибонусами",
+        "Снятие наличных в лимите",
+        "Бесплатное обслуживание"
+      ],
+      "url": "https://www.vtb.ru/personal/karty/kreditnye/",
+      "payout": 4000
+    },
+    {
+      "id": "credit-sber-card",
+      "type": "credit",
+      "bank": "Сбер",
+      "name": "Кредитная СберКарта",
+      "tint": "#0f9d58",
+      "benefit": "120 дней без процентов",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 600 тыс. ₽"
+        },
+        {
+          "label": "Льготный период",
+          "value": "120 дней"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Бонусы Спасибо",
+        "Оплата в рассрочку",
+        "Крупная сеть банкоматов"
+      ],
+      "url": "https://www.sberbank.ru/ru/person/bank_cards/credit",
+      "payout": 3500
+    },
+    {
+      "id": "credit-gazprom-card",
+      "type": "credit",
+      "bank": "Газпромбанк",
+      "name": "Кредитная карта",
+      "logo": "/logos/gazprombank.svg",
+      "tint": "#1f4e9c",
+      "benefit": "180 дней без процентов",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 700 тыс. ₽"
+        },
+        {
+          "label": "Льготный период",
+          "value": "180 дней"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Долгий льготный период",
+        "Кэшбэк в категориях",
+        "Снятие в банкоматах банка"
+      ],
+      "url": "https://www.gazprombank.ru/personal/cards/credit/",
+      "payout": 4000
+    },
+    {
+      "id": "credit-sovcom-card",
+      "type": "credit",
+      "bank": "Совкомбанк",
+      "name": "Карта рассрочки",
+      "tint": "#ff5a00",
+      "benefit": "рассрочка 0%",
+      "terms": [
+        {
+          "label": "Лимит",
+          "value": "до 300 тыс. ₽"
+        },
+        {
+          "label": "Рассрочка",
+          "value": "0%"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        }
+      ],
+      "perks": [
+        "Рассрочка у партнёров",
+        "Кэшбэк баллами",
+        "Без процентов при своевременной оплате"
+      ],
+      "url": "https://sovcombank.ru/cards/halva",
+      "payout": 3000
+    },
+    {
+      "id": "business-tbank-rko",
+      "type": "business",
+      "bank": "Т-Банк",
+      "name": "Расчётный счёт",
+      "logo": "/logos/tbank.svg",
+      "tint": "#2f2f2f",
+      "benefit": "6 месяцев бесплатно",
+      "terms": [
+        {
+          "label": "Открытие ИП/ООО",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽ первые 6 мес."
+        },
+        {
+          "label": "Платежи",
+          "value": "0 ₽ в пакете"
+        }
+      ],
+      "perks": [
+        "Открытие счёта онлайн",
+        "Бухгалтерия и ЭДО",
+        "Эквайринг и зарплатный проект"
+      ],
+      "url": "https://www.tbank.ru/business/",
+      "payout": 5000
+    },
+    {
+      "id": "business-tochka-rko",
+      "type": "business",
+      "bank": "Точка",
+      "name": "Расчётный счёт",
+      "tint": "#ffdd00",
+      "benefit": "0 ₽ на старте",
+      "terms": [
+        {
+          "label": "Открытие",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "от 0 ₽"
+        },
+        {
+          "label": "Платежи",
+          "value": "в пакете"
+        }
+      ],
+      "perks": [
+        "Открытие для ИП и ООО",
+        "Онлайн-бухгалтерия",
+        "Эквайринг и кредиты"
+      ],
+      "url": "https://tochka.com/rko/",
+      "payout": 4000
+    },
+    {
+      "id": "business-alfa-rko",
+      "type": "business",
+      "bank": "Альфа-Банк",
+      "name": "РКО",
+      "logo": "/logos/alfa.ico",
+      "tint": "#ef3124",
+      "benefit": "0 ₽ при обороте",
+      "terms": [
+        {
+          "label": "Открытие",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽ от оборота"
+        },
+        {
+          "label": "Платежи",
+          "value": "в пакете"
+        }
+      ],
+      "perks": [
+        "Открытие счёта онлайн",
+        "Бесплатные платежи в пакете",
+        "Зарплатный проект"
+      ],
+      "url": "https://alfabank.ru/sme/rko/",
+      "payout": 4500
+    },
+    {
+      "id": "business-modulbank-rko",
+      "type": "business",
+      "bank": "Модульбанк",
+      "name": "Расчётный счёт",
+      "tint": "#1b1b3a",
+      "benefit": "0 ₽ обслуживание",
+      "terms": [
+        {
+          "label": "Открытие",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Платежи",
+          "value": "в пакете"
+        }
+      ],
+      "perks": [
+        "Онлайн-бухгалтерия",
+        "Эквайринг",
+        "Валютный контроль"
+      ],
+      "url": "https://modulbank.ru/",
+      "payout": 3000
+    },
+    {
+      "id": "business-sber-rko",
+      "type": "business",
+      "bank": "Сбер",
+      "name": "РКО",
+      "tint": "#0f9d58",
+      "benefit": "пакеты под оборот",
+      "terms": [
+        {
+          "label": "Открытие",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "от 0 ₽"
+        },
+        {
+          "label": "Платежи",
+          "value": "в пакете"
+        }
+      ],
+      "perks": [
+        "Открытие онлайн",
+        "Эквайринг и зарплатный проект",
+        "Крупная сеть отделений"
+      ],
+      "url": "https://www.sberbank.ru/ru/s_m_business/bankingservice/rko",
+      "payout": 3500
+    },
+    {
+      "id": "business-vtb-rko",
+      "type": "business",
+      "bank": "ВТБ",
+      "name": "РКО",
+      "logo": "/logos/vtb.svg",
+      "tint": "#0a2896",
+      "benefit": "0 ₽ при подключении",
+      "terms": [
+        {
+          "label": "Открытие",
+          "value": "0 ₽"
+        },
+        {
+          "label": "Обслуживание",
+          "value": "0 ₽ в первый период"
+        },
+        {
+          "label": "Платежи",
+          "value": "в пакете"
+        }
+      ],
+      "perks": [
+        "Открытие счёта онлайн",
+        "Эквайринг",
+        "Кредитование бизнеса"
+      ],
+      "url": "https://www.vtb.ru/malyj-biznes/rko/",
+      "payout": 4000
+    }
+  ]
+}

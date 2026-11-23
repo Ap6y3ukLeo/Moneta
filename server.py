@@ -650,6 +650,22 @@ WORLD_STOCKS = [
     ("BABA", "Alibaba", "alibaba.com"),
     ("JPM", "JPMorgan", "jpmorgan.com"),
     ("V", "Visa", "visa.com"),
+    ("QCOM", "Qualcomm", "qualcomm.com"),
+    ("ADBE", "Adobe", "adobe.com"),
+    ("CSCO", "Cisco", "cisco.com"),
+    ("PEP", "PepsiCo", "pepsico.com"),
+    ("KO", "Coca-Cola", "coca-cola.com"),
+    ("WMT", "Walmart", "walmart.com"),
+    ("JNJ", "Johnson & Johnson", "jnj.com"),
+    ("XOM", "Exxon Mobil", "exxonmobil.com"),
+    ("COST", "Costco", "costco.com"),
+    ("PLTR", "Palantir", "palantir.com"),
+    ("UBER", "Uber", "uber.com"),
+    ("SHOP", "Shopify", "shopify.com"),
+    ("ARM", "Arm", "arm.com"),
+    ("MRK", "Merck", "merck.com"),
+    ("BAC", "Bank of America", "bankofamerica.com"),
+    ("DIS", "Disney", "disney.com"),
 ]
 
 WORLD_HISTORY = {}
@@ -677,9 +693,24 @@ def _nasdaq_quote(ticker):
         f"https://api.nasdaq.com/api/quote/{ticker}/chart?assetclass=stocks"
         f"&fromdate={start:%Y-%m-%d}&todate={today:%Y-%m-%d}"
     )
-    request = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=25) as response:
-        payload = json.loads(response.read().decode("utf-8", "replace"))
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.nasdaq.com/",
+    }
+    payload = None
+    # NASDAQ отвечает 403 на TLS-отпечаток urllib; requests проходит.
+    try:
+        import requests
+
+        response = requests.get(url, headers=headers, timeout=25)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:  # noqa: BLE001 - без requests пробуем стандартный клиент
+        request = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(request, timeout=25) as response:
+            payload = json.loads(response.read().decode("utf-8", "replace"))
     data = payload.get("data") or {}
     points = []
     last_volume = None
@@ -1775,6 +1806,111 @@ def _safe_source(name, ttl, builder, force=False):
         return source(name, ttl, builder, force=force)
     except Exception as exc:  # noqa: BLE001 - один источник не должен ронять выдачу
         return None, {"ok": False, "error": str(exc)[:300], "stale": False, "updated": None}
+
+
+CARDS_FILE = os.path.join(BUNDLED_CACHE_DIR, "cards.json")
+LINKS_FILE = os.path.join(BUNDLED_CACHE_DIR, "links.json")
+CUSTOM_FILE = os.path.join(BUNDLED_CACHE_DIR, "custom_cards.json")
+CARD_TYPES = ("debit", "credit", "business")
+CARD_TINTS = {"debit": "#24314f", "credit": "#1f3a57", "business": "#123c35"}
+
+
+def _load_custom():
+    data = _read_json(CUSTOM_FILE, [])
+    return data if isinstance(data, list) else []
+
+
+def api_card_create(payload):
+    """Добавляет карточку, созданную из админки бота."""
+    payload = payload or {}
+    kind = str(payload.get("type") or "")
+    if kind not in CARD_TYPES:
+        raise ValueError("Неизвестный тип продукта")
+    bank = str(payload.get("bank") or "").strip()
+    name = str(payload.get("name") or "").strip()
+    if not bank or not name:
+        raise ValueError("Нужны банк и название")
+    url = str(payload.get("url") or "").strip()
+    if not url.startswith("https://"):
+        raise ValueError("Ссылка должна начинаться с https://")
+    try:
+        payout = int(payload.get("payout") or 0)
+    except (TypeError, ValueError):
+        raise ValueError("Выплата должна быть числом") from None
+    if payout <= 0:
+        raise ValueError("Выплата должна быть больше нуля")
+    terms = [
+        {"label": str(term.get("label")).strip(), "value": str(term.get("value")).strip()}
+        for term in payload.get("terms") or []
+        if isinstance(term, dict) and str(term.get("label") or "").strip() and str(term.get("value") or "").strip()
+    ]
+    if not terms:
+        raise ValueError("Нужно хотя бы одно условие")
+    perks = [str(perk).strip() for perk in payload.get("perks") or [] if str(perk).strip()]
+    item = {
+        "id": f"custom-{int(time.time() * 1000)}",
+        "type": kind,
+        "bank": bank,
+        "name": name,
+        "tint": CARD_TINTS[kind],
+        "benefit": str(payload.get("benefit") or terms[0]["value"]).strip(),
+        "terms": terms,
+        "perks": perks,
+        "url": url,
+        "payout": payout,
+    }
+    items = _load_custom()
+    items.append(item)
+    _write_json(CUSTOM_FILE, items)
+    # _write_json молчит об ошибках диска, а админке важно знать, что карточка сохранена.
+    if not any(entry.get("id") == item["id"] for entry in _load_custom()):
+        raise RuntimeError("Не удалось сохранить карточку на сервере")
+    return {"ok": True, "id": item["id"], "count": len(items)}
+
+
+def _load_links():
+    data = _read_json(LINKS_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
+def _apply_links(items, links):
+    return [dict(item, url=links.get(item.get("id"), item.get("url"))) for item in items]
+
+
+def api_links():
+    return {"items": _load_links()}
+
+
+def api_link_set(payload):
+    """Меняет ссылку «Оформить» у продукта. Пустой url сбрасывает ссылку на исходную."""
+    item_id = str((payload or {}).get("id") or "").strip()
+    url = str((payload or {}).get("url") or "").strip()
+    if not item_id:
+        raise ValueError("Не указан продукт")
+    if url and not url.startswith("https://"):
+        raise ValueError("Ссылка должна начинаться с https://")
+    links = _load_links()
+    if url:
+        links[item_id] = url
+    else:
+        links.pop(item_id, None)
+    _write_json(LINKS_FILE, links)
+    return {"ok": True, "id": item_id, "url": url or None, "count": len(links)}
+
+
+def api_cards(_params=None):
+    """Справочник банковских карт и РКО: data/cards.json плюс карточки из админки."""
+    data = _read_json(CARDS_FILE, {})
+    items = (data.get("items") or []) + _load_custom()
+    items = _apply_links(items, _load_links())
+    if not items:
+        raise RuntimeError("Каталог карт не заполнен")
+    return {
+        "items": items,
+        "note": data.get("note"),
+        "meta": {"ok": True, "updated": data.get("updated")},
+        "serverTime": now_msk(),
+    }
 
 
 def api_deposits():
@@ -3431,6 +3567,12 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/deposits":
                 self.send_json(api_deposits())
                 return
+            if path == "/api/cards":
+                self.send_json(api_cards())
+                return
+            if path == "/api/links":
+                self.send_json(api_links())
+                return
             if path == "/api/realty":
                 self.send_json(api_realty())
                 return
@@ -3482,6 +3624,10 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_push_subscribe(payload))
             elif path in ("/api/push_unsubscribe", "/api/push/unsubscribe"):
                 self.send_json(api_push_unsubscribe(payload))
+            elif path == "/api/links":
+                self.send_json(api_link_set(payload))
+            elif path == "/api/cards":
+                self.send_json(api_card_create(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":

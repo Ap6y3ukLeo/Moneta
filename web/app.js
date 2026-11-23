@@ -114,9 +114,10 @@ const S = {
   market: null,
   deposits: null,
   realty: null,
+  cards: null,
   errors: {},
   loading: true,
-  pending: { market: true, deposits: true, realty: true },
+  pending: { market: true, deposits: true, realty: true, cards: true },
   refreshing: false,
   profiles: loadProfiles(),
   portfolio: [],
@@ -125,6 +126,8 @@ const S = {
   dep: { amount: 500000, months: 12, limit: 40 },
   re: { q: '', rooms: 'all', source: 'all', city: 'all', sort: 'price', limit: 24 },
   stocks: { q: '', sort: 'turnover' },
+  cardsSort: 'payout',
+  cardsTab: 'debit',
   calc: null,
 };
 S.portfolio = loadPortfolio(S.profiles.active);
@@ -266,6 +269,7 @@ async function refresh({ silent = false, marketOnly = false, force = false } = {
   if (!marketOnly) {
     jobs.push(
       ['deposits', '/api/deposits', 'вклады банков', 60000],
+      ['cards', '/api/cards', 'карты банков', 30000],
       ['realty', '/api/realty', 'недвижимость', 45000],
     );
   }
@@ -1013,6 +1017,132 @@ function openDeposit(id) {
   if (!dialog.open) dialog.showModal();
 }
 
+/* ------------------------------------------------------------------ cards & business */
+const CARD_TYPES = {
+  debit: { title: 'Дебетовые карты', sub: 'Кэшбэк, проценты на остаток и бесплатное обслуживание', label: 'Дебетовая карта' },
+  credit: { title: 'Кредитные карты', sub: 'Льготный период, лимиты и рассрочка', label: 'Кредитная карта' },
+  business: { title: 'Для бизнеса', sub: 'РКО, открытие ИП и ООО, эквайринг', label: 'Для бизнеса' },
+};
+
+function cardList(kind) {
+  return (S.cards?.items || []).filter((item) => item.type === kind);
+}
+
+function isLightTint(hex) {
+  const value = String(hex || '').replace('#', '');
+  if (value.length !== 6) return false;
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.68;
+}
+
+function productCard(item, large = false) {
+  return `<div class="prod-card${large ? ' prod-card--lg' : ''}${isLightTint(item.tint) ? ' prod-card--dark' : ''}" style="--tint:${esc(item.tint || '#24314f')}">
+    <span class="prod-card__chip"></span>
+    <span class="prod-card__bank">${esc(item.bank)}</span>
+    <span class="prod-card__name">${esc(item.name)}</span>
+  </div>`;
+}
+
+function productRow(item) {
+  return `<article class="prod-row" data-product="${esc(item.id)}" tabindex="0" role="button" aria-label="${esc(item.bank)} ${esc(item.name)}: ${money(item.payout)} за оформление">
+    ${productCard(item)}
+    <div class="prod-main">
+      <div class="prod-title"><b>${esc(item.bank)}</b><span>${esc(item.name)}</span></div>
+      <div class="prod-benefit"><span class="prod-payout">${money(item.payout)}</span> за оформление</div>
+    </div>
+    <span class="prod-chev">${icon('chev')}</span>
+  </article>`;
+}
+
+function termNumber(value) {
+  const text = String(value || '').toLowerCase().replace(/\s+/g, ' ');
+  const match = text.match(/\d+(?:[.,]\d+)?/);
+  if (!match) return null;
+  const number = parseFloat(match[0].replace(',', '.'));
+  if (/млн/.test(text)) return number * 1e6;
+  if (/тыс/.test(text)) return number * 1e3;
+  return number;
+}
+
+function termSortValue(item, label) {
+  const term = (item.terms || []).find((entry) => entry.label === label);
+  return term ? termNumber(term.value) : null;
+}
+
+function sortProducts(items, sort) {
+  if (sort.startsWith('term:')) {
+    const label = sort.slice(5);
+    // меньше — лучше только у обслуживания, остальное «чем больше, тем лучше»
+    const cheaperFirst = label === 'Обслуживание';
+    return [...items].sort((a, b) => {
+      const left = termSortValue(a, label);
+      const right = termSortValue(b, label);
+      if (left === null || right === null) return (left === null) - (right === null);
+      return cheaperFirst ? left - right : right - left;
+    });
+  }
+  return [...items].sort((a, b) => (b.payout || 0) - (a.payout || 0));
+}
+
+function sortLabels(items) {
+  const labels = [...new Set(items.flatMap((item) => item.terms.map((term) => term.label)))];
+  return labels.filter((label) => items.filter((item) => termSortValue(item, label) !== null).length >= 2);
+}
+
+function cardsPage() {
+  if (!S.cards) return loadingView('cards');
+  const kind = S.cardsTab || 'debit';
+  const all = cardList(kind);
+  const labels = sortLabels(all);
+  const sort = S.cardsSort?.startsWith('term:') && labels.includes(S.cardsSort.slice(5))
+    ? S.cardsSort
+    : 'payout';
+  const items = sortProducts(all, sort);
+  const sortButtons = [
+    ['payout', 'По выплате', ''],
+    ...labels.map((label) => [`term:${label}`, label, label === 'Обслуживание' ? 'Сначала дешевле' : 'Сначала больше']),
+  ];
+  return `${sourceWarning()}
+  <div class="page-head">
+    <div><h1>Карты и счета</h1><p class="page-sub">Дебетовые и кредитные карты, РКО и счёта для бизнеса</p></div>
+    <div class="head-meta"><span class="pill">${items.length} предложений</span></div>
+  </div>
+  <div class="card-filters card-filters--tabs">
+    ${Object.entries(CARD_TYPES).map(([key, value]) => `<button type="button" class="pill ${kind === key ? 'pill--mint' : ''}" data-cards-tab="${key}">${value.title}</button>`).join('')}
+  </div>
+  <div class="card-sort">
+    <span class="card-sort__label">Сортировка</span>
+    ${sortButtons.map(([key, text, hint]) => `<button type="button" class="pill ${sort === key ? 'pill--mint' : ''}" data-cards-sort="${esc(key)}"${hint ? ` title="${hint}"` : ''}>${esc(text)}</button>`).join('')}
+  </div>
+  <div class="prod-list">${items.map(productRow).join('')}</div>
+  <p class="muted" style="font-size:10.5px;margin-top:12px">${esc(S.cards.note || 'Условия уточняйте на сайте банка.')}</p>`;
+}
+
+function openProduct(id) {
+  const item = (S.cards?.items || []).find((entry) => entry.id === id);
+  const dialog = $('#product-dialog');
+  const body = $('#product-body');
+  if (!item || !dialog || !body) return;
+  $('#product-title').textContent = `${item.bank} · ${item.name}`;
+  $('#product-sub').textContent = CARD_TYPES[item.type]?.label || 'Банковский продукт';
+  const rating = Math.min(5, item.perks?.length || 0);
+  body.innerHTML = `
+    ${productCard(item, true)}
+    <div class="prod-detail-payout">${money(item.payout)} <span>за оформление</span></div>
+    <div class="prod-detail-benefit">${esc(item.benefit)}</div>
+    <div class="prod-rating">
+      <span class="prod-stars" aria-hidden="true">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span>
+      <span class="muted">${item.perks?.length || 0} плюшек</span>
+    </div>
+    <div class="prod-detail-grid">${item.terms.map((term) => `<div><span>${esc(term.label)}</span><b>${esc(term.value)}</b></div>`).join('')}</div>
+    <ul class="prod-detail-perks">${item.perks.map((perk) => `<li>${icon('shield')}<span>${esc(perk)}</span></li>`).join('')}</ul>
+    ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
+    <p class="dialog-hint">Условия и ставки меняются. Проверьте тарифы и требования на сайте банка перед оформлением.</p>`;
+  if (!dialog.open) dialog.showModal();
+}
+
 /* ------------------------------------------------------------------ pages: realty */
 const GEO_CACHE_KEY = 'monetka:geo:v1';
 let geoMemory = (() => {
@@ -1685,6 +1815,14 @@ function searchPage(params) {
       value: num(d.rate, 2) + '%', chg: null, icon: searchIcon((d.bank || 'Б')[0], d.logo),
       depositId: d.id, href: '#/deposits', url: d.url }, assets);
   });
+  (S.cards?.items || []).forEach((item) => {
+    let score = searchScore(tokens, [item.bank, item.name, item.benefit, ...(item.perks || [])]);
+    if (!score && aliasTokens.length) score = searchScore(aliasTokens, [item.bank, item.name]) * 0.8;
+    push(score, { type: CARD_TYPES[item.type]?.label || 'Банковский продукт',
+      name: `${item.bank} · ${item.name}`, sub: item.benefit,
+      value: money(item.payout), chg: null, icon: searchIcon((item.bank || 'Б')[0], item.logo),
+      productId: item.id, href: '#/cards', url: item.url }, assets);
+  });
   realtyList().forEach((r) => {
     const score = searchScore(tokens, [r.title, r.address, r.district, r.metro, r.city], false);
     if (score > 0) flats.push({ ...r, score });
@@ -1697,7 +1835,7 @@ function searchPage(params) {
   const total = assets.length + flats.length;
 
   const rows = shownAssets.map((f) => {
-    const clickable = f.chart ? ` data-chart="${esc(f.chart)}" tabindex="0" role="button"` : f.depositId ? ` data-deposit="${esc(f.depositId)}" tabindex="0" role="button"` : '';
+    const clickable = f.chart ? ` data-chart="${esc(f.chart)}" tabindex="0" role="button"` : f.depositId ? ` data-deposit="${esc(f.depositId)}" tabindex="0" role="button"` : f.productId ? ` data-product="${esc(f.productId)}" tabindex="0" role="button"` : '';
     return `<div class="pos-row"${clickable} style="grid-template-columns:minmax(0,1.8fr) minmax(0,1fr) minmax(0,.8fr) 36px">
       <div class="pos-asset">${f.icon}<span class="txt"><b>${esc(f.name)}</b><small>${esc(f.type)} · ${esc(f.sub)}</small></span></div>
       <div class="cell num">${f.value}</div>
@@ -2003,6 +2141,7 @@ function render() {
   else if (page === 'metals') html = metalsPage();
   else if (page === 'fx') html = fxPage();
   else if (page === 'deposits') html = depositsPage();
+  else if (page === 'cards') html = cardsPage();
   else if (page === 'realty') html = realtyPage();
   else if (page === 'search') html = searchPage(params);
   else html = `<div class="empty-state"><h3>Страница не найдена</h3><a class="btn" href="#/">На главную</a></div>`;
@@ -2024,7 +2163,7 @@ function render() {
 }
 
 function pageTitle(page) {
-  return { home: 'Главная', crypto: 'Криптовалюта', stocks: 'Акции', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', realty: 'Недвижимость', search: 'Поиск' }[page] || 'Монетка';
+  return { home: 'Главная', crypto: 'Криптовалюта', stocks: 'Акции', metals: 'Драгметаллы', fx: 'Валюта', deposits: 'Вклады банков', cards: 'Карты и счета', realty: 'Недвижимость', search: 'Поиск' }[page] || 'Монетка';
 }
 
 function updateSideStatus() {
@@ -2609,6 +2748,23 @@ document.addEventListener('click', (e) => {
     openDeposit(depositCard.dataset.deposit);
     return;
   }
+  const productCard = e.target.closest('[data-product]');
+  if (productCard) {
+    openProduct(productCard.dataset.product);
+    return;
+  }
+  const cardsTab = e.target.closest('[data-cards-tab]');
+  if (cardsTab) {
+    S.cardsTab = cardsTab.dataset.cardsTab;
+    render();
+    return;
+  }
+  const cardsSort = e.target.closest('[data-cards-sort]');
+  if (cardsSort) {
+    S.cardsSort = cardsSort.dataset.cardsSort;
+    render();
+    return;
+  }
   const realtyPhoto = e.target.closest('[data-realty-photo]');
   if (realtyPhoto) {
     realtyGallery.index = Number(realtyPhoto.dataset.realtyPhoto) || 0;
@@ -2676,6 +2832,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'close-map') $('#map-dialog').close();
   else if (action === 'close-photo') $('#photo-dialog').close();
   else if (action === 'close-deposit') $('#deposit-dialog').close();
+  else if (action === 'close-product') $('#product-dialog').close();
   else if (action === 'profile-new') createProfile();
   else if (action === 'profile-delete') deleteProfile();
   else if (action === 'refresh') refresh({ force: true });
@@ -2820,7 +2977,7 @@ document.addEventListener('keydown', (e) => {
     closeCityPicker();
   }
   if (e.key !== 'Enter' && e.key !== ' ') return;
-  const card = e.target.closest('[data-deposit][role="button"], [data-realty][role="button"], [data-chart][role="button"], [data-go][role="link"]');
+  const card = e.target.closest('[data-deposit][role="button"], [data-product][role="button"], [data-realty][role="button"], [data-chart][role="button"], [data-go][role="link"]');
   if (card && e.target === card) {
     e.preventDefault();
     card.click();

@@ -6,6 +6,7 @@
   "rewrites": [
     { "source": "/api/market", "destination": "/api/index?route=market" },
     { "source": "/api/deposits", "destination": "/api/index?route=deposits" },
+    { "source": "/api/cards", "destination": "/api/index?route=cards" },
     { "source": "/api/realty", "destination": "/api/index?route=realty" },
     { "source": "/api/history", "destination": "/api/index?route=history" },
     { "source": "/api/realty-photos", "destination": "/api/index?route=realty_photos" },

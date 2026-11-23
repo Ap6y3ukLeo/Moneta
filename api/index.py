@@ -58,6 +58,8 @@ class handler(BaseHTTPRequestHandler):
                 payload = server.api_market(force=True, fx_only=fx_only)
             elif route == "deposits":
                 payload = server.api_deposits()
+            elif route == "cards":
+                payload = server.api_cards()
             elif route == "realty":
                 payload = server.api_realty()
             elif route == "history":

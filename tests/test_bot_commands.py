@@ -65,6 +65,45 @@ class BotChartsTest(unittest.TestCase):
         rows = [[button["text"] for button in row] for row in bot.KEYBOARD["keyboard"]]
         self.assertEqual(rows, [["Крипта", "Акции", "Металлы"], ["Валюта", "Вклады", "Недвижимость"]])
 
+    def test_admin_only_for_configured_id(self):
+        instance = bot.Bot("token", "http://api", "secret", admin_id=42)
+        self.assertTrue(instance.is_admin(42))
+        self.assertFalse(instance.is_admin(7))
+        self.assertFalse(bot.Bot("token", "http://api", "secret").is_admin(42))
+
+    def test_admin_list(self):
+        instance = bot.Bot("token", "http://api", "secret", admin_ids=[849886384, 7592708940])
+        self.assertTrue(instance.is_admin(849886384))
+        self.assertTrue(instance.is_admin(7592708940))
+        self.assertFalse(instance.is_admin(1))
+
+    def test_new_card_wizard(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"id": "custom-1"}
+        instance.admin_new(1)
+        instance.handle(1, "Тест-Банк")
+        instance.handle(1, "Тестовая")
+        instance.admin_new_type(1, "credit")
+        instance.handle(1, "4 500 ₽")
+        instance.handle(1, "100 дней без процентов")
+        instance.handle(1, "Льготный период=100 дней, Обслуживание=0 ₽")
+        instance.handle(1, "-")
+        instance.handle(1, "https://test.example/card")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted[1], "/api/cards")
+        self.assertEqual(posted[2]["payout"], 4500)
+        self.assertEqual(posted[2]["type"], "credit")
+        self.assertEqual(len(posted[2]["terms"]), 2)
+        self.assertEqual(posted[2]["perks"], [])
+        self.assertNotIn(1, instance.pending)
+
+    def test_new_card_rejects_non_admin(self):
+        instance, calls = self.make()
+        instance.admin_new(5)
+        self.assertEqual(calls, [("text", "Раздел только для администратора.")])
+        self.assertNotIn(5, instance.pending)
+
 
 if __name__ == "__main__":
     unittest.main()
