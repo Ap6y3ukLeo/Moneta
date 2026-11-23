@@ -1333,14 +1333,10 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 .prod-terms b { color: var(--navy); font-weight: 600; }
 .prod-benefit { font-size: 13.5px; font-weight: 700; color: var(--teal-700); }
 .prod-chev { color: #9aabbb; justify-self: end; }
-.prod-detail-benefit { font-size: 22px; font-weight: 800; letter-spacing: -.5px; color: var(--teal-700); }
 .prod-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .prod-detail-grid > div { padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: #fbfdfc; min-width: 0; }
 .prod-detail-grid span { display: block; color: var(--muted); font-size: 10px; }
 .prod-detail-grid b { display: block; margin-top: 2px; font-size: 12px; }
-.prod-detail-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.prod-detail-perks li { display: flex; gap: 8px; font-size: 12px; color: #40536a; }
-.prod-detail-perks .ic { width: 15px; height: 15px; color: var(--teal-700); flex: none; margin-top: 1px; }
 .product-dialog { width: min(560px, calc(100vw - 28px)); }
 
 @media (max-width: 620px) {

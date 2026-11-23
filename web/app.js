@@ -1130,9 +1130,7 @@ function openProduct(id) {
   body.innerHTML = `
     ${productCard(item, true)}
     <div class="prod-detail-payout">${money(item.payout)} <span>за оформление</span></div>
-    <div class="prod-detail-benefit">${esc(item.benefit)}</div>
     <div class="prod-detail-grid">${item.terms.map((term) => `<div><span>${esc(term.label)}</span><b>${esc(term.value)}</b></div>`).join('')}</div>
-    <ul class="prod-detail-perks">${item.perks.map((perk) => `<li>${icon('shield')}<span>${esc(perk)}</span></li>`).join('')}</ul>
     ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
     <p class="dialog-hint">Условия и ставки меняются. Проверьте тарифы и требования на сайте банка перед оформлением.</p>`;
   if (!dialog.open) dialog.showModal();

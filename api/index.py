@@ -10,40 +10,59 @@ from urllib.request import Request, urlopen
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import server  # noqa: E402
 
+BACKEND_URL_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "backend_url.txt")
+
+
+def _backend_urls():
+    """Адреса бэкенда: сначала из data/backend_url.txt (меняется при перезапуске туннеля), потом env."""
+    urls = []
+    try:
+        with open(BACKEND_URL_FILE, encoding="utf-8-sig") as file:
+            value = file.read().strip()
+    except OSError:
+        value = ""
+    for candidate in (value, os.environ.get("MONETKA_BACKEND_URL", "")):
+        candidate = candidate.strip().rstrip("/")
+        if candidate and candidate not in urls:
+            urls.append(candidate)
+    return urls
+
 
 class handler(BaseHTTPRequestHandler):
     def _proxy(self, method="GET", body=None):
-        backend = os.environ.get("MONETKA_BACKEND_URL", "").rstrip("/")
-        if not backend:
-            return False
         params = parse_qs(urlparse(self.path).query)
         route = params.get("route", [""])[0]
         if not route:
             return False
+        backends = _backend_urls()
+        if not backends:
+            return False
         query = {key: values[0] for key, values in params.items() if key != "route"}
         # В vercel.json роут называется realty_photos, а на бэкенде — realty-photos.
         path = {"realty_photos": "realty-photos"}.get(route, route)
-        url = f"{backend}/api/{path}"
-        if query:
-            url += "?" + urlencode(query)
         headers = {
             "Accept": "application/json",
             "X-Monetka-Token": os.environ.get("MONETKA_TOKEN", ""),
         }
-        request = Request(url, data=body, headers=headers, method=method)
-        try:
-            with urlopen(request, timeout=90) as response:
-                data = response.read()
-                ctype = response.headers.get("Content-Type") or "application/json; charset=utf-8"
-                self._send_raw(data, response.status, ctype)
-            return True
-        except HTTPError as exc:
-            data = exc.read()
-            ctype = exc.headers.get("Content-Type") or "application/json; charset=utf-8"
-            self._send_raw(data, exc.code, ctype)
-            return True
-        except Exception:
-            return False
+        for backend in backends:
+            url = f"{backend}/api/{path}"
+            if query:
+                url += "?" + urlencode(query)
+            request = Request(url, data=body, headers=headers, method=method)
+            try:
+                with urlopen(request, timeout=90) as response:
+                    data = response.read()
+                    ctype = response.headers.get("Content-Type") or "application/json; charset=utf-8"
+                    self._send_raw(data, response.status, ctype)
+                return True
+            except HTTPError as exc:
+                data = exc.read()
+                ctype = exc.headers.get("Content-Type") or "application/json; charset=utf-8"
+                self._send_raw(data, exc.code, ctype)
+                return True
+            except Exception:
+                continue
+        return False
 
     def do_GET(self):  # noqa: N802
         if self._proxy():
