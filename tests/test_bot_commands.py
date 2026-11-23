@@ -104,6 +104,35 @@ class BotChartsTest(unittest.TestCase):
         self.assertEqual(calls, [("text", "Раздел только для администратора.")])
         self.assertNotIn(5, instance.pending)
 
+    def test_edit_card_field(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_edit_field(1, "debit-base", "payout")
+        instance.handle(1, "1 200 ₽")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted, ("post", "/api/card_update", {"id": "debit-base", "fields": {"payout": 1200}}))
+        self.assertNotIn(1, instance.pending)
+
+    def test_edit_url_uses_links_endpoint(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_edit_field(1, "debit-base", "url")
+        instance.handle(1, "https://bank.example/new")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted, ("post", "/api/links", {"id": "debit-base", "url": "https://bank.example/new"}))
+
+    def test_edit_terms_parsing(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_edit_field(1, "debit-base", "terms")
+        instance.handle(1, "Кэшбэк=до 5%, Обслуживание=0 ₽")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted[2]["fields"]["terms"],
+                         [{"label": "Кэшбэк", "value": "до 5%"}, {"label": "Обслуживание", "value": "0 ₽"}])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -58,6 +58,19 @@ HELP = (
     "Периоды: 1d, 7d, 1m, 3m, 1y."
 )
 
+# Поля карточки, которые админ может править из бота: подпись и подсказка.
+EDIT_FIELDS = {
+    "bank": ("Банк", "Название банка. Например: Т-Банк"),
+    "name": ("Название", "Название продукта. Например: Black"),
+    "type": ("Тип", ""),
+    "payout": ("Выплата", "Сколько клиент получит за оформление, в рублях? Например: 3000"),
+    "benefit": ("Выгода", "Выгода одной строкой. Например: до 30% кэшбэка"),
+    "terms": ("Условия", "Условия через запятую, в виде «Поле=Значение».\n"
+                         "Например: Кэшбэк=до 5%, Обслуживание=0 ₽"),
+    "perks": ("Плюшки", "Плюшки через запятую. «-» — очистить список."),
+    "url": ("Ссылка", "Ссылка на оформление, начиная с https://"),
+}
+
 
 class Bot:
     def __init__(self, token: str, api: str, api_token: str, admin_id: int = 0, admin_ids=None):
@@ -142,13 +155,101 @@ class Bot:
         if not item:
             self.send(chat_id, "Продукт не найден.")
             return
-        text = f"{item['bank']} · {item['name']}\n\nСсылка: {item.get('url') or '—'}"
+        text = (f"{item['bank']} · {item['name']}\n"
+                f"Выплата: {item.get('payout')} ₽\n"
+                f"Ссылка: {item.get('url') or '—'}")
         keyboard = {"inline_keyboard": [
+            [{"text": "✏️ Редактировать", "callback_data": f"adm:edit:{product_id}"}],
             [{"text": "🔗 Изменить ссылку", "callback_data": f"adm:set:{product_id}"}],
-            [{"text": "♻️ Сбросить", "callback_data": f"adm:reset:{product_id}"}],
+            [{"text": "♻️ Сбросить ссылку", "callback_data": f"adm:reset:{product_id}"}],
             [{"text": "← Назад", "callback_data": "adm:menu"}],
         ]}
         self.send(chat_id, text, keyboard)
+
+    def admin_edit(self, chat_id, product_id):
+        if not self.is_admin(chat_id):
+            self.send(chat_id, "Раздел только для администратора.")
+            return
+        item = next((entry for entry in self.products() if entry["id"] == product_id), None)
+        if not item:
+            self.send(chat_id, "Продукт не найден.")
+            return
+        keys = list(EDIT_FIELDS)
+        rows = [
+            [{"text": EDIT_FIELDS[key][0], "callback_data": f"adm:field:{product_id}:{key}"}
+             for key in keys[start:start + 2]]
+            for start in range(0, len(keys), 2)
+        ]
+        rows.append([{"text": "← Назад", "callback_data": f"adm:open:{product_id}"}])
+        self.send(chat_id, f"Что меняем в «{item['bank']} · {item['name']}»?", {"inline_keyboard": rows})
+
+    def admin_edit_field(self, chat_id, product_id, field):
+        if not self.is_admin(chat_id) or field not in EDIT_FIELDS:
+            return
+        if field == "type":
+            self.send(chat_id, "Новый тип:", {"inline_keyboard": [
+                [{"text": "Дебетовая", "callback_data": f"adm:type:{product_id}:debit"},
+                 {"text": "Кредитная", "callback_data": f"adm:type:{product_id}:credit"}],
+                [{"text": "Для бизнеса", "callback_data": f"adm:type:{product_id}:business"}],
+            ]})
+            return
+        self.pending[chat_id] = {"mode": "edit", "id": product_id, "field": field}
+        self.send(chat_id, EDIT_FIELDS[field][1] + "\nОтмена: /cancel")
+
+    def admin_set_type(self, chat_id, product_id, kind):
+        if not self.is_admin(chat_id):
+            return
+        if kind not in ("debit", "credit", "business"):
+            self.send(chat_id, "Неизвестный тип.")
+            return
+        try:
+            self.post("/api/card_update", {"id": product_id, "fields": {"type": kind}})
+            self.send(chat_id, "Тип изменён.")
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+
+    def edit_step(self, chat_id, pending, raw):
+        field = pending["field"]
+        product_id = pending["id"]
+        value = raw
+        if field == "payout":
+            digits = re.sub(r"[^\d]", "", raw)
+            if not digits or int(digits) <= 0:
+                self.send(chat_id, "Нужна сумма числом, например 3000")
+                return
+            value = int(digits)
+        elif field == "terms":
+            value = []
+            for chunk in re.split(r"[,\n;]", raw):
+                if "=" not in chunk:
+                    continue
+                label, term = chunk.split("=", 1)
+                if label.strip() and term.strip():
+                    value.append({"label": label.strip(), "value": term.strip()})
+            if not value:
+                self.send(chat_id, "Не нашёл ни одного «Поле=Значение». Пришли ещё раз.")
+                return
+        elif field == "perks":
+            value = [] if raw == "-" else [part.strip() for part in raw.split(",") if part.strip()]
+        elif field == "url":
+            if not raw.startswith("https://"):
+                self.send(chat_id, "Ссылка должна начинаться с https://")
+                return
+            try:
+                self.post("/api/links", {"id": product_id, "url": raw})
+            except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+                self.send(chat_id, f"Не получилось: {exc}")
+                return
+            self.pending.pop(chat_id, None)
+            self.send(chat_id, "Ссылка обновлена.")
+            return
+        try:
+            self.post("/api/card_update", {"id": product_id, "fields": {field: value}})
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        self.pending.pop(chat_id, None)
+        self.send(chat_id, "Сохранено.")
 
     def admin_await_link(self, chat_id, product_id):
         self.pending[chat_id] = {"mode": "link", "id": product_id}
@@ -316,6 +417,12 @@ class Bot:
             self.admin_menu(chat_id)
         elif action == "new":
             self.admin_new(chat_id)
+        elif action == "edit" and len(data) == 3:
+            self.admin_edit(chat_id, data[2])
+        elif action == "field" and len(data) == 4:
+            self.admin_edit_field(chat_id, data[2], data[3])
+        elif action == "type" and len(data) == 4:
+            self.admin_set_type(chat_id, data[2], data[3])
         elif action == "newtype" and len(data) == 3:
             self.admin_new_type(chat_id, data[2])
         elif action == "open" and len(data) == 3:
@@ -338,6 +445,9 @@ class Bot:
             pending = self.pending[chat_id]
             if pending.get("mode") == "new":
                 self.new_step(chat_id, pending, raw)
+                return
+            if pending.get("mode") == "edit":
+                self.edit_step(chat_id, pending, raw)
                 return
             if raw.startswith("http"):
                 product_id = pending["id"]

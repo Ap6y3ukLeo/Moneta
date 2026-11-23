@@ -1811,6 +1811,7 @@ def _safe_source(name, ttl, builder, force=False):
 CARDS_FILE = os.path.join(BUNDLED_CACHE_DIR, "cards.json")
 LINKS_FILE = os.path.join(BUNDLED_CACHE_DIR, "links.json")
 CUSTOM_FILE = os.path.join(BUNDLED_CACHE_DIR, "custom_cards.json")
+EDITS_FILE = os.path.join(BUNDLED_CACHE_DIR, "card_edits.json")
 CARD_TYPES = ("debit", "credit", "business")
 CARD_TINTS = {"debit": "#24314f", "credit": "#1f3a57", "business": "#123c35"}
 
@@ -1818,6 +1819,14 @@ CARD_TINTS = {"debit": "#24314f", "credit": "#1f3a57", "business": "#123c35"}
 def _load_custom():
     data = _read_json(CUSTOM_FILE, [])
     return data if isinstance(data, list) else []
+
+
+def _clean_terms(terms):
+    return [
+        {"label": str(term.get("label")).strip(), "value": str(term.get("value")).strip()}
+        for term in terms or []
+        if isinstance(term, dict) and str(term.get("label") or "").strip() and str(term.get("value") or "").strip()
+    ]
 
 
 def api_card_create(payload):
@@ -1839,11 +1848,7 @@ def api_card_create(payload):
         raise ValueError("Выплата должна быть числом") from None
     if payout <= 0:
         raise ValueError("Выплата должна быть больше нуля")
-    terms = [
-        {"label": str(term.get("label")).strip(), "value": str(term.get("value")).strip()}
-        for term in payload.get("terms") or []
-        if isinstance(term, dict) and str(term.get("label") or "").strip() and str(term.get("value") or "").strip()
-    ]
+    terms = _clean_terms(payload.get("terms"))
     if not terms:
         raise ValueError("Нужно хотя бы одно условие")
     perks = [str(perk).strip() for perk in payload.get("perks") or [] if str(perk).strip()]
@@ -1866,6 +1871,61 @@ def api_card_create(payload):
     if not any(entry.get("id") == item["id"] for entry in _load_custom()):
         raise RuntimeError("Не удалось сохранить карточку на сервере")
     return {"ok": True, "id": item["id"], "count": len(items)}
+
+
+def _load_edits():
+    data = _read_json(EDITS_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
+def api_card_update(payload):
+    """Правит поля существующей карточки (и базовой, и созданной из бота). Ссылка — через /api/links."""
+    payload = payload or {}
+    item_id = str(payload.get("id") or "").strip()
+    if not item_id:
+        raise ValueError("Не указан продукт")
+    fields = payload.get("fields") or {}
+    if not isinstance(fields, dict):
+        raise ValueError("Неверный формат изменений")
+    if not any(item.get("id") == item_id for item in api_cards()["items"]):
+        raise ValueError("Продукт не найден")
+
+    changes = {}
+    if "type" in fields:
+        if fields["type"] not in CARD_TYPES:
+            raise ValueError("Неизвестный тип продукта")
+        changes["type"] = fields["type"]
+        changes["tint"] = CARD_TINTS[fields["type"]]
+    for key in ("bank", "name", "benefit"):
+        if key in fields:
+            value = str(fields[key] or "").strip()
+            if not value:
+                raise ValueError("Пустое значение")
+            changes[key] = value
+    if "payout" in fields:
+        try:
+            payout = int(fields["payout"])
+        except (TypeError, ValueError):
+            raise ValueError("Выплата должна быть числом") from None
+        if payout <= 0:
+            raise ValueError("Выплата должна быть больше нуля")
+        changes["payout"] = payout
+    if "terms" in fields:
+        terms = _clean_terms(fields["terms"])
+        if not terms:
+            raise ValueError("Нужно хотя бы одно условие")
+        changes["terms"] = terms
+    if "perks" in fields:
+        changes["perks"] = [str(perk).strip() for perk in fields["perks"] or [] if str(perk).strip()]
+    if not changes:
+        raise ValueError("Нечего менять")
+
+    edits = _load_edits()
+    edits[item_id] = {**(edits.get(item_id) or {}), **changes}
+    _write_json(EDITS_FILE, edits)
+    if _load_edits().get(item_id) != edits[item_id]:
+        raise RuntimeError("Не удалось сохранить изменения на сервере")
+    return {"ok": True, "id": item_id, "fields": sorted(changes)}
 
 
 def _load_links():
@@ -1899,9 +1959,13 @@ def api_link_set(payload):
 
 
 def api_cards(_params=None):
-    """Справочник банковских карт и РКО: data/cards.json плюс карточки из админки."""
+    """Справочник банковских карт и РКО: data/cards.json, карточки и правки из админки."""
     data = _read_json(CARDS_FILE, {})
-    items = (data.get("items") or []) + _load_custom()
+    edits = _load_edits()
+    items = [
+        dict(item, **(edits.get(item.get("id")) or {}))
+        for item in (data.get("items") or []) + _load_custom()
+    ]
     items = _apply_links(items, _load_links())
     if not items:
         raise RuntimeError("Каталог карт не заполнен")
@@ -3628,6 +3692,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_link_set(payload))
             elif path == "/api/cards":
                 self.send_json(api_card_create(payload))
+            elif path == "/api/card_update":
+                self.send_json(api_card_update(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":
