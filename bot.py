@@ -252,11 +252,11 @@ class Bot:
         rows = []
         if mode == "cards":
             rows.append([{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
-        for start in range(0, len(chunk), 2):
-            rows.append([
-                {"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"}
-                for item in chunk[start:start + 2]
-            ])
+        for item in chunk:
+            rows.append([{
+                "text": f"{item['bank']} · {item['name']}"[:40],
+                "callback_data": f"adm:open:{item['id']}",
+            }])
         nav = []
         if page > 0:
             nav.append({"text": "◀️", "callback_data": f"adm:{mode}:{page - 1}"})
