@@ -14,6 +14,7 @@ class BotChartsTest(unittest.TestCase):
         instance.send_photo = lambda chat_id, png, caption, markup=None: calls.append(("photo", caption))
         instance.chart = lambda asset, period: calls.append(("chart", asset, period)) or b"\x89PNG"
         instance.card = lambda category, limit=12: calls.append(("card", category)) or b"\x89PNG"
+        instance.log = lambda *args, **kwargs: None
         return instance, calls
 
     def test_section_button_sends_card(self):
@@ -154,6 +155,48 @@ class BotChartsTest(unittest.TestCase):
         instance.admin_delete(1, "custom-1795429191749")
         posted = [entry for entry in calls if entry[0] == "post"][-1]
         self.assertEqual(posted, ("post", "/api/card_delete", {"id": "custom-1795429191749"}))
+
+    def test_push_broadcast_flow(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"sent": 2}
+        instance.admin_push(1)
+        instance.handle(1, "Акция")
+        instance.handle(1, "Кэшбэк 30%")
+        instance.handle(1, "https://example.com")
+        instance.admin_push_send(1)
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted[1], "/api/push_send")
+        self.assertEqual(posted[2]["title"], "Акция")
+        self.assertEqual(posted[2]["body"], "Кэшбэк 30%")
+        self.assertNotIn(1, instance.pending)
+
+    def test_pin_toggle(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.products = lambda: [{"id": "debit-base", "pinned": False}]
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_pin(1, "debit-base")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted, ("post", "/api/order", {"id": "debit-base", "pinned": True}))
+
+    def test_access_grants_and_guards(self):
+        import tempfile
+
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        with tempfile.TemporaryDirectory() as tmp:
+            instance.admins_file = os.path.join(tmp, "admins.json")
+            instance.admin_access_new(1)
+            instance.handle(1, "777")
+            instance.admin_access_toggle(1, "links")
+            instance.admin_access_save(1)
+            self.assertEqual(instance.scopes(777), {"links"})
+            instance.admin_edit(777, "debit-base")
+            self.assertEqual(calls[-1], ("text", "Нет доступа к этому разделу."))
+            instance.admin_access_open(1, "777")
+            instance.admin_access_delete(1)
+            self.assertEqual(instance.scopes(777), set())
 
 
 if __name__ == "__main__":

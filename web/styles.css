@@ -1356,3 +1356,10 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 .prod-payout { color: var(--teal-700); font-size: 15px; font-weight: 800; letter-spacing: -.2px; }
 .prod-detail-payout { font-size: 26px; font-weight: 800; letter-spacing: -.8px; color: var(--teal-700); }
 .prod-detail-payout span { font-size: 14px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+
+/* --- pinned products --- */
+.prod-title { flex-wrap: wrap; }
+.prod-pin {
+  font-style: normal; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  color: var(--teal-700); background: #e6f8f2; border-radius: 6px; padding: 2px 7px; white-space: nowrap;
+}

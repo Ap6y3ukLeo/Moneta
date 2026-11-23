@@ -81,6 +81,18 @@ CARD_COLORS = {
     "light": ("Светлый", "#e8eef2"),
 }
 
+# Права в админке: ключ → подпись. Владельцы (env) имеют все.
+ADMIN_SCOPES = {
+    "cards": "Карточки",
+    "links": "Ссылки",
+    "push": "Пуши",
+    "texts": "Тексты",
+}
+
+# Разделы и поля текстов сайта.
+TEXT_SECTIONS = {"cards": "Карты и счета", "deposits": "Вклады банков", "realty": "Недвижимость"}
+TEXT_FIELDS = {"title": "Заголовок", "sub": "Подзаголовок", "note": "Дисклеймер"}
+
 
 class Bot:
     def __init__(self, token: str, api: str, api_token: str, admin_id: int = 0, admin_ids=None):
@@ -91,6 +103,60 @@ class Bot:
         if admin_id:
             self.admin_ids.add(int(admin_id))
         self.pending = {}
+        self.drafts = {}
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        self.admins_file = os.path.join(data_dir, "admins.json")
+        self.log_file = os.path.join(data_dir, "admin_log.json")
+
+    def read_json(self, path, default):
+        try:
+            with open(path, encoding="utf-8") as file:
+                return json.load(file)
+        except Exception:  # noqa: BLE001 - файла может не быть
+            return default
+
+    def write_json(self, path, value):
+        try:
+            with open(path + ".tmp", "w", encoding="utf-8") as file:
+                json.dump(value, file, ensure_ascii=False, indent=1)
+            os.replace(path + ".tmp", path)
+        except OSError:
+            pass
+
+    def editors(self):
+        data = self.read_json(self.admins_file, {})
+        return data if isinstance(data, dict) else {}
+
+    def scopes(self, chat_id):
+        if int(chat_id) in self.admin_ids:
+            return set(ADMIN_SCOPES)
+        return set(self.editors().get(str(int(chat_id))) or [])
+
+    def is_admin(self, chat_id) -> bool:
+        return bool(self.scopes(chat_id))
+
+    def can(self, chat_id, scope) -> bool:
+        return scope in self.scopes(chat_id)
+
+    def guard(self, chat_id, scope: str = "") -> bool:
+        """True, если действие нужно прервать: не админ или нет нужного права."""
+        if not self.is_admin(chat_id):
+            self.send(chat_id, "Раздел только для администратора.")
+            return True
+        if scope and not self.can(chat_id, scope):
+            self.send(chat_id, "Нет доступа к этому разделу.")
+            return True
+        return False
+
+    def log(self, chat_id, action: str):
+        try:
+            entries = self.read_json(self.log_file, [])
+            if not isinstance(entries, list):
+                entries = []
+            entries.append({"at": time.strftime("%d.%m %H:%M"), "by": str(chat_id), "action": action})
+            self.write_json(self.log_file, entries[-300:])
+        except Exception:  # noqa: BLE001 - журнал не должен ломать действие
+            pass
 
     def call(self, method: str, **params):
         url = f"https://api.telegram.org/bot{self.token}/{method}"
@@ -138,9 +204,6 @@ class Bot:
                 message = None
             raise RuntimeError(message or f"HTTP {exc.code}") from None
 
-    def is_admin(self, chat_id) -> bool:
-        return int(chat_id) in self.admin_ids
-
     def products(self):
         return json.loads(self.fetch("/api/cards")).get("items") or []
 
@@ -148,42 +211,65 @@ class Bot:
         if not self.is_admin(chat_id):
             self.send(chat_id, "Раздел только для администратора.")
             return
+        scopes = self.scopes(chat_id)
         rows, row = [], []
-        for item in self.products():
-            row.append({"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"})
-            if len(row) == 2:
+        if {"cards", "links"} & scopes:
+            for item in self.products():
+                row.append({"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"})
+                if len(row) == 2:
+                    rows.append(row)
+                    row = []
+            if row:
                 rows.append(row)
-                row = []
-        if row:
-            rows.append(row)
-        rows.insert(0, [{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
-        self.send(chat_id, "Панель управления. Выбери продукт, чтобы поменять ссылку «Оформить», "
-                  "или создай новую карточку.", {"inline_keyboard": rows})
+        if "cards" in scopes:
+            rows.insert(0, [{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
+        tools = []
+        if "push" in scopes:
+            tools.append({"text": "📣 Рассылка", "callback_data": "adm:push"})
+        if "cards" in scopes:
+            tools.append({"text": "📊 Клики", "callback_data": "adm:clicks"})
+        if "texts" in scopes:
+            tools.append({"text": "📝 Тексты", "callback_data": "adm:texts"})
+        if int(chat_id) in self.admin_ids:
+            tools.append({"text": "👥 Доступы", "callback_data": "adm:access"})
+        tools.append({"text": "🧾 Журнал", "callback_data": "adm:journal"})
+        for start in range(0, len(tools), 2):
+            rows.append(tools[start:start + 2])
+        self.send(chat_id, "Панель управления: продукты, закрепление, рассылка, тексты и журнал.",
+                  {"inline_keyboard": rows})
 
     def admin_open(self, chat_id, product_id):
+        if self.guard(chat_id):
+            return
         item = next((entry for entry in self.products() if entry["id"] == product_id), None)
         if not item:
             self.send(chat_id, "Продукт не найден.")
             return
         terms = ", ".join(f"{term['label']}: {term['value']}" for term in item.get("terms") or [])
+        pinned_note = "\n📌 Закреплён" if item.get("pinned") else ""
         text = (f"{item['bank']} · {item['name']}\n"
                 f"Выплата: {item.get('payout')} ₽\n"
                 f"Выгода: {item.get('benefit') or '—'}\n"
                 f"Условия: {terms or '—'}\n"
-                f"Ссылка: {item.get('url') or '—'}")
-        rows = [
-            [{"text": "✏️ Редактировать", "callback_data": f"adm:edit:{product_id}"}],
-            [{"text": "🔗 Изменить ссылку", "callback_data": f"adm:set:{product_id}"}],
-            [{"text": "♻️ Сбросить ссылку", "callback_data": f"adm:reset:{product_id}"}],
-        ]
-        if product_id.startswith("custom-"):
+                f"Ссылка: {item.get('url') or '—'}"
+                f"{pinned_note}")
+        rows = []
+        if self.can(chat_id, "cards"):
+            rows.append([{"text": "✏️ Редактировать", "callback_data": f"adm:edit:{product_id}"}])
+            rows.append([{
+                "text": "📌 Открепить" if item.get("pinned") else "📌 Закрепить",
+                "callback_data": f"adm:pin:{product_id}",
+            }])
+        if self.can(chat_id, "links"):
+            rows.append([{"text": "🔗 Изменить ссылку", "callback_data": f"adm:set:{product_id}"}])
+            rows.append([{"text": "♻️ Сбросить ссылку", "callback_data": f"adm:reset:{product_id}"}])
+        if self.can(chat_id, "cards") and product_id.startswith("custom-"):
             rows.append([{"text": "🗑 Удалить карточку", "callback_data": f"adm:drop:{product_id}"}])
         rows.append([{"text": "← Назад", "callback_data": "adm:menu"}])
         self.send(chat_id, text, {"inline_keyboard": rows})
 
     def admin_edit(self, chat_id, product_id):
-        if not self.is_admin(chat_id):
-            self.send(chat_id, "Раздел только для администратора.")
+        if self.guard(chat_id, "cards"):
             return
         item = next((entry for entry in self.products() if entry["id"] == product_id), None)
         if not item:
@@ -199,7 +285,7 @@ class Bot:
         self.send(chat_id, f"Что меняем в «{item['bank']} · {item['name']}»?", {"inline_keyboard": rows})
 
     def admin_edit_field(self, chat_id, product_id, field):
-        if not self.is_admin(chat_id) or field not in EDIT_FIELDS:
+        if self.guard(chat_id, "cards") or field not in EDIT_FIELDS:
             return
         if field == "type":
             self.send(chat_id, "Новый тип:", {"inline_keyboard": [
@@ -221,7 +307,7 @@ class Bot:
         self.send(chat_id, EDIT_FIELDS[field][1] + "\nОтмена: /cancel")
 
     def admin_set_color(self, chat_id, product_id, key):
-        if not self.is_admin(chat_id):
+        if self.guard(chat_id, "cards"):
             return
         if key not in CARD_COLORS:
             self.send(chat_id, "Неизвестный цвет.")
@@ -229,12 +315,13 @@ class Bot:
         title, tint = CARD_COLORS[key]
         try:
             self.post("/api/card_update", {"id": product_id, "fields": {"tint": tint}})
+            self.log(chat_id, f"Цвет {title.lower()} у {product_id}")
             self.send(chat_id, f"Цвет изменён: {title.lower()}.")
         except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
             self.send(chat_id, f"Не получилось: {exc}")
 
     def admin_delete_ask(self, chat_id, product_id):
-        if not self.is_admin(chat_id):
+        if self.guard(chat_id, "cards"):
             return
         if not product_id.startswith("custom-"):
             self.send(chat_id, "Удалить можно только карточку, созданную из бота. "
@@ -246,25 +333,43 @@ class Bot:
         ]})
 
     def admin_delete(self, chat_id, product_id):
-        if not self.is_admin(chat_id):
+        if self.guard(chat_id, "cards"):
             return
         try:
             self.post("/api/card_delete", {"id": product_id})
+            self.log(chat_id, f"Удалена карточка {product_id}")
             self.send(chat_id, "Карточка удалена.")
         except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
             self.send(chat_id, f"Не получилось: {exc}")
 
     def admin_set_type(self, chat_id, product_id, kind):
-        if not self.is_admin(chat_id):
+        if self.guard(chat_id, "cards"):
             return
         if kind not in ("debit", "credit", "business"):
             self.send(chat_id, "Неизвестный тип.")
             return
         try:
             self.post("/api/card_update", {"id": product_id, "fields": {"type": kind}})
+            self.log(chat_id, f"Тип {kind} у {product_id}")
             self.send(chat_id, "Тип изменён.")
         except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
             self.send(chat_id, f"Не получилось: {exc}")
+
+    def admin_pin(self, chat_id, product_id):
+        if self.guard(chat_id, "cards"):
+            return
+        item = next((entry for entry in self.products() if entry["id"] == product_id), None)
+        if not item:
+            self.send(chat_id, "Продукт не найден.")
+            return
+        pinned = not item.get("pinned")
+        try:
+            self.post("/api/order", {"id": product_id, "pinned": pinned})
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        self.log(chat_id, f"{'Закрепил' if pinned else 'Открепил'} {product_id}")
+        self.send(chat_id, "Закреплено: продукт теперь выше в списке." if pinned else "Закрепление снято.")
 
     def edit_step(self, chat_id, pending, raw):
         field = pending["field"]
@@ -297,6 +402,7 @@ class Bot:
                 self.send(chat_id, f"Не получилось: {exc}")
                 return
             self.pending.pop(chat_id, None)
+            self.log(chat_id, f"Ссылка у {product_id}")
             self.send(chat_id, "Ссылка обновлена.")
             return
         try:
@@ -305,15 +411,17 @@ class Bot:
             self.send(chat_id, f"Не получилось: {exc}")
             return
         self.pending.pop(chat_id, None)
+        self.log(chat_id, f"Правка поля {field} у {product_id}")
         self.send(chat_id, "Сохранено.")
 
     def admin_await_link(self, chat_id, product_id):
+        if self.guard(chat_id, "links"):
+            return
         self.pending[chat_id] = {"mode": "link", "id": product_id}
         self.send(chat_id, "Пришли новую ссылку, начиная с https://\nОтмена: /cancel")
 
     def admin_new(self, chat_id):
-        if not self.is_admin(chat_id):
-            self.send(chat_id, "Раздел только для администратора.")
+        if self.guard(chat_id, "cards"):
             return
         self.pending[chat_id] = {"mode": "new", "step": "bank", "data": {}}
         self.send(chat_id, "Новая карточка, 1/7.\n\nБанк? Например: Т-Банк\nОтмена: /cancel")
@@ -386,15 +494,241 @@ class Bot:
                 self.send(chat_id, f"Не получилось: {exc}")
                 return
             self.pending.pop(chat_id, None)
+            self.log(chat_id, f"Новая карточка {data['bank']} · {data['name']}")
             self.send(chat_id, f"Готово. {data['bank']} · {data['name']} добавлена в раздел «Карты и счета».\n"
                                f"Выплата: {data['payout']} ₽\nid: {result.get('id')}")
 
     def admin_reset(self, chat_id, product_id):
+        if self.guard(chat_id, "links"):
+            return
         try:
             self.post("/api/links", {"id": product_id, "url": ""})
+            self.log(chat_id, f"Сброс ссылки у {product_id}")
             self.send(chat_id, "Ссылка сброшена на исходную.")
         except Exception as exc:  # noqa: BLE001 - бот не должен падать
             self.send(chat_id, f"Не получилось: {exc}")
+
+    def admin_clicks(self, chat_id):
+        if self.guard(chat_id, "cards"):
+            return
+        try:
+            data = json.loads(self.fetch("/api/clicks"))
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        items = [item for item in data.get("items") or [] if item.get("clicks")][:15]
+        if not items:
+            self.send(chat_id, "Переходов по «Оформить» пока нет.")
+            return
+        lines = [f"{index}. {item['bank']} · {item['name']} — {item['clicks']}"
+                 for index, item in enumerate(items, 1)]
+        self.send(chat_id, f"Клики по «Оформить», всего {data.get('total', 0)}:\n\n" + "\n".join(lines))
+
+    def admin_push(self, chat_id):
+        if self.guard(chat_id, "push"):
+            return
+        self.pending[chat_id] = {"mode": "push", "step": "title", "data": {}}
+        self.send(chat_id, "Рассылка, 1/3.\n\nЗаголовок пуша? Коротко.\nОтмена: /cancel")
+
+    def push_step(self, chat_id, pending, raw):
+        data = pending["data"]
+        step = pending["step"]
+        if step == "title":
+            data["title"] = raw[:80]
+            pending["step"] = "body"
+            self.send(chat_id, "2/3 Текст пуша? До 180 знаков.")
+        elif step == "body":
+            data["body"] = raw[:200]
+            pending["step"] = "url"
+            self.send(chat_id, "3/3 Куда ведёт пуш? Например /#/cards или https://...\n«-» — на главную.")
+        elif step == "url":
+            data["url"] = "/#/" if raw == "-" else raw
+            pending["step"] = "confirm"
+            self.send(chat_id, f"Пуш:\n\n{data['title']}\n{data['body']}\n\nСсылка: {data['url']}\n\n"
+                               "Отправить всем подписчикам?", {"inline_keyboard": [
+                [{"text": "📣 Отправить", "callback_data": "adm:pushsend"}],
+                [{"text": "← Отмена", "callback_data": "adm:pushcancel"}],
+            ]})
+        else:
+            self.send(chat_id, "Нажми кнопку под черновиком.")
+
+    def admin_push_send(self, chat_id):
+        if self.guard(chat_id, "push"):
+            return
+        pending = self.pending.get(chat_id)
+        if not pending or pending.get("mode") != "push" or pending.get("step") != "confirm":
+            self.send(chat_id, "Черновик потерян. Начни заново: /admin → «📣 Рассылка».")
+            return
+        try:
+            result = self.post("/api/push_send", pending["data"])
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        self.pending.pop(chat_id, None)
+        self.log(chat_id, f"Рассылка «{pending['data']['title']}»: {result.get('sent')}")
+        self.send(chat_id, f"Отправлено подписчикам: {result.get('sent')}.")
+
+    def admin_push_cancel(self, chat_id):
+        self.pending.pop(chat_id, None)
+        self.send(chat_id, "Рассылка отменена.")
+
+    def admin_texts(self, chat_id):
+        if self.guard(chat_id, "texts"):
+            return
+        rows = [[{"text": title, "callback_data": f"adm:text:{key}"}] for key, title in TEXT_SECTIONS.items()]
+        self.send(chat_id, "Тексты разделов. Выбери раздел:", {"inline_keyboard": rows})
+
+    def admin_texts_section(self, chat_id, section):
+        if self.guard(chat_id, "texts") or section not in TEXT_SECTIONS:
+            return
+        try:
+            current = (json.loads(self.fetch("/api/texts")).get("items") or {}).get(section) or {}
+        except Exception:  # noqa: BLE001 - без текущих текстов меню всё равно нужно
+            current = {}
+        lines = [f"{TEXT_FIELDS[field]}: {current.get(field) or '—'}" for field in TEXT_FIELDS]
+        rows = [[{"text": TEXT_FIELDS[field], "callback_data": f"adm:textfield:{section}:{field}"}]
+                for field in TEXT_FIELDS]
+        rows.append([{"text": "← Назад", "callback_data": "adm:texts"}])
+        self.send(chat_id, f"{TEXT_SECTIONS[section]}\n\n" + "\n".join(lines), {"inline_keyboard": rows})
+
+    def admin_text_await(self, chat_id, section, field):
+        if self.guard(chat_id, "texts") or section not in TEXT_SECTIONS or field not in TEXT_FIELDS:
+            return
+        self.pending[chat_id] = {"mode": "text", "section": section, "field": field}
+        self.send(chat_id, f"{TEXT_FIELDS[field]} для «{TEXT_SECTIONS[section]}».\n"
+                           "Пришли текст. «-» вернёт исходный вариант.\nОтмена: /cancel")
+
+    def text_step(self, chat_id, pending, raw):
+        try:
+            result = self.post("/api/texts", {
+                "section": pending["section"], "field": pending["field"], "value": raw,
+            })
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        self.pending.pop(chat_id, None)
+        self.log(chat_id, f"Текст {pending['section']}.{pending['field']}")
+        self.send(chat_id, "Сохранено." if result.get("value") else "Возвращён исходный текст.")
+
+    def _is_owner(self, chat_id) -> bool:
+        return int(chat_id) in self.admin_ids
+
+    def access_keyboard(self, chat_id):
+        draft = self.drafts.get(chat_id) or {}
+        scopes = draft.get("scopes") or set()
+        rows = [[{"text": f"{'✅' if scope in scopes else '⬜'} {title}", "callback_data": f"adm:acctoggle:{scope}"}]
+                for scope, title in ADMIN_SCOPES.items()]
+        rows.append([{"text": "💾 Сохранить", "callback_data": "adm:accsave"}])
+        if draft.get("id") in self.editors():
+            rows.append([{"text": "🗑 Убрать доступ", "callback_data": "adm:accdel"}])
+        rows.append([{"text": "← Назад", "callback_data": "adm:access"}])
+        return {"inline_keyboard": rows}
+
+    def admin_access(self, chat_id):
+        if not self._is_owner(chat_id):
+            self.send(chat_id, "Управление доступами — только для владельца.")
+            return
+        editors = self.editors()
+        lines = ["Владельцы: " + ", ".join(str(value) for value in sorted(self.admin_ids))]
+        if editors:
+            lines.append("\nРедакторы:")
+            for key, scopes in sorted(editors.items()):
+                titles = ", ".join(ADMIN_SCOPES.get(scope, scope) for scope in scopes) or "нет прав"
+                lines.append(f"• {key} — {titles}")
+        else:
+            lines.append("\nРедакторов нет.")
+        rows = [[{"text": f"✏️ {key}", "callback_data": f"adm:accopen:{key}"}] for key in sorted(editors)]
+        rows.append([{"text": "➕ Добавить", "callback_data": "adm:accnew"}])
+        self.send(chat_id, "\n".join(lines), {"inline_keyboard": rows})
+
+    def admin_access_new(self, chat_id):
+        if not self._is_owner(chat_id):
+            self.send(chat_id, "Управление доступами — только для владельца.")
+            return
+        self.pending[chat_id] = {"mode": "access", "step": "id"}
+        self.send(chat_id, "Пришли Telegram ID нового редактора.\n"
+                           "Он узнает его командой /id.\nОтмена: /cancel")
+
+    def access_step(self, chat_id, pending, raw):
+        value = re.sub(r"[^\d]", "", raw)
+        if not value:
+            self.send(chat_id, "Нужен числовой Telegram ID.")
+            return
+        if self._is_owner(value):
+            self.send(chat_id, "Этот ID уже владелец и имеет все права.")
+            return
+        self.drafts[chat_id] = {"id": value, "scopes": set(self.editors().get(value) or [])}
+        self.pending.pop(chat_id, None)
+        self.send(chat_id, f"Права для {value}:", self.access_keyboard(chat_id))
+
+    def admin_access_open(self, chat_id, key):
+        if not self._is_owner(chat_id):
+            self.send(chat_id, "Управление доступами — только для владельца.")
+            return
+        editors = self.editors()
+        if key not in editors:
+            self.send(chat_id, "Редактор не найден.")
+            return
+        self.drafts[chat_id] = {"id": key, "scopes": set(editors[key])}
+        self.send(chat_id, f"Права для {key}:", self.access_keyboard(chat_id))
+
+    def admin_access_toggle(self, chat_id, scope):
+        if not self._is_owner(chat_id) or scope not in ADMIN_SCOPES:
+            return
+        draft = self.drafts.get(chat_id)
+        if not draft:
+            self.send(chat_id, "Открой доступы заново: /admin → «👥 Доступы».")
+            return
+        draft["scopes"].symmetric_difference_update({scope})
+        self.send(chat_id, f"Права для {draft['id']}:", self.access_keyboard(chat_id))
+
+    def admin_access_save(self, chat_id):
+        if not self._is_owner(chat_id):
+            self.send(chat_id, "Управление доступами — только для владельца.")
+            return
+        draft = self.drafts.get(chat_id)
+        if not draft:
+            self.send(chat_id, "Нечего сохранять. Открой доступы заново.")
+            return
+        scopes = sorted(draft["scopes"])
+        editors = self.editors()
+        if scopes:
+            editors[str(draft["id"])] = scopes
+        else:
+            editors.pop(str(draft["id"]), None)
+        self.write_json(self.admins_file, editors)
+        if sorted(self.editors().get(str(draft["id"])) or []) != scopes:
+            self.send(chat_id, "Не удалось сохранить доступы на сервере.")
+            return
+        self.drafts.pop(chat_id, None)
+        titles = ", ".join(ADMIN_SCOPES[scope] for scope in scopes) or "нет доступа"
+        self.log(chat_id, f"Доступы {draft['id']}: {titles}")
+        self.send(chat_id, f"Сохранено. {draft['id']}: {titles}.")
+
+    def admin_access_delete(self, chat_id):
+        if not self._is_owner(chat_id):
+            self.send(chat_id, "Управление доступами — только для владельца.")
+            return
+        draft = self.drafts.get(chat_id)
+        if not draft:
+            self.send(chat_id, "Нечего удалять.")
+            return
+        editors = self.editors()
+        editors.pop(str(draft["id"]), None)
+        self.write_json(self.admins_file, editors)
+        self.drafts.pop(chat_id, None)
+        self.log(chat_id, f"Снят доступ у {draft['id']}")
+        self.send(chat_id, f"Доступ у {draft['id']} убран.")
+
+    def admin_journal(self, chat_id):
+        if self.guard(chat_id):
+            return
+        entries = self.read_json(self.log_file, [])
+        if not isinstance(entries, list) or not entries:
+            self.send(chat_id, "Журнал пока пуст.")
+            return
+        lines = [f"{entry.get('at')} · {entry.get('by')} · {entry.get('action')}" for entry in entries[-15:]]
+        self.send(chat_id, "Последние действия:\n\n" + "\n".join(lines))
 
     def card(self, category: str, limit: int = 12):
         return self.fetch(f"/api/card?{urlencode({'category': category, 'limit': limit})}")
@@ -481,6 +815,36 @@ class Bot:
             self.admin_delete_ask(chat_id, data[2])
         elif action == "del" and len(data) == 3:
             self.admin_delete(chat_id, data[2])
+        elif action == "pin" and len(data) == 3:
+            self.admin_pin(chat_id, data[2])
+        elif action == "push":
+            self.admin_push(chat_id)
+        elif action == "pushsend":
+            self.admin_push_send(chat_id)
+        elif action == "pushcancel":
+            self.admin_push_cancel(chat_id)
+        elif action == "clicks":
+            self.admin_clicks(chat_id)
+        elif action == "texts":
+            self.admin_texts(chat_id)
+        elif action == "text" and len(data) == 3:
+            self.admin_texts_section(chat_id, data[2])
+        elif action == "textfield" and len(data) == 4:
+            self.admin_text_await(chat_id, data[2], data[3])
+        elif action == "access":
+            self.admin_access(chat_id)
+        elif action == "accnew":
+            self.admin_access_new(chat_id)
+        elif action == "accopen" and len(data) == 3:
+            self.admin_access_open(chat_id, data[2])
+        elif action == "acctoggle" and len(data) == 3:
+            self.admin_access_toggle(chat_id, data[2])
+        elif action == "accsave":
+            self.admin_access_save(chat_id)
+        elif action == "accdel":
+            self.admin_access_delete(chat_id)
+        elif action == "journal":
+            self.admin_journal(chat_id)
         elif action == "newtype" and len(data) == 3:
             self.admin_new_type(chat_id, data[2])
         elif action == "open" and len(data) == 3:
@@ -500,22 +864,36 @@ class Bot:
                 self.pending.pop(chat_id, None)
                 self.send(chat_id, "Отменено.")
                 return
-            pending = self.pending[chat_id]
-            if pending.get("mode") == "new":
-                self.new_step(chat_id, pending, raw)
-                return
-            if pending.get("mode") == "edit":
-                self.edit_step(chat_id, pending, raw)
-                return
-            if raw.startswith("http"):
-                product_id = pending["id"]
-                try:
-                    self.post("/api/links", {"id": product_id, "url": raw})
-                    self.pending.pop(chat_id, None)
-                    self.send(chat_id, f"Сохранено.\n{raw}")
-                except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
-                    self.send(chat_id, f"Не получилось: {exc}")
-                return
+            if word in ("admin", "start", "menu"):
+                # команда прерывает диалог, дальше обрабатывается как обычно
+                self.pending.pop(chat_id, None)
+            else:
+                pending = self.pending[chat_id]
+                if pending.get("mode") == "new":
+                    self.new_step(chat_id, pending, raw)
+                    return
+                if pending.get("mode") == "edit":
+                    self.edit_step(chat_id, pending, raw)
+                    return
+                if pending.get("mode") == "push":
+                    self.push_step(chat_id, pending, raw)
+                    return
+                if pending.get("mode") == "text":
+                    self.text_step(chat_id, pending, raw)
+                    return
+                if pending.get("mode") == "access":
+                    self.access_step(chat_id, pending, raw)
+                    return
+                if raw.startswith("http"):
+                    product_id = pending["id"]
+                    try:
+                        self.post("/api/links", {"id": product_id, "url": raw})
+                        self.pending.pop(chat_id, None)
+                        self.log(chat_id, f"Ссылка у {product_id}")
+                        self.send(chat_id, f"Сохранено.\n{raw}")
+                    except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+                        self.send(chat_id, f"Не получилось: {exc}")
+                    return
 
         if word == "admin":
             self.admin_menu(chat_id)

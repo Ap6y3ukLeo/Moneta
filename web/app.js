@@ -270,6 +270,7 @@ async function refresh({ silent = false, marketOnly = false, force = false } = {
     jobs.push(
       ['deposits', '/api/deposits', 'вклады банков', 60000],
       ['cards', '/api/cards', 'карты банков', 30000],
+      ['texts', '/api/texts', 'тексты разделов', 20000],
       ['realty', '/api/realty', 'недвижимость', 45000],
     );
   }
@@ -944,10 +945,11 @@ function depositsPage() {
   const items = depositMatches();
   const banks = new Set(items.map((d) => d.bank)).size;
   const keyRate = S.deposits.keyRate?.value;
+  const texts = S.texts?.items?.deposits || {};
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Вклады банков</h1></div>
+    <div><h1>${esc(texts.title || 'Вклады банков')}</h1>${texts.sub ? `<p class="page-sub">${esc(texts.sub)}</p>` : ''}</div>
     <div class="head-meta">
       ${keyRate ? `<span class="pill pill--mint">${icon('bank')} Ключевая ставка ${num(keyRate, 2)}%</span>` : ''}
       <button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button>
@@ -962,7 +964,7 @@ function depositsPage() {
         <span class="dep-filter-count" id="dep-count">${ruPlural(items.length, 'вклад', 'вклада', 'вкладов')}</span>
       </div>
       <div class="offers" id="dep-list">${depositRowsHtml()}</div>
-      <p class="muted" style="font-size:10.5px;margin-top:12px">Ставка и доход зависят от суммы, срока и способа выплаты процентов. Некоторые продукты доступны только новым клиентам — проверьте условия в банке.</p>
+      <p class="muted" style="font-size:10.5px;margin-top:12px">${esc(texts.note || 'Ставка и доход зависят от суммы, срока и способа выплаты процентов. Некоторые продукты доступны только новым клиентам — проверьте условия в банке.')}</p>
     </div>
 
     <aside class="card calc-card" id="dep-calc">
@@ -1049,7 +1051,7 @@ function productRow(item) {
   return `<article class="prod-row" data-product="${esc(item.id)}" tabindex="0" role="button" aria-label="${esc(item.bank)} ${esc(item.name)}: ${money(item.payout)} за оформление">
     ${productCard(item)}
     <div class="prod-main">
-      <div class="prod-title"><b>${esc(item.bank)}</b><span>${esc(item.name)}</span></div>
+      <div class="prod-title"><b>${esc(item.bank)}</b><span>${esc(item.name)}</span>${item.pinned ? '<em class="prod-pin">Выбор редакции</em>' : ''}</div>
       <div class="prod-benefit"><span class="prod-payout">${money(item.payout)}</span> за оформление</div>
     </div>
     <span class="prod-chev">${icon('chev')}</span>
@@ -1099,14 +1101,16 @@ function cardsPage() {
   const sort = S.cardsSort?.startsWith('term:') && labels.includes(S.cardsSort.slice(5))
     ? S.cardsSort
     : 'payout';
-  const items = sortProducts(all, sort);
+  // закреплённые продукты (выбор редакции) всегда сверху, остальное — по выбранной сортировке
+  const items = sortProducts(all, sort).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
   const sortButtons = [
     ['payout', 'По выплате', ''],
     ...labels.map((label) => [`term:${label}`, label, label === 'Обслуживание' ? 'Сначала дешевле' : 'Сначала больше']),
   ];
+  const texts = S.texts?.items?.cards || {};
   return `${sourceWarning()}
   <div class="page-head">
-    <div><h1>Карты и счета</h1><p class="page-sub">Дебетовые и кредитные карты, РКО и счёта для бизнеса</p></div>
+    <div><h1>${esc(texts.title || 'Карты и счета')}</h1><p class="page-sub">${esc(texts.sub || 'Дебетовые и кредитные карты, РКО и счёта для бизнеса')}</p></div>
     <div class="head-meta"><span class="pill">${items.length} предложений</span></div>
   </div>
   <div class="card-filters card-filters--tabs">
@@ -1117,7 +1121,7 @@ function cardsPage() {
     ${sortButtons.map(([key, text, hint]) => `<button type="button" class="pill ${sort === key ? 'pill--mint' : ''}" data-cards-sort="${esc(key)}"${hint ? ` title="${hint}"` : ''}>${esc(text)}</button>`).join('')}
   </div>
   <div class="prod-list">${items.map(productRow).join('')}</div>
-  <p class="muted" style="font-size:10.5px;margin-top:12px">${esc(S.cards.note || 'Условия уточняйте на сайте банка.')}</p>`;
+  <p class="muted" style="font-size:10.5px;margin-top:12px">${esc(texts.note || S.cards.note || 'Условия уточняйте на сайте банка.')}</p>`;
 }
 
 function openProduct(id) {
@@ -1131,7 +1135,7 @@ function openProduct(id) {
     ${productCard(item, true)}
     <div class="prod-detail-payout">${money(item.payout)} <span>за оформление</span></div>
     <div class="prod-detail-grid">${item.terms.map((term) => `<div><span>${esc(term.label)}</span><b>${esc(term.value)}</b></div>`).join('')}</div>
-    ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
+    ${item.url ? `<a class="btn btn--block" href="/api/go?id=${encodeURIComponent(item.id)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
     <p class="dialog-hint">Условия и ставки меняются. Проверьте тарифы и требования на сайте банка перед оформлением.</p>`;
   if (!dialog.open) dialog.showModal();
 }
@@ -1439,7 +1443,7 @@ function realtyPage() {
   return `
   ${sourceWarning()}
   <div class="page-head">
-    <div><h1>Недвижимость</h1></div>
+    <div><h1>${esc((S.texts?.items?.realty || {}).title || 'Недвижимость')}</h1>${(S.texts?.items?.realty || {}).sub ? `<p class="page-sub">${esc(S.texts.items.realty.sub)}</p>` : ''}</div>
     <div class="head-meta">${sources.map((s) => sourcePill(s.name, s.meta)).join('')}<button class="btn btn--ghost btn--sm" data-action="refresh">${icon('refresh')} Обновить</button></div>
   </div>
 

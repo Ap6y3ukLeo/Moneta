@@ -21,3 +21,8 @@ data/push_state.json
 data/links.json
 data/custom_cards.json
 data/card_edits.json
+data/clicks.json
+data/card_order.json
+data/texts.json
+data/admins.json
+data/admin_log.json

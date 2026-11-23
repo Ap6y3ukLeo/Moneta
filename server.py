@@ -1812,6 +1812,11 @@ CARDS_FILE = os.path.join(BUNDLED_CACHE_DIR, "cards.json")
 LINKS_FILE = os.path.join(BUNDLED_CACHE_DIR, "links.json")
 CUSTOM_FILE = os.path.join(BUNDLED_CACHE_DIR, "custom_cards.json")
 EDITS_FILE = os.path.join(BUNDLED_CACHE_DIR, "card_edits.json")
+ORDER_FILE = os.path.join(BUNDLED_CACHE_DIR, "card_order.json")
+TEXTS_FILE = os.path.join(BUNDLED_CACHE_DIR, "texts.json")
+CLICKS_FILE = os.path.join(BUNDLED_CACHE_DIR, "clicks.json")
+TEXT_SECTIONS = ("cards", "deposits", "realty")
+TEXT_FIELDS = ("title", "sub", "note")
 CARD_TYPES = ("debit", "credit", "business")
 CARD_TINTS = {"debit": "#24314f", "credit": "#1f3a57", "business": "#123c35"}
 
@@ -1954,6 +1959,111 @@ def api_card_delete(payload):
     return {"ok": True, "id": item_id, "count": len(remaining)}
 
 
+def _load_pinned():
+    data = _read_json(ORDER_FILE, {})
+    return [str(item_id) for item_id in data.get("pinned") or []] if isinstance(data, dict) else []
+
+
+def api_order_set(payload):
+    """Закрепляет продукт наверху списка или снимает закрепление."""
+    payload = payload or {}
+    item_id = str(payload.get("id") or "").strip()
+    if not item_id:
+        raise ValueError("Не указан продукт")
+    if not any(item.get("id") == item_id for item in api_cards()["items"]):
+        raise ValueError("Продукт не найден")
+    pinned = _load_pinned()
+    if payload.get("pinned"):
+        if item_id not in pinned:
+            pinned.append(item_id)
+    else:
+        pinned = [entry for entry in pinned if entry != item_id]
+    _write_json(ORDER_FILE, {"pinned": pinned})
+    if _load_pinned() != pinned:
+        raise RuntimeError("Не удалось сохранить порядок на сервере")
+    return {"ok": True, "id": item_id, "pinned": item_id in pinned}
+
+
+def api_texts():
+    data = _read_json(TEXTS_FILE, {})
+    return {"items": data if isinstance(data, dict) else {}}
+
+
+def api_text_set(payload):
+    """Меняет заголовок, подзаголовок или дисклеймер раздела. Пустое значение возвращает исходный текст."""
+    payload = payload or {}
+    section = str(payload.get("section") or "").strip()
+    field = str(payload.get("field") or "").strip()
+    if section not in TEXT_SECTIONS:
+        raise ValueError("Неизвестный раздел")
+    if field not in TEXT_FIELDS:
+        raise ValueError("Неизвестное поле")
+    value = str(payload.get("value") or "").strip()
+    data = _read_json(TEXTS_FILE, {})
+    if not isinstance(data, dict):
+        data = {}
+    entry = data.get(section) or {}
+    if value == "-" or not value:
+        entry.pop(field, None)
+    else:
+        entry[field] = value
+    data[section] = entry
+    _write_json(TEXTS_FILE, data)
+    if api_texts()["items"].get(section, {}) != entry:
+        raise RuntimeError("Не удалось сохранить текст на сервере")
+    return {"ok": True, "section": section, "field": field, "value": entry.get(field)}
+
+
+def api_go(params):
+    """Считает переход по «Оформить» и отдаёт адрес банка."""
+    item_id = str((params or {}).get("id") or "").strip()
+    item = next((entry for entry in api_cards()["items"] if entry.get("id") == item_id), None)
+    if not item or not item.get("url"):
+        raise ValueError("Продукт не найден")
+    clicks = _read_json(CLICKS_FILE, {})
+    if not isinstance(clicks, dict):
+        clicks = {}
+    clicks[item_id] = int(clicks.get(item_id) or 0) + 1
+    _write_json(CLICKS_FILE, clicks)
+    return {"url": item["url"], "id": item_id}
+
+
+def api_clicks():
+    clicks = _read_json(CLICKS_FILE, {})
+    if not isinstance(clicks, dict):
+        clicks = {}
+    items = [
+        {
+            "id": item["id"],
+            "bank": item.get("bank"),
+            "name": item.get("name"),
+            "type": item.get("type"),
+            "clicks": int(clicks.get(item["id"]) or 0),
+        }
+        for item in api_cards()["items"]
+    ]
+    items.sort(key=lambda entry: (-entry["clicks"], entry["bank"] or "", entry["name"] or ""))
+    return {"items": items, "total": sum(int(value or 0) for value in clicks.values()), "meta": {"ok": True}}
+
+
+def api_push_send(payload):
+    """Ручная рассылка пуша всем подпискам."""
+    payload = payload or {}
+    title = str(payload.get("title") or "").strip()
+    body = str(payload.get("body") or "").strip()
+    url = str(payload.get("url") or "").strip() or "/#/"
+    if not title or not body:
+        raise ValueError("Нужны заголовок и текст")
+    if url.startswith("http") and not url.startswith("https://"):
+        raise ValueError("Ссылка должна начинаться с https://")
+    subs = _read_json(PUSH_SUBS, {})
+    if not isinstance(subs, dict) or not subs:
+        raise ValueError("Нет подписок на пуши")
+    message = {"title": title[:80], "body": body[:200], "url": url, "tag": f"manual-{int(time.time())}"}
+    _send_push(subs, message)
+    return {"ok": True, "sent": len(_read_json(PUSH_SUBS, {}))}
+
+
 def _load_links():
     data = _read_json(LINKS_FILE, {})
     return data if isinstance(data, dict) else {}
@@ -1988,16 +2098,18 @@ def api_cards(_params=None):
     """Справочник банковских карт и РКО: data/cards.json, карточки и правки из админки."""
     data = _read_json(CARDS_FILE, {})
     edits = _load_edits()
+    pinned = set(_load_pinned())
     items = [
-        dict(item, **(edits.get(item.get("id")) or {}))
+        dict(item, **(edits.get(item.get("id")) or {}), pinned=item.get("id") in pinned)
         for item in (data.get("items") or []) + _load_custom()
     ]
     items = _apply_links(items, _load_links())
     if not items:
         raise RuntimeError("Каталог карт не заполнен")
+    texts = api_texts()["items"].get("cards") or {}
     return {
         "items": items,
-        "note": data.get("note"),
+        "note": texts.get("note") or data.get("note"),
         "meta": {"ok": True, "updated": data.get("updated")},
         "serverTime": now_msk(),
     }
@@ -3643,6 +3755,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         path = self.path.split("?")[0]
+        if path.startswith("/go/"):
+            try:
+                target = api_go({"id": path[4:]})["url"]
+            except Exception:  # noqa: BLE001 - битая ссылка ведёт в каталог
+                target = None
+            self.send_redirect(target or "/#/cards")
+            return
         token = os.environ.get("MONETKA_TOKEN")
         if token and path.startswith("/api/") and not hmac.compare_digest(self.headers.get("X-Monetka-Token", ""), token):
             self.send_json({"error": "unauthorized"}, status=401)
@@ -3662,6 +3781,19 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if path == "/api/links":
                 self.send_json(api_links())
+                return
+            if path == "/api/texts":
+                self.send_json(api_texts())
+                return
+            if path == "/api/clicks":
+                self.send_json(api_clicks())
+                return
+            if path == "/api/go":
+                query = parse_qs(self.path.partition("?")[2])
+                try:
+                    self.send_redirect(api_go({key: values[0] for key, values in query.items()})["url"])
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, status=404)
                 return
             if path == "/api/realty":
                 self.send_json(api_realty())
@@ -3722,6 +3854,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_card_update(payload))
             elif path == "/api/card_delete":
                 self.send_json(api_card_delete(payload))
+            elif path == "/api/order":
+                self.send_json(api_order_set(payload))
+            elif path == "/api/texts":
+                self.send_json(api_text_set(payload))
+            elif path in ("/api/push_send", "/api/push/send"):
+                self.send_json(api_push_send(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":
@@ -3747,6 +3885,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def send_redirect(self, url):
+        self.send_response(302)
+        self.send_header("Location", url)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def end_headers(self):
         cache = "no-store" if getattr(self, "path", "").startswith("/api/") else "no-cache"
