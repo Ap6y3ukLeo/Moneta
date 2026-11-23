@@ -712,7 +712,7 @@ function cryptoPage() {
             <td class="num">${chg(c.change24h)}</td>
             <td style="width:120px"><button class="spark-btn" type="button" data-chart="crypto:${esc(c.id)}" title="Открыть график" aria-label="Открыть график ${esc(c.name)}">${sparkline(c.spark, (c.change24h || 0) >= 0 ? '#0fa97d' : '#e8564b', 120, 34)}</button></td>
             <td class="num muted">${money(c.volume ? rub(c.volume) : null, 0)}</td>
-            <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
+            <td>${c.tradeUrl ? `<a class="buy-link" href="${esc(c.tradeUrl)}" ${clickTrack('crypto', c.id, `${c.name} (${c.symbol})`)} target="_blank" rel="noopener">Купить ${icon('ext')}</a>` : '<span class="muted">—</span>'}</td>
             <td><div class="row-actions">
               <button class="icon-btn" data-chart="crypto:${esc(c.id)}" title="График" aria-label="График ${esc(c.name)}">${icon('chart')}</button>
             </div></td>
@@ -777,7 +777,7 @@ const STOCK_SORTS = {
 function stockBuyMenu(s) {
   const links = s.buyLinks || [];
   if (!links.length) return '<span class="muted">—</span>';
-  return `<div class="buy-links">${links.map((l) => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}${icon('ext')}</a>`).join('')}</div>`;
+  return `<div class="buy-links">${links.map((l) => `<a href="${esc(l.url)}" ${clickTrack('stocks', s.id, `${s.name} (${s.ticker})`)} target="_blank" rel="noopener">${esc(l.label)}${icon('ext')}</a>`).join('')}</div>`;
 }
 
 function stockRowsHtml() {
@@ -1014,7 +1014,7 @@ function openDeposit(id) {
     <div class="deposit-detail-rate"><b>${num(d.rate, 2)}%</b><span>годовых</span></div>
     <div class="deposit-detail-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
     ${d.note ? `<p class="deposit-note">${esc(d.note)}</p>` : ''}
-    ${d.url ? `<div class="dialog-actions dialog-actions--single"><a class="btn btn--block" href="${esc(d.url)}" target="_blank" rel="noopener">Оформить вклад ${icon('ext')}</a></div>` : ''}
+    ${d.url ? `<div class="dialog-actions dialog-actions--single"><a class="btn btn--block" href="${esc(d.url)}" ${clickTrack('deposits', d.id, `${d.bank} · ${d.name}`)} target="_blank" rel="noopener">Оформить вклад ${icon('ext')}</a></div>` : ''}
     <p class="dialog-hint">Ставка и доход зависят от условий банка. Проверьте сумму, срок и способ выплаты процентов перед открытием.</p>`;
   if (!dialog.open) dialog.showModal();
 }
@@ -1135,7 +1135,7 @@ function openProduct(id) {
     ${productCard(item, true)}
     <div class="prod-detail-payout">${money(item.payout)} <span>за оформление</span></div>
     <div class="prod-detail-grid">${item.terms.map((term) => `<div><span>${esc(term.label)}</span><b>${esc(term.value)}</b></div>`).join('')}</div>
-    ${item.url ? `<a class="btn btn--block" href="/api/go?id=${encodeURIComponent(item.id)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
+    ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" ${clickTrack('cards', item.id, `${item.bank} · ${item.name}`)} target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}
     <p class="dialog-hint">Условия и ставки меняются. Проверьте тарифы и требования на сайте банка перед оформлением.</p>`;
   if (!dialog.open) dialog.showModal();
 }
@@ -1585,7 +1585,7 @@ function openRealty(id) {
       ${realtyPriceHtml(item)}
       <div class="realty-grid">${details.map(([label, value]) => `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
       <div class="realty-actions realty-actions--single">
-        ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
+        ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" ${clickTrack('realty', item.id, item.title)} target="_blank" rel="noopener">Открыть на источнике ${icon('ext')}</a>` : ''}
       </div>
       <p class="realty-note">Данные из объявления на момент сбора. Цены и наличие уточняйте у источника.</p>
     </div>`;
@@ -1690,7 +1690,7 @@ function portfolioPage() {
           return `<div class="pos-row">
             <div class="pos-asset">
               <span class="coin ${badgeCls}">${esc((r.iconText || '?').slice(0, 4))}</span>
-              <span class="txt"><b>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(title)}</a>` : esc(title)}</b><small>${r.sub}</small></span>
+              <span class="txt"><b>${r.url ? `<a href="${esc(r.url)}" ${clickTrack('realty', r.id, r.title)} target="_blank" rel="noopener">${esc(title)}</a>` : esc(title)}</b><small>${r.sub}</small></span>
             </div>
             <div class="cell num"><span class="lbl">Стоимость</span>${money(r.cur)}</div>
             <div class="cell num"><span class="lbl">Вложено</span>${money(r.cost)}</div>
@@ -2210,7 +2210,7 @@ function renderAddFields() {
       ${fieldHtml(isCrypto || isFx ? 'Количество' : 'Граммы', `<input id="f-qty" type="number" min="0" step="any" inputmode="decimal" placeholder="${isFx ? '1000' : '0,05'}" value="${preset.qty || ''}">`)}
       ${fieldHtml(isFx ? 'Цена покупки, ₽ за единицу' : 'Цена покупки, ₽', `<input id="f-buy" type="number" min="0" step="any" inputmode="decimal" value="${preset.buy || unitPrice}">`)}
       ${fieldHtml('Дата покупки', `<input id="f-date" type="date" max="${today}" value="${preset.date || today}">`, true)}
-      <div class="field field--full muted" style="font-size:10.5px">Текущая цена: ${money(unitPrice)}${isCrypto ? ` · $${price(item.price)}` : isFx ? ` за 1 ${esc(item.code)}` : '/г'}${isCrypto && item.tradeUrl ? ` · <a class="link-more" href="${esc(item.tradeUrl)}" target="_blank" rel="noopener">Купить ${esc(item.symbol)} на Bybit ${icon('ext')}</a>` : ''}.</div>`;
+      <div class="field field--full muted" style="font-size:10.5px">Текущая цена: ${money(unitPrice)}${isCrypto ? ` · $${price(item.price)}` : isFx ? ` за 1 ${esc(item.code)}` : '/г'}${isCrypto && item.tradeUrl ? ` · <a class="link-more" href="${esc(item.tradeUrl)}" ${clickTrack('crypto', item.id, `${item.name} (${item.symbol})`)} target="_blank" rel="noopener">Купить ${esc(item.symbol)} на Bybit ${icon('ext')}</a>` : ''}.</div>`;
   } else {
     const offers = depositList();
     const top = offers[0];
@@ -2670,12 +2670,30 @@ async function openChart(kind, id) {
 }
 
 /* ------------------------------------------------------------------ events */
+function clickTrack(kind, id, title) {
+  return `data-click="${esc(`${kind}:${id}`)}" data-click-title="${esc(title || '')}"`;
+}
+
+function trackClick(key, title) {
+  const body = JSON.stringify({ key, title });
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/click', new Blob([body], { type: 'application/json' }));
+      return;
+    }
+  } catch {}
+  fetch('/api/click', { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+}
+
 function onRoute() {
   render();
   window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
 }
 
 document.addEventListener('click', (e) => {
+  const tracked = e.target.closest('[data-click]');
+  if (tracked) trackClick(tracked.dataset.click, tracked.dataset.clickTitle || '');
+
   const nav = e.target.closest('[data-nav]');
   if (nav) document.body.classList.remove('menu-open');
 

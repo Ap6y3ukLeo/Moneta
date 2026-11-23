@@ -2014,36 +2014,77 @@ def api_text_set(payload):
     return {"ok": True, "section": section, "field": field, "value": entry.get(field)}
 
 
+CLICK_SECTIONS = {
+    "cards": "Карты",
+    "deposits": "Вклады",
+    "realty": "Недвижимость",
+    "crypto": "Криптовалюта",
+    "stocks": "Акции",
+}
+
+
+def _load_clicks():
+    """Клики в формате {раздел:id: {clicks, title, kind}}. Старый формат — просто число для карточек."""
+    data = _read_json(CLICKS_FILE, {})
+    if not isinstance(data, dict):
+        return {}
+    result = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            result[key] = {
+                "clicks": int(value.get("clicks") or 0),
+                "title": str(value.get("title") or key)[:80],
+                "kind": str(value.get("kind") or key.split(":", 1)[0]),
+            }
+        else:
+            result[f"cards:{key}"] = {"clicks": int(value or 0), "title": str(key)[:80], "kind": "cards"}
+    return result
+
+
+def api_click(payload):
+    """Считает клик по внешней ссылке. Заголовок приходит с сайта и нужен только для отчёта."""
+    payload = payload or {}
+    key = str(payload.get("key") or "").strip()[:120]
+    title = str(payload.get("title") or "").strip()[:80]
+    if ":" not in key:
+        raise ValueError("Неверный ключ клика")
+    section = key.split(":", 1)[0]
+    if section not in CLICK_SECTIONS:
+        raise ValueError("Неизвестный раздел")
+    clicks = _load_clicks()
+    entry = clicks.get(key) or {"clicks": 0, "title": title or key, "kind": section}
+    entry["clicks"] = int(entry.get("clicks") or 0) + 1
+    if title:
+        entry["title"] = title
+    entry["kind"] = section
+    clicks[key] = entry
+    _write_json(CLICKS_FILE, clicks)
+    return {"ok": True, "key": key, "clicks": entry["clicks"]}
+
+
 def api_go(params):
     """Считает переход по «Оформить» и отдаёт адрес банка."""
     item_id = str((params or {}).get("id") or "").strip()
     item = next((entry for entry in api_cards()["items"] if entry.get("id") == item_id), None)
     if not item or not item.get("url"):
         raise ValueError("Продукт не найден")
-    clicks = _read_json(CLICKS_FILE, {})
-    if not isinstance(clicks, dict):
-        clicks = {}
-    clicks[item_id] = int(clicks.get(item_id) or 0) + 1
-    _write_json(CLICKS_FILE, clicks)
+    api_click({"key": f"cards:{item_id}", "title": f"{item.get('bank')} · {item.get('name')}"})
     return {"url": item["url"], "id": item_id}
 
 
 def api_clicks():
-    clicks = _read_json(CLICKS_FILE, {})
-    if not isinstance(clicks, dict):
-        clicks = {}
     items = [
         {
-            "id": item["id"],
-            "bank": item.get("bank"),
-            "name": item.get("name"),
-            "type": item.get("type"),
-            "clicks": int(clicks.get(item["id"]) or 0),
+            "key": key,
+            "kind": entry["kind"],
+            "section": CLICK_SECTIONS.get(entry["kind"], entry["kind"]),
+            "title": entry["title"],
+            "clicks": entry["clicks"],
         }
-        for item in api_cards()["items"]
+        for key, entry in _load_clicks().items()
     ]
-    items.sort(key=lambda entry: (-entry["clicks"], entry["bank"] or "", entry["name"] or ""))
-    return {"items": items, "total": sum(int(value or 0) for value in clicks.values()), "meta": {"ok": True}}
+    items.sort(key=lambda entry: (-entry["clicks"], entry["title"]))
+    return {"items": items, "total": sum(entry["clicks"] for entry in items), "meta": {"ok": True}}
 
 
 def api_push_send(payload):
@@ -3858,8 +3899,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_order_set(payload))
             elif path == "/api/texts":
                 self.send_json(api_text_set(payload))
-            elif path in ("/api/push_send", "/api/push/send"):
+            elif path == "/api/push_send":
                 self.send_json(api_push_send(payload))
+            elif path == "/api/push/send":
+                self.send_json(api_push_send(payload))
+            elif path == "/api/click":
+                self.send_json(api_click(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":

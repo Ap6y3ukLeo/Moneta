@@ -75,11 +75,35 @@ class AdminFeaturesTest(unittest.TestCase):
         server.api_go({"id": "b"})
         stats = server.api_clicks()
         self.assertEqual(stats["total"], 3)
-        counts = {item["id"]: item["clicks"] for item in stats["items"]}
-        self.assertEqual(counts, {"a": 2, "b": 1})
-        self.assertEqual(stats["items"][0]["id"], "a")
+        counts = {item["key"]: item["clicks"] for item in stats["items"]}
+        self.assertEqual(counts, {"cards:a": 2, "cards:b": 1})
+        self.assertEqual(stats["items"][0]["section"], "Карты")
+        self.assertIn("Альфа", stats["items"][0]["title"])
         with self.assertRaises(ValueError):
             server.api_go({"id": "нет"})
+
+    def test_click_counts_any_section(self):
+        server.api_click({"key": "deposits:direct:vtb:0", "title": "ВТБ · Вклад"})
+        server.api_click({"key": "crypto:btc", "title": "Биткоин (BTC)"})
+        server.api_click({"key": "realty:avito:1", "title": "1-к. квартира"})
+        stats = server.api_clicks()
+        self.assertEqual(stats["total"], 3)
+        sections = {item["key"]: item["section"] for item in stats["items"]}
+        self.assertEqual(sections["deposits:direct:vtb:0"], "Вклады")
+        self.assertEqual(sections["crypto:btc"], "Криптовалюта")
+        self.assertEqual(sections["realty:avito:1"], "Недвижимость")
+
+    def test_click_validation(self):
+        for payload in ({"key": "badkey"}, {"key": "unknown:x", "title": "x"}, {}):
+            with self.assertRaises(ValueError):
+                server.api_click(payload)
+
+    def test_legacy_clicks_are_read_as_cards(self):
+        with open(self.paths["CLICKS_FILE"], "w", encoding="utf-8") as file:
+            json.dump({"debit-base": 4}, file)
+        stats = server.api_clicks()
+        self.assertEqual(stats["total"], 4)
+        self.assertEqual(stats["items"][0]["key"], "cards:debit-base")
 
     def test_manual_push(self):
         with open(self.paths["PUSH_SUBS"], "w", encoding="utf-8") as file:

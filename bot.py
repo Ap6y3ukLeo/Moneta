@@ -550,11 +550,11 @@ class Bot:
             return
         items = [item for item in data.get("items") or [] if item.get("clicks")][:15]
         if not items:
-            self.send(chat_id, "Переходов по «Оформить» пока нет.")
+            self.send(chat_id, "Переходов по внешним ссылкам пока нет.")
             return
-        lines = [f"{index}. {item['bank']} · {item['name']} — {item['clicks']}"
+        lines = [f"{index}. [{item.get('section')}] {item.get('title')} — {item.get('clicks')}"
                  for index, item in enumerate(items, 1)]
-        self.send(chat_id, f"Клики по «Оформить», всего {data.get('total', 0)}:\n\n" + "\n".join(lines))
+        self.send(chat_id, f"Клики по внешним ссылкам, всего {data.get('total', 0)}:\n\n" + "\n".join(lines))
 
     def admin_push(self, chat_id):
         if self.guard(chat_id, "push"):
