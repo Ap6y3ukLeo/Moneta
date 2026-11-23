@@ -1127,15 +1127,10 @@ function openProduct(id) {
   if (!item || !dialog || !body) return;
   $('#product-title').textContent = `${item.bank} · ${item.name}`;
   $('#product-sub').textContent = CARD_TYPES[item.type]?.label || 'Банковский продукт';
-  const rating = Math.min(5, item.perks?.length || 0);
   body.innerHTML = `
     ${productCard(item, true)}
     <div class="prod-detail-payout">${money(item.payout)} <span>за оформление</span></div>
     <div class="prod-detail-benefit">${esc(item.benefit)}</div>
-    <div class="prod-rating">
-      <span class="prod-stars" aria-hidden="true">${'★'.repeat(rating)}${'☆'.repeat(5 - rating)}</span>
-      <span class="muted">${item.perks?.length || 0} плюшек</span>
-    </div>
     <div class="prod-detail-grid">${item.terms.map((term) => `<div><span>${esc(term.label)}</span><b>${esc(term.value)}</b></div>`).join('')}</div>
     <ul class="prod-detail-perks">${item.perks.map((perk) => `<li>${icon('shield')}<span>${esc(perk)}</span></li>`).join('')}</ul>
     ${item.url ? `<a class="btn btn--block" href="${esc(item.url)}" target="_blank" rel="noopener">Оформить ${icon('ext')}</a>` : ''}

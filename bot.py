@@ -67,7 +67,6 @@ EDIT_FIELDS = {
     "benefit": ("Выгода", "Выгода одной строкой. Например: до 30% кэшбэка"),
     "terms": ("Условия", "Условия через запятую, в виде «Поле=Значение».\n"
                          "Например: Кэшбэк=до 5%, Обслуживание=0 ₽"),
-    "perks": ("Плюшки", "Плюшки через запятую. «-» — очистить список."),
     "url": ("Ссылка", "Ссылка на оформление, начиная с https://"),
 }
 
@@ -229,8 +228,6 @@ class Bot:
             if not value:
                 self.send(chat_id, "Не нашёл ни одного «Поле=Значение». Пришли ещё раз.")
                 return
-        elif field == "perks":
-            value = [] if raw == "-" else [part.strip() for part in raw.split(",") if part.strip()]
         elif field == "url":
             if not raw.startswith("https://"):
                 self.send(chat_id, "Ссылка должна начинаться с https://")
@@ -260,7 +257,7 @@ class Bot:
             self.send(chat_id, "Раздел только для администратора.")
             return
         self.pending[chat_id] = {"mode": "new", "step": "bank", "data": {}}
-        self.send(chat_id, "Новая карточка, 1/8.\n\nБанк? Например: Т-Банк\nОтмена: /cancel")
+        self.send(chat_id, "Новая карточка, 1/7.\n\nБанк? Например: Т-Банк\nОтмена: /cancel")
 
     def admin_new_type(self, chat_id, kind):
         pending = self.pending.get(chat_id)
@@ -272,7 +269,7 @@ class Bot:
             return
         pending["data"]["type"] = kind
         pending["step"] = "payout"
-        self.send(chat_id, "4/8 Сколько клиент получит за оформление, в рублях? Например: 3000")
+        self.send(chat_id, "4/7 Сколько клиент получит за оформление, в рублях? Например: 3000")
 
     def new_step(self, chat_id, pending, raw):
         step = pending["step"]
@@ -280,11 +277,11 @@ class Bot:
         if step == "bank":
             data["bank"] = raw
             pending["step"] = "name"
-            self.send(chat_id, "2/8 Название продукта? Например: Black")
+            self.send(chat_id, "2/7 Название продукта? Например: Black")
         elif step == "name":
             data["name"] = raw
             pending["step"] = "type"
-            self.send(chat_id, "3/8 Тип продукта:", {"inline_keyboard": [[
+            self.send(chat_id, "3/7 Тип продукта:", {"inline_keyboard": [[
                 {"text": "Дебетовая", "callback_data": "adm:newtype:debit"},
                 {"text": "Кредитная", "callback_data": "adm:newtype:credit"},
             ], [
@@ -299,11 +296,11 @@ class Bot:
                 return
             data["payout"] = int(digits)
             pending["step"] = "benefit"
-            self.send(chat_id, "5/8 Выгода одной строкой. Например: до 30% кэшбэка")
+            self.send(chat_id, "5/7 Выгода одной строкой. Например: до 30% кэшбэка")
         elif step == "benefit":
             data["benefit"] = raw
             pending["step"] = "terms"
-            self.send(chat_id, "6/8 Условия через запятую, в виде «Поле=Значение».\n"
+            self.send(chat_id, "6/7 Условия через запятую, в виде «Поле=Значение».\n"
                                "Например: Кэшбэк=до 5%, Обслуживание=0 ₽")
         elif step == "terms":
             terms = []
@@ -317,12 +314,8 @@ class Bot:
                 self.send(chat_id, "Не нашёл ни одного «Поле=Значение». Пришли ещё раз.")
                 return
             data["terms"] = terms
-            pending["step"] = "perks"
-            self.send(chat_id, "7/8 Плюшки через запятую. Или «-», чтобы пропустить.")
-        elif step == "perks":
-            data["perks"] = [] if raw == "-" else [part.strip() for part in raw.split(",") if part.strip()]
             pending["step"] = "url"
-            self.send(chat_id, "8/8 Ссылка на оформление, начиная с https://\nОтмена: /cancel")
+            self.send(chat_id, "7/7 Ссылка на оформление, начиная с https://\nОтмена: /cancel")
         elif step == "url":
             if not raw.startswith("https://"):
                 self.send(chat_id, "Ссылка должна начинаться с https://")

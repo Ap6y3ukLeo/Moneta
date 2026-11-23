@@ -88,14 +88,12 @@ class BotChartsTest(unittest.TestCase):
         instance.handle(1, "4 500 ₽")
         instance.handle(1, "100 дней без процентов")
         instance.handle(1, "Льготный период=100 дней, Обслуживание=0 ₽")
-        instance.handle(1, "-")
         instance.handle(1, "https://test.example/card")
         posted = [entry for entry in calls if entry[0] == "post"][-1]
         self.assertEqual(posted[1], "/api/cards")
         self.assertEqual(posted[2]["payout"], 4500)
         self.assertEqual(posted[2]["type"], "credit")
         self.assertEqual(len(posted[2]["terms"]), 2)
-        self.assertEqual(posted[2]["perks"], [])
         self.assertNotIn(1, instance.pending)
 
     def test_new_card_rejects_non_admin(self):
