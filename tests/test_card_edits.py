@@ -79,6 +79,29 @@ class CardEditTest(unittest.TestCase):
         self.assertEqual(self.card()["url"], "https://partner.example")
         self.assertEqual(self.card()["payout"], 900)
 
+    def test_tint_changes(self):
+        server.api_card_update({"id": "debit-base", "fields": {"tint": "#112233"}})
+        self.assertEqual(self.card()["tint"], "#112233")
+        with self.assertRaises(ValueError):
+            server.api_card_update({"id": "debit-base", "fields": {"tint": "red"}})
+
+    def test_delete_custom_card_cleans_sidecar_data(self):
+        created = server.api_card_create({
+            "bank": "Тест", "name": "Своя", "type": "debit", "payout": 1000,
+            "benefit": "выгода", "terms": [{"label": "Обслуживание", "value": "0 ₽"}],
+            "perks": [], "url": "https://test.example",
+        })
+        server.api_link_set({"id": created["id"], "url": "https://partner.example"})
+        server.api_card_update({"id": created["id"], "fields": {"payout": 2000}})
+        server.api_card_delete({"id": created["id"]})
+        self.assertNotIn(created["id"], [item["id"] for item in server.api_cards()["items"]])
+        self.assertEqual(server._load_links(), {})
+        self.assertEqual(server._load_edits(), {})
+
+    def test_delete_base_card_rejected(self):
+        with self.assertRaises(ValueError):
+            server.api_card_delete({"id": "debit-base"})
+
     def test_validation(self):
         for payload in (
             {"fields": {"payout": 100}},

@@ -1910,6 +1910,11 @@ def api_card_update(payload):
         if payout <= 0:
             raise ValueError("Выплата должна быть больше нуля")
         changes["payout"] = payout
+    if "tint" in fields:
+        tint = str(fields["tint"] or "").strip()
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", tint):
+            raise ValueError("Цвет должен быть в виде #RRGGBB")
+        changes["tint"] = tint.lower()
     if "terms" in fields:
         terms = _clean_terms(fields["terms"])
         if not terms:
@@ -1926,6 +1931,27 @@ def api_card_update(payload):
     if _load_edits().get(item_id) != edits[item_id]:
         raise RuntimeError("Не удалось сохранить изменения на сервере")
     return {"ok": True, "id": item_id, "fields": sorted(changes)}
+
+
+def api_card_delete(payload):
+    """Удаляет карточку, созданную из бота. Базовые продукты справочника не трогаем."""
+    item_id = str((payload or {}).get("id") or "").strip()
+    if not item_id:
+        raise ValueError("Не указан продукт")
+    items = _load_custom()
+    remaining = [item for item in items if item.get("id") != item_id]
+    if len(remaining) == len(items):
+        raise ValueError("Удалить можно только карточку, созданную из бота")
+    _write_json(CUSTOM_FILE, remaining)
+    if any(item.get("id") == item_id for item in _load_custom()):
+        raise RuntimeError("Не удалось удалить карточку на сервере")
+    edits = _load_edits()
+    edits.pop(item_id, None)
+    _write_json(EDITS_FILE, edits)
+    links = _load_links()
+    links.pop(item_id, None)
+    _write_json(LINKS_FILE, links)
+    return {"ok": True, "id": item_id, "count": len(remaining)}
 
 
 def _load_links():
@@ -3694,6 +3720,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_card_create(payload))
             elif path == "/api/card_update":
                 self.send_json(api_card_update(payload))
+            elif path == "/api/card_delete":
+                self.send_json(api_card_delete(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":

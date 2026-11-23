@@ -67,7 +67,18 @@ EDIT_FIELDS = {
     "benefit": ("Выгода", "Выгода одной строкой. Например: до 30% кэшбэка"),
     "terms": ("Условия", "Условия через запятую, в виде «Поле=Значение».\n"
                          "Например: Кэшбэк=до 5%, Обслуживание=0 ₽"),
+    "tint": ("Цвет", ""),
     "url": ("Ссылка", "Ссылка на оформление, начиная с https://"),
+}
+
+# Палитра карточки: ключ → название и цвет.
+CARD_COLORS = {
+    "dark": ("Тёмный", "#24314f"),
+    "blue": ("Синий", "#1f3a57"),
+    "green": ("Зелёный", "#123c35"),
+    "wine": ("Бордовый", "#4b1f2f"),
+    "graphite": ("Графит", "#3a3f46"),
+    "light": ("Светлый", "#e8eef2"),
 }
 
 
@@ -154,16 +165,21 @@ class Bot:
         if not item:
             self.send(chat_id, "Продукт не найден.")
             return
+        terms = ", ".join(f"{term['label']}: {term['value']}" for term in item.get("terms") or [])
         text = (f"{item['bank']} · {item['name']}\n"
                 f"Выплата: {item.get('payout')} ₽\n"
+                f"Выгода: {item.get('benefit') or '—'}\n"
+                f"Условия: {terms or '—'}\n"
                 f"Ссылка: {item.get('url') or '—'}")
-        keyboard = {"inline_keyboard": [
+        rows = [
             [{"text": "✏️ Редактировать", "callback_data": f"adm:edit:{product_id}"}],
             [{"text": "🔗 Изменить ссылку", "callback_data": f"adm:set:{product_id}"}],
             [{"text": "♻️ Сбросить ссылку", "callback_data": f"adm:reset:{product_id}"}],
-            [{"text": "← Назад", "callback_data": "adm:menu"}],
-        ]}
-        self.send(chat_id, text, keyboard)
+        ]
+        if product_id.startswith("custom-"):
+            rows.append([{"text": "🗑 Удалить карточку", "callback_data": f"adm:drop:{product_id}"}])
+        rows.append([{"text": "← Назад", "callback_data": "adm:menu"}])
+        self.send(chat_id, text, {"inline_keyboard": rows})
 
     def admin_edit(self, chat_id, product_id):
         if not self.is_admin(chat_id):
@@ -192,8 +208,51 @@ class Bot:
                 [{"text": "Для бизнеса", "callback_data": f"adm:type:{product_id}:business"}],
             ]})
             return
+        if field == "tint":
+            keys = list(CARD_COLORS)
+            rows = [
+                [{"text": CARD_COLORS[key][0], "callback_data": f"adm:color:{product_id}:{key}"}
+                 for key in keys[start:start + 3]]
+                for start in range(0, len(keys), 3)
+            ]
+            self.send(chat_id, "Цвет карточки:", {"inline_keyboard": rows})
+            return
         self.pending[chat_id] = {"mode": "edit", "id": product_id, "field": field}
         self.send(chat_id, EDIT_FIELDS[field][1] + "\nОтмена: /cancel")
+
+    def admin_set_color(self, chat_id, product_id, key):
+        if not self.is_admin(chat_id):
+            return
+        if key not in CARD_COLORS:
+            self.send(chat_id, "Неизвестный цвет.")
+            return
+        title, tint = CARD_COLORS[key]
+        try:
+            self.post("/api/card_update", {"id": product_id, "fields": {"tint": tint}})
+            self.send(chat_id, f"Цвет изменён: {title.lower()}.")
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+
+    def admin_delete_ask(self, chat_id, product_id):
+        if not self.is_admin(chat_id):
+            return
+        if not product_id.startswith("custom-"):
+            self.send(chat_id, "Удалить можно только карточку, созданную из бота. "
+                               "Продукты справочника не удаляются.")
+            return
+        self.send(chat_id, "Удалить карточку? Действие необратимо.", {"inline_keyboard": [
+            [{"text": "🗑 Да, удалить", "callback_data": f"adm:del:{product_id}"}],
+            [{"text": "← Отмена", "callback_data": f"adm:open:{product_id}"}],
+        ]})
+
+    def admin_delete(self, chat_id, product_id):
+        if not self.is_admin(chat_id):
+            return
+        try:
+            self.post("/api/card_delete", {"id": product_id})
+            self.send(chat_id, "Карточка удалена.")
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
 
     def admin_set_type(self, chat_id, product_id, kind):
         if not self.is_admin(chat_id):
@@ -416,6 +475,12 @@ class Bot:
             self.admin_edit_field(chat_id, data[2], data[3])
         elif action == "type" and len(data) == 4:
             self.admin_set_type(chat_id, data[2], data[3])
+        elif action == "color" and len(data) == 4:
+            self.admin_set_color(chat_id, data[2], data[3])
+        elif action == "drop" and len(data) == 3:
+            self.admin_delete_ask(chat_id, data[2])
+        elif action == "del" and len(data) == 3:
+            self.admin_delete(chat_id, data[2])
         elif action == "newtype" and len(data) == 3:
             self.admin_new_type(chat_id, data[2])
         elif action == "open" and len(data) == 3:

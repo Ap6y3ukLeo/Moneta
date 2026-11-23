@@ -131,6 +131,30 @@ class BotChartsTest(unittest.TestCase):
         self.assertEqual(posted[2]["fields"]["terms"],
                          [{"label": "Кэшбэк", "value": "до 5%"}, {"label": "Обслуживание", "value": "0 ₽"}])
 
+    def test_edit_color(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_set_color(1, "debit-base", "green")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted, ("post", "/api/card_update", {"id": "debit-base", "fields": {"tint": "#123c35"}}))
+
+    def test_color_palette_keys(self):
+        instance, _ = self.make()
+        self.assertEqual(set(bot.CARD_COLORS), {"dark", "blue", "green", "wine", "graphite", "light"})
+        for title, tint in bot.CARD_COLORS.values():
+            self.assertTrue(tint.startswith("#") and len(tint) == 7, title)
+
+    def test_delete_only_custom(self):
+        instance, calls = self.make()
+        instance.admin_ids = {1}
+        instance.admin_delete_ask(1, "debit-base")
+        self.assertIn("созданную из бота", calls[-1][1])
+        instance.post = lambda path, payload: calls.append(("post", path, payload)) or {"ok": True}
+        instance.admin_delete(1, "custom-1795429191749")
+        posted = [entry for entry in calls if entry[0] == "post"][-1]
+        self.assertEqual(posted, ("post", "/api/card_delete", {"id": "custom-1795429191749"}))
+
 
 if __name__ == "__main__":
     unittest.main()
