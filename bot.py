@@ -72,14 +72,16 @@ EDIT_FIELDS = {
 }
 
 # Палитра карточки: ключ → название и цвет.
-CARD_COLORS = {
-    "dark": ("Тёмный", "#24314f"),
+CARD_COLORS = {    "dark": ("Тёмный", "#24314f"),
     "blue": ("Синий", "#1f3a57"),
     "green": ("Зелёный", "#123c35"),
     "wine": ("Бордовый", "#4b1f2f"),
     "graphite": ("Графит", "#3a3f46"),
     "light": ("Светлый", "#e8eef2"),
 }
+
+# Сколько продуктов показывать на одной странице списка в боте.
+PAGE_SIZE = 8
 
 # Права в админке: ключ → подпись. Владельцы (env) имеют все.
 ADMIN_SCOPES = {
@@ -212,30 +214,59 @@ class Bot:
             self.send(chat_id, "Раздел только для администратора.")
             return
         scopes = self.scopes(chat_id)
-        rows, row = [], []
-        if {"cards", "links"} & scopes:
-            for item in self.products():
-                row.append({"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"})
-                if len(row) == 2:
-                    rows.append(row)
-                    row = []
-            if row:
-                rows.append(row)
+        rows = []
         if "cards" in scopes:
-            rows.insert(0, [{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
-        tools = []
+            rows.append([{"text": "📇 Карточки", "callback_data": "adm:cards"}])
+        if "links" in scopes:
+            rows.append([{"text": "🔗 Ссылки", "callback_data": "adm:links"}])
         if "push" in scopes:
-            tools.append({"text": "📣 Рассылка", "callback_data": "adm:push"})
+            rows.append([{"text": "📣 Рассылка", "callback_data": "adm:push"}])
+        tools = []
         if "cards" in scopes:
             tools.append({"text": "📊 Клики", "callback_data": "adm:clicks"})
         if "texts" in scopes:
             tools.append({"text": "📝 Тексты", "callback_data": "adm:texts"})
-        if int(chat_id) in self.admin_ids:
-            tools.append({"text": "👥 Доступы", "callback_data": "adm:access"})
-        tools.append({"text": "🧾 Журнал", "callback_data": "adm:journal"})
-        for start in range(0, len(tools), 2):
-            rows.append(tools[start:start + 2])
-        self.send(chat_id, "Панель управления: продукты, закрепление, рассылка, тексты и журнал.",
+        if tools:
+            rows.append(tools)
+        if self._is_owner(chat_id):
+            rows.append([{"text": "👥 Доступы", "callback_data": "adm:access"}])
+        rows.append([{"text": "🧾 Журнал", "callback_data": "adm:journal"}])
+        self.send(chat_id, "Панель управления. Выбери раздел.", {"inline_keyboard": rows})
+
+    def admin_cards(self, chat_id, page: int = 0):
+        if self.guard(chat_id, "cards"):
+            return
+        self.product_list(chat_id, page, "cards")
+
+    def admin_links(self, chat_id, page: int = 0):
+        if self.guard(chat_id, "links"):
+            return
+        self.product_list(chat_id, page, "links")
+
+    def product_list(self, chat_id, page: int, mode: str):
+        items = sorted(self.products(), key=lambda entry: (
+            (entry.get("bank") or "").lower(), (entry.get("name") or "").lower()))
+        pages = max(1, (len(items) + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = max(0, min(int(page), pages - 1))
+        chunk = items[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
+        rows = []
+        if mode == "cards":
+            rows.append([{"text": "➕ Новая карточка", "callback_data": "adm:new"}])
+        for start in range(0, len(chunk), 2):
+            rows.append([
+                {"text": f"{item['bank']} · {item['name']}"[:28], "callback_data": f"adm:open:{item['id']}"}
+                for item in chunk[start:start + 2]
+            ])
+        nav = []
+        if page > 0:
+            nav.append({"text": "◀️", "callback_data": f"adm:{mode}:{page - 1}"})
+        nav.append({"text": f"{page + 1}/{pages}", "callback_data": "adm:noop"})
+        if page < pages - 1:
+            nav.append({"text": "▶️", "callback_data": f"adm:{mode}:{page + 1}"})
+        rows.append(nav)
+        rows.append([{"text": "← Меню", "callback_data": "adm:menu"}])
+        title = "Карточки" if mode == "cards" else "Ссылки"
+        self.send(chat_id, f"{title}: {len(items)} продуктов, страница {page + 1} из {pages}.",
                   {"inline_keyboard": rows})
 
     def admin_open(self, chat_id, product_id):
@@ -265,7 +296,8 @@ class Bot:
             rows.append([{"text": "♻️ Сбросить ссылку", "callback_data": f"adm:reset:{product_id}"}])
         if self.can(chat_id, "cards") and product_id.startswith("custom-"):
             rows.append([{"text": "🗑 Удалить карточку", "callback_data": f"adm:drop:{product_id}"}])
-        rows.append([{"text": "← Назад", "callback_data": "adm:menu"}])
+        back = "adm:cards" if self.can(chat_id, "cards") else "adm:links"
+        rows.append([{"text": "← Назад", "callback_data": back}])
         self.send(chat_id, text, {"inline_keyboard": rows})
 
     def admin_edit(self, chat_id, product_id):
@@ -801,6 +833,12 @@ class Bot:
         action = data[1] if len(data) > 1 else ""
         if action == "menu":
             self.admin_menu(chat_id)
+        elif action == "cards":
+            self.admin_cards(chat_id, int(data[2]) if len(data) > 2 and data[2].isdigit() else 0)
+        elif action == "links":
+            self.admin_links(chat_id, int(data[2]) if len(data) > 2 and data[2].isdigit() else 0)
+        elif action == "noop":
+            return
         elif action == "new":
             self.admin_new(chat_id)
         elif action == "edit" and len(data) == 3:

@@ -156,6 +156,31 @@ class BotChartsTest(unittest.TestCase):
         posted = [entry for entry in calls if entry[0] == "post"][-1]
         self.assertEqual(posted, ("post", "/api/card_delete", {"id": "custom-1795429191749"}))
 
+    def test_menu_has_sections(self):
+        instance = bot.Bot("token", "http://api", "secret", admin_ids=[1])
+        buttons = []
+        instance.send = lambda chat_id, text, keyboard=None: buttons.append((text, keyboard))
+        instance.admin_menu(1)
+        labels = [button["text"] for row in buttons[-1][1]["inline_keyboard"] for button in row]
+        self.assertIn("📇 Карточки", labels)
+        self.assertIn("👥 Доступы", labels)
+        self.assertNotIn("adm:open:", str(buttons[-1][1]))
+
+    def test_cards_pagination(self):
+        instance = bot.Bot("token", "http://api", "secret", admin_ids=[1])
+        captured = []
+        instance.send = lambda chat_id, text, keyboard=None: captured.append(keyboard)
+        instance.products = lambda: [
+            {"id": f"p{index}", "bank": "Банк", "name": f"Карта {index}"} for index in range(10)
+        ]
+        instance.admin_cards(1, 0)
+        buttons = [button for row in captured[-1]["inline_keyboard"] for button in row]
+        self.assertEqual(sum(1 for button in buttons if button["callback_data"].startswith("adm:open:")), 8)
+        self.assertTrue(any(button["callback_data"] == "adm:cards:1" for button in buttons))
+        instance.admin_cards(1, 1)
+        buttons = [button for row in captured[-1]["inline_keyboard"] for button in row]
+        self.assertEqual(sum(1 for button in buttons if button["callback_data"].startswith("adm:open:")), 2)
+
     def test_push_broadcast_flow(self):
         instance, calls = self.make()
         instance.admin_ids = {1}
