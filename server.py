@@ -2099,6 +2099,10 @@ def api_realty_import(payload):
         if len(raw_rows) > 600:
             raise ValueError("Слишком много строк за раз")
         payload = dict(payload, items=_mirkvartir_items(raw_rows))
+    if kind == "cian" and isinstance(raw_rows, list) and raw_rows:
+        if len(raw_rows) > 600:
+            raise ValueError("Слишком много строк за раз")
+        payload = dict(payload, items=_cian_items(raw_rows))
     rows = payload.get("items")
     images = payload.get("images")
     if isinstance(images, dict) and images and not rows:
@@ -2420,7 +2424,7 @@ AVITO_JS = r"""JSON.stringify([...document.querySelectorAll('[data-marker="item"
 }))"""
 
 CIAN_URL = "https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region=2"
-CIAN_PAGES = 12
+CIAN_PAGES = 40
 CIAN_REGIONS = ((2, "Санкт-Петербург"), (1, "Москва"))
 
 MIRK_URL = "https://www.mirkvartir.ru/%D0%9C%D0%BE%D1%81%D0%BA%D0%B2%D0%B0/"
@@ -2631,11 +2635,7 @@ def build_avito():
     return _avito_items(rows)
 
 
-def build_cian():
-    rows = []
-    for region, city_name in CIAN_REGIONS:
-        url = f"https://spb.cian.ru/cat.php?deal_type=sale&engine_version=2&offer_type=flat&region={region}"
-        rows.extend(browser_json_pages(url, CIAN_JS, CIAN_PAGES, first_wait=10, wait=4))
+def _cian_items(rows):
     items, seen = [], set()
     for row in rows:
         title = _clean(row.get("title"))
@@ -2686,6 +2686,16 @@ def build_cian():
     if not items:
         raise RuntimeError("Циан: не удалось получить объявления (антибот)")
     return items
+
+
+def build_cian():
+    rows = []
+    hosts = {2: "spb", 1: "msk"}
+    for region, _ in CIAN_REGIONS:
+        url = (f"https://{hosts.get(region, 'spb')}.cian.ru/cat.php?deal_type=sale&engine_version=2"
+               f"&offer_type=flat&region={region}")
+        rows.extend(browser_json_pages(url, CIAN_JS, CIAN_PAGES, first_wait=10, wait=4))
+    return _cian_items(rows)
 
 
 def _img_url(value):

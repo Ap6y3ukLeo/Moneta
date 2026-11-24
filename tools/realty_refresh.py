@@ -93,6 +93,21 @@ AVITO_JS = r"""(() => {
   return JSON.stringify(rows);
 })()"""
 
+CIAN_REGIONS = [("2", "Санкт-Петербург"), ("1", "Москва")]
+CIAN_PAGES = 25
+
+CIAN_JS = r"""(() => {
+  const rows = [...document.querySelectorAll('article[data-name="CardComponent"]')].map((card) => ({
+    url: card.querySelector('a[href*="/sale/flat/"]')?.href,
+    title: card.querySelector('[data-mark="OfferTitle"]')?.innerText,
+    price: card.querySelector('[data-mark="MainPrice"]')?.innerText,
+    subtitle: card.querySelector('[data-mark="OfferSubtitle"]')?.innerText,
+    img: card.querySelector('img')?.getAttribute('src') || '',
+    text: card.innerText
+  }));
+  return JSON.stringify(rows);
+})()"""
+
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
@@ -252,14 +267,50 @@ def scrape_avito(quick: bool = False) -> list:
     return [] if blocked and len(rows) < 40 else rows
 
 
+def scrape_cian(quick: bool = False) -> list:
+    from playwright.sync_api import sync_playwright
+
+    rows: list = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(channel="chrome", headless=True)
+        context = browser.new_context(user_agent=UA, locale="ru-RU", viewport={"width": 1400, "height": 1000})
+        page = context.new_page()
+        for region, city in CIAN_REGIONS:
+            host = "msk" if region == "1" else "spb"
+            pages = 2 if quick else CIAN_PAGES
+            for number in range(1, pages + 1):
+                url = (f"https://{host}.cian.ru/cat.php?deal_type=sale&engine_version=2"
+                       f"&offer_type=flat&region={region}")
+                if number > 1:
+                    url += f"&p={number}"
+                try:
+                    page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                    time.sleep(2.5)
+                    for _ in range(6):
+                        page.mouse.wheel(0, 900)
+                        time.sleep(0.25)
+                    data = json.loads(page.evaluate(CIAN_JS))
+                    if not data:
+                        log(f"Циан: {city} стр.{number} пусто, дальше по городу не иду")
+                        break
+                    rows.extend(data)
+                    log(f"Циан: {city} стр.{number} — {len(data)} карточек")
+                except Exception as exc:  # noqa: BLE001
+                    log(f"Циан: {city} стр.{number} ошибка {type(exc).__name__}")
+                    break
+        browser.close()
+    return rows
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--yandex", action="store_true")
+    parser.add_argument("--cian", action="store_true")
     parser.add_argument("--avito", action="store_true")
     parser.add_argument("--quick", action="store_true")
     args = parser.parse_args()
-    if not args.yandex and not args.avito:
-        args.yandex = args.avito = True
+    if not args.yandex and not args.cian and not args.avito:
+        args.yandex = args.cian = True
 
     log("=== обновление недвижимости начато")
 
@@ -270,6 +321,19 @@ def main() -> int:
             log(f"Яндекс: собрано {len(yandex_items)} объявлений, галерей {len(yandex_galleries)}")
         except Exception as exc:  # noqa: BLE001
             log(f"Яндекс: сбор прерван — {exc}")
+
+    cian_items = []
+    if args.cian:
+        try:
+            rows = scrape_cian(quick=args.quick)
+            if rows:
+                sys.path.insert(0, str(ROOT))
+                import server  # noqa: E402 - парсер Циан живёт в сервере
+
+                cian_items = server._cian_items(rows)
+                log(f"Циан: собрано {len(cian_items)} объявлений")
+        except Exception as exc:  # noqa: BLE001
+            log(f"Циан: сбор прерван — {exc}")
 
     avito_items = []
     if args.avito:
@@ -284,7 +348,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             log(f"Авито: сбор прерван — {exc}")
 
-    if not yandex_items and not avito_items:
+    if not yandex_items and not cian_items and not avito_items:
         log("нечего загружать, выход")
         return 1
 
@@ -303,6 +367,9 @@ def main() -> int:
                 images.update(yandex_galleries)
                 upload_json(sftp, "realty_images.json", images)
                 log(f"галереи: всего {len(images)} наборов")
+        if cian_items:
+            old = fetch_remote_json(sftp, "realty_cian.json").get("value") or []
+            upload_json(sftp, "realty_cian.json", {"value": merge_by_id(cian_items, old), "meta": meta})
         if avito_items:
             old = fetch_remote_json(sftp, "realty_avito.json").get("value") or []
             upload_json(sftp, "realty_avito.json", {"value": merge_by_id(avito_items, old), "meta": meta})
