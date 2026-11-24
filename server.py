@@ -2095,6 +2095,10 @@ def api_realty_import(payload):
         if len(raw_rows) > 600:
             raise ValueError("Слишком много строк за раз")
         payload = dict(payload, items=_avito_items(raw_rows))
+    if kind == "mirk" and isinstance(raw_rows, list) and raw_rows:
+        if len(raw_rows) > 600:
+            raise ValueError("Слишком много строк за раз")
+        payload = dict(payload, items=_mirkvartir_items(raw_rows))
     rows = payload.get("items")
     images = payload.get("images")
     if isinstance(images, dict) and images and not rows:
@@ -2153,7 +2157,12 @@ def api_realty_import(payload):
     if not payload.get("reset"):
         existing = _read_json(os.path.join(CACHE_DIR, target + ".json"), {}).get("value")
         if isinstance(existing, list):
+            old_by_id = {item.get("id"): item for item in existing if item.get("id")}
             fresh_ids = {item["id"] for item in items}
+            for item in items:
+                old = old_by_id.get(item["id"]) or {}
+                if not item.get("img") and old.get("img"):
+                    item["img"] = old["img"]
             items = items + [item for item in existing if item.get("id") not in fresh_ids]
     meta = {"ok": True, "updated": now_msk(), "stale": False}
     _store(target, REALTY_TTL, items, meta)
@@ -2685,8 +2694,7 @@ def _img_url(value):
     return value if value.startswith(("https://", "http://")) else ""
 
 
-def build_mirkvartir():
-    rows = browser_json_pages(MIRK_URL, MIRK_JS, MIRK_PAGES, first_wait=12, wait=5, scroll=True)
+def _mirkvartir_items(rows):
     items, seen = [], set()
     for row in rows:
         url = (row.get("url") or "").split("?")[0]
@@ -2733,6 +2741,11 @@ def build_mirkvartir():
     if not items:
         raise RuntimeError("Мир квартир: не удалось получить объявления")
     return items
+
+
+def build_mirkvartir():
+    rows = browser_json_pages(MIRK_URL, MIRK_JS, MIRK_PAGES, first_wait=12, wait=5, scroll=True)
+    return _mirkvartir_items(rows)
 
 
 # Яндекс.Недвижимость отдаёт готовое состояние страницы обычному HTTP-клиенту:
