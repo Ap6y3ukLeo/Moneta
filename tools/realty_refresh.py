@@ -220,8 +220,14 @@ def scrape_avito(quick: bool = False) -> list:
         context = pw.chromium.launch_persistent_context(
             str(profile), channel="chrome", headless=False,
             user_agent=UA, locale="ru-RU", viewport={"width": 1300, "height": 900},
-            args=["--window-position=-2400,-2400", "--window-size=1300,900"],
+            args=["--window-position=-2400,-2400", "--window-size=1300,900",
+                  "--disable-blink-features=AutomationControlled"],
         )
+        context.add_init_script("""
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          Object.defineProperty(navigator, 'languages', { get: () => ['ru-RU', 'ru'] });
+          window.chrome = window.chrome || { runtime: {} };
+        """)
         page = context.pages[0] if context.pages else context.new_page()
         pages = 2 if quick else 20
         blocked = False
