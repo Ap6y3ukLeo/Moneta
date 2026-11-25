@@ -225,6 +225,8 @@ def scrape_yandex(quick: bool = False) -> tuple[list, dict]:
         page = context.new_page()
         cities = YANDEX_CITIES[:1] if quick else YANDEX_CITIES
         for slug, city, pages in cities:
+            if not quick:
+                pages = 4 if slug in ("moskva", "sankt-peterburg") else (2 if pages >= 3 else 1)
             for number in range(1, (1 if quick else pages) + 1):
                 url = f"https://realty.yandex.ru/{slug}/kupit/kvartira/" + (f"?page={number}" if number > 1 else "")
                 try:
