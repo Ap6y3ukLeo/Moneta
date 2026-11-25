@@ -1380,16 +1380,37 @@ async function openRealtyMap() {
   if (!dialog.open) dialog.showModal();
   if (!realtyLeaflet) {
     realtyLeaflet = window.L.map(box, { center: [55.751, 37.618], zoom: 10, preferCanvas: true });
-    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-      attribution: '© OpenStreetMap',
+    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      subdomains: 'abcd',
+      maxZoom: 20,
+      attribution: '© OpenStreetMap, © CARTO',
     }).addTo(realtyLeaflet);
     realtyMapLayer = window.L.layerGroup().addTo(realtyLeaflet);
   }
   realtyLeaflet.invalidateSize();
   realtyMapLayer.clearLayers();
 
-  const items = realtyFiltered().slice(0, 150);
+  const pool = realtyFiltered();
+  let items;
+  if (S.re.city !== 'all') {
+    items = pool.slice(0, 150);
+  } else {
+    // без выбранного города берём по несколько квартир от каждого города,
+    // иначе на карту попадают только самые дешёвые объявления по стране
+    const groups = new Map();
+    pool.forEach((item) => {
+      const key = item.city || 'Другое';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    });
+    const totalCount = pool.length || 1;
+    items = [];
+    for (const list of groups.values()) {
+      const quota = Math.max(4, Math.min(18, Math.round(160 * list.length / totalCount)));
+      items.push(...list.slice(0, quota));
+    }
+    items = items.slice(0, 180);
+  }
   if (!items.length) {
     sub.textContent = 'Нет объявлений под текущие фильтры';
     return;
@@ -1434,8 +1455,10 @@ async function openRealtyMap() {
       if (done === items.length || done % 10 === 0) sub.textContent = `Найдено ${placed} из ${done}`;
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker()]);
-  sub.textContent = placed ? `${placed} квартир на карте · нажмите на цену` : 'Не удалось определить адреса';
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+  sub.textContent = placed
+    ? `${placed} из ${items.length} квартир на карте · нажмите на цену`
+    : 'Не удалось определить адреса';
   if (bounds.length) realtyLeaflet.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
 }
 
