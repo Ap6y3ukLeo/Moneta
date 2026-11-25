@@ -465,6 +465,9 @@ def source(name: str, ttl: int, builder, force: bool = False):
                 cached = json.load(f)
             if cached.get("value") is not None:
                 meta = cached.get("meta") or {"ok": True, "updated": None, "stale": False}
+                if (meta or {}).get("manual"):
+                    # источник наполняется вручную (браузером), сервер его не перезаписывает
+                    return cached["value"], meta
                 if age < ttl:
                     with LOCK:
                         MEM[name] = {"exp": time.time() + ttl - age, "value": cached["value"], "meta": meta}
@@ -2168,7 +2171,7 @@ def api_realty_import(payload):
                 if not item.get("img") and old.get("img"):
                     item["img"] = old["img"]
             items = items + [item for item in existing if item.get("id") not in fresh_ids]
-    meta = {"ok": True, "updated": now_msk(), "stale": False}
+    meta = {"ok": True, "updated": now_msk(), "stale": False, "manual": True}
     _store(target, REALTY_TTL, items, meta)
 
     saved = 0

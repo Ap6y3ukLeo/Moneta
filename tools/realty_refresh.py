@@ -306,11 +306,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--yandex", action="store_true")
     parser.add_argument("--cian", action="store_true")
+    parser.add_argument("--bn", action="store_true")
     parser.add_argument("--avito", action="store_true")
     parser.add_argument("--quick", action="store_true")
     args = parser.parse_args()
-    if not args.yandex and not args.cian and not args.avito:
-        args.yandex = args.cian = True
+    if not args.yandex and not args.cian and not args.bn and not args.avito:
+        args.yandex = args.cian = args.bn = True
 
     log("=== обновление недвижимости начато")
 
@@ -321,6 +322,17 @@ def main() -> int:
             log(f"Яндекс: собрано {len(yandex_items)} объявлений, галерей {len(yandex_galleries)}")
         except Exception as exc:  # noqa: BLE001
             log(f"Яндекс: сбор прерван — {exc}")
+
+    bn_items = []
+    if args.bn:
+        try:
+            sys.path.insert(0, str(ROOT))
+            import server  # noqa: E402 - парсер БН.ру живёт в сервере
+
+            bn_items = server.build_bn()
+            log(f"БН.ру: собрано {len(bn_items)} объявлений")
+        except Exception as exc:  # noqa: BLE001
+            log(f"БН.ру: сбор прерван — {exc}")
 
     cian_items = []
     if args.cian:
@@ -348,7 +360,7 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             log(f"Авито: сбор прерван — {exc}")
 
-    if not yandex_items and not cian_items and not avito_items:
+    if not yandex_items and not cian_items and not avito_items and not bn_items:
         log("нечего загружать, выход")
         return 1
 
@@ -356,7 +368,8 @@ def main() -> int:
     client = ssh_client()
     try:
         sftp = client.open_sftp()
-        meta = {"ok": True, "updated": datetime.now(MSK).isoformat(timespec="seconds"), "stale": False}
+        meta = {"ok": True, "updated": datetime.now(MSK).isoformat(timespec="seconds"),
+                "stale": False, "manual": True}
         if yandex_items:
             old = fetch_remote_json(sftp, "realty_yandex.json").get("value") or []
             upload_json(sftp, "realty_yandex.json", {"value": merge_by_id(yandex_items, old), "meta": meta})
@@ -370,6 +383,9 @@ def main() -> int:
         if cian_items:
             old = fetch_remote_json(sftp, "realty_cian.json").get("value") or []
             upload_json(sftp, "realty_cian.json", {"value": merge_by_id(cian_items, old), "meta": meta})
+        if bn_items:
+            old = fetch_remote_json(sftp, "realty_bn.json").get("value") or []
+            upload_json(sftp, "realty_bn.json", {"value": merge_by_id(bn_items, old), "meta": meta})
         if avito_items:
             old = fetch_remote_json(sftp, "realty_avito.json").get("value") or []
             upload_json(sftp, "realty_avito.json", {"value": merge_by_id(avito_items, old), "meta": meta})
