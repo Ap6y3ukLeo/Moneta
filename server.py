@@ -28,7 +28,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(ROOT, "web")
@@ -3019,6 +3019,31 @@ def _yandex_offer_images(offer_id):
     return images[:12]
 
 
+GEO_CACHE_FILE = os.path.join(BUNDLED_CACHE_DIR, "geo_cache.json")
+
+
+def api_geocode(params):
+    """Геокодинг через Photon с кэшем на сервере: у клиента сеть до него часто закрыта."""
+    query = str((params or {}).get("q") or "").strip()[:200]
+    if not query:
+        raise ValueError("Не указан адрес")
+    cache = _read_json(GEO_CACHE_FILE, {})
+    if not isinstance(cache, dict):
+        cache = {}
+    hit = cache.get(query)
+    if isinstance(hit, dict) and hit.get("lat") is not None:
+        return {"lat": hit["lat"], "lon": hit["lon"], "cached": True}
+    url = "https://photon.komoot.io/api/?q=" + quote(query) + "&limit=1"
+    payload = json.loads(http_text(url, timeout=12))
+    features = payload.get("features") or []
+    if not features:
+        raise ValueError("Адрес не найден")
+    lon, lat = features[0]["geometry"]["coordinates"][:2]
+    cache[query] = {"lat": lat, "lon": lon}
+    _write_json(GEO_CACHE_FILE, cache)
+    return {"lat": lat, "lon": lon, "cached": False}
+
+
 def api_realty_photos(params):
     item_id = str((params or {}).get("id") or "").strip()
     hit = PHOTOS_MEM.get(item_id)
@@ -4011,6 +4036,13 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/realty-photos":
                 query = parse_qs(self.path.partition("?")[2])
                 self.send_json(api_realty_photos({key: values[0] for key, values in query.items()}))
+                return
+            if path == "/api/geocode":
+                query = parse_qs(self.path.partition("?")[2])
+                try:
+                    self.send_json(api_geocode({key: values[0] for key, values in query.items()}))
+                except ValueError as exc:
+                    self.send_json({"error": str(exc)}, status=404)
                 return
             if path == "/api/bot":
                 query = parse_qs(self.path.partition("?")[2])

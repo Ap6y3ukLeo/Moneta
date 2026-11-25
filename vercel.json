@@ -13,6 +13,7 @@
     { "source": "/api/realty", "destination": "/api/index?route=realty" },
     { "source": "/api/realty_import", "destination": "/api/index?route=realty_import" },    { "source": "/api/history", "destination": "/api/index?route=history" },
     { "source": "/api/realty-photos", "destination": "/api/index?route=realty_photos" },
+    { "source": "/api/geocode", "destination": "/api/index?route=geocode" },
     { "source": "/api/bot", "destination": "/api/index?route=bot" },
     { "source": "/api/push/key", "destination": "/api/index?route=push_key" },
     { "source": "/api/push/subscribe", "destination": "/api/index?route=push_subscribe" },

@@ -1151,15 +1151,9 @@ async function geocode(query) {
   if (!key) return null;
   if (geoMemory[key]) return geoMemory[key];
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const res = await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`, { signal: controller.signal });
-    clearTimeout(timer);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const point = data.features?.[0]?.geometry?.coordinates;
-    if (!Array.isArray(point)) return null;
-    const value = { lat: point[1], lon: point[0] };
+    const data = await fetchJson(`/api/geocode?q=${encodeURIComponent(query)}`, 12000);
+    if (!data || typeof data.lat !== 'number') return null;
+    const value = { lat: data.lat, lon: data.lon };
     geoMemory[key] = value;
     try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(geoMemory)); } catch {}
     return value;
