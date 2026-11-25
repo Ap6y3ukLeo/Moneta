@@ -1393,7 +1393,7 @@ function cityCenter(city) {
 function mapJitter(id) {
   let hash = 0;
   for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 100000;
-  return [((hash % 97) - 48) / 4000, ((Math.floor(hash / 97) % 97) - 48) / 4000];
+  return [((hash % 97) - 48) / 1500, ((Math.floor(hash / 97) % 97) - 48) / 1500];
 }
 
 async function openRealtyMap() {
@@ -1449,53 +1449,52 @@ async function openRealtyMap() {
     sub.textContent = 'Нет объявлений под текущие фильтры';
     return;
   }
-  sub.textContent = `Ищу адреса: 0 из ${items.length}`;
-  const queue = [...items];
   const bounds = [];
+  const markers = new Map();
+  for (const item of items) {
+    const base = cityCenter(item.city);
+    const [dy, dx] = mapJitter(item.id);
+    const lat = base.lat + dy;
+    const lon = base.lon + dx;
+    bounds.push([lat, lon]);
+    const marker = window.L.marker([lat, lon], {
+      icon: window.L.divIcon({
+        className: 'flat-pin-wrap',
+        html: `<span class="flat-pin">${money(item.price)}</span>`,
+        iconSize: [0, 0],
+      }),
+      title: `${item.title || 'Квартира'} · ${money(item.price)}`,
+    });
+    marker.on('click', () => {
+      dialog.close();
+      openRealty(item.id);
+    });
+    marker.addTo(realtyMapLayer);
+    markers.set(item.id, marker);
+  }
+  realtyLeaflet.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+  sub.textContent = `${items.length} квартир на карте · нажмите на цену`;
+
+  // точные адреса уточняем в фоне: метки уже на карте, позиции плавно обновятся
+  const queue = items.filter((item) => hasStreetAddress(item.address || '', item.city || ''));
   let done = 0;
-  let placed = 0;
   const worker = async () => {
     while (queue.length) {
       const item = queue.shift();
-      const city = item.city || '';
-      const address = item.address || '';
-      const exact = hasStreetAddress(address, city);
-      const query = [address, city, 'Россия'].filter((value, index, list) => value && list.indexOf(value) === index).join(', ');
+      const query = [item.address, item.city, 'Россия']
+        .filter((value, index, list) => value && list.indexOf(value) === index).join(', ');
       let point = null;
-      if (exact) {
-        try { point = await geocode(query); } catch { point = null; }
+      try { point = await geocode(query); } catch { point = null; }
+      if (point) {
+        const marker = markers.get(item.id);
+        if (marker) marker.setLatLng([point.lat, point.lon]);
       }
-      // даже без геокодера ставим метку в центре города — карта не должна быть пустой
-      const base = point || cityCenter(city);
-      const [dy, dx] = point && exact ? [0, 0] : mapJitter(item.id);
-      const lat = base.lat + dy;
-      const lon = base.lon + dx;
       done += 1;
-      if (base) {
-        placed += 1;
-        bounds.push([lat, lon]);
-        const marker = window.L.marker([lat, lon], {
-          icon: window.L.divIcon({
-            className: 'flat-pin-wrap',
-            html: `<span class="flat-pin">${money(item.price)}</span>`,
-            iconSize: [0, 0],
-          }),
-          title: `${item.title || 'Квартира'} · ${money(item.price)}`,
-        });
-        marker.on('click', () => {
-          dialog.close();
-          openRealty(item.id);
-        });
-        marker.addTo(realtyMapLayer);
-      }
-      if (done === items.length || done % 10 === 0) sub.textContent = `Найдено ${placed} из ${done}`;
+      if (done % 10 === 0) sub.textContent = `${items.length} квартир · уточнено адресов: ${done}`;
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
-  sub.textContent = placed
-    ? `${placed} из ${items.length} квартир на карте · нажмите на цену`
-    : 'Не удалось определить адреса';
-  if (bounds.length) realtyLeaflet.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  sub.textContent = `${items.length} квартир на карте · нажмите на цену`;
 }
 
 function realtyCities() {
