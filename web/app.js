@@ -1390,7 +1390,7 @@ function cityCenter(city) {
   return { lat: point[0], lon: point[1] };
 }
 
-const CITY_SPREAD = { 'Москва': 0.17, 'Санкт-Петербург': 0.11 };
+const CITY_SPREAD = { 'Москва': 0.2, 'Санкт-Петербург': 0.13 };
 
 function citySpread(city) {
   return CITY_SPREAD[city] || 0.05;
