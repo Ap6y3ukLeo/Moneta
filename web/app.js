@@ -1382,17 +1382,14 @@ async function openRealtyMap() {
     realtyLeaflet = window.L.map(box, {
       center: [55.751, 37.618],
       zoom: 10,
-      maxZoom: 16,
+      maxZoom: 19,
       preferCanvas: true,
       attributionControl: true,
     });
     realtyLeaflet.attributionControl.setPrefix('');
-    window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16,
-      attribution: 'Tiles © Esri',
-    }).addTo(realtyLeaflet);
-    window.L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 16,
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap',
     }).addTo(realtyLeaflet);
     realtyMapLayer = window.L.layerGroup().addTo(realtyLeaflet);
   }
