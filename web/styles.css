@@ -1372,3 +1372,21 @@ mark { background: #d6f7ea; color: inherit; border-radius: 4px; padding: 0 2px; 
 @media (max-width: 620px) {
   .prod-card--lg { width: min(100%, 300px); height: auto; }
 }
+
+/* --- realty map with price markers --- */
+.realty-map-dialog { width: min(1100px, calc(100vw - 24px)); max-height: calc(100vh - 24px); }
+.realty-map-card { padding: 18px; gap: 12px; max-height: calc(100vh - 24px); }
+.realty-map { width: 100%; height: min(68vh, 620px); border-radius: 14px; overflow: hidden; background: #eef4f2; }
+.realty-map .leaflet-container { font-family: inherit; }
+.flat-pin-wrap { background: transparent; border: 0; }
+.flat-pin {
+  display: inline-block; transform: translate(-50%, -140%); padding: 4px 9px; border-radius: 9px;
+  background: var(--teal); color: #fff; font-size: 11px; font-weight: 700; white-space: nowrap;
+  box-shadow: 0 6px 16px rgba(15, 169, 125, .35);
+}
+.flat-pin-wrap:hover .flat-pin { background: var(--teal-700); }
+
+@media (max-width: 620px) {
+  .realty-map-dialog { width: calc(100vw - 12px); }
+  .realty-map { height: 62vh; }
+}

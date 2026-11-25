@@ -14,11 +14,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=Manrope:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=20261123g">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="styles.css?v=20261124a">
 </head>
 <body>
 <svg class="sprite" aria-hidden="true">
   <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M3 10h18M16 15h2"/></symbol>
   <symbol id="i-crypto" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 8h4a2.5 2.5 0 0 1 0 5H9m0 0h4.5a2.5 2.5 0 0 1 0 5H9V7m2-1v2m0 10v2m3-13v1m0 11v1"/></symbol>
   <symbol id="i-bank" viewBox="0 0 24 24"><path d="m3 9 9-5 9 5M5 9v9m4-9v9m6-9v9m4-9v9M3 21h18M2 9h20"/></symbol>
@@ -132,6 +134,17 @@
   </div>
 </dialog>
 
+<dialog id="realty-map-dialog" class="dialog realty-map-dialog">
+  <div class="dialog-card realty-map-card">
+    <div class="dialog-head">
+      <div><h2>Квартиры на карте</h2><p id="realty-map-sub">Готовлю карту…</p></div>
+      <button class="icon-btn" type="button" data-action="close-realty-map" aria-label="Закрыть карту"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+    <div id="realty-map" class="realty-map"></div>
+    <p class="dialog-hint">Нажмите на метку с ценой, чтобы открыть карточку квартиры. Точка — адрес из объявления; если точного адреса нет, показан центр города.</p>
+  </div>
+</dialog>
+
 <dialog id="photo-dialog" class="dialog photo-dialog">
   <div class="photo-card">
     <button class="photo-close" type="button" data-action="close-photo" aria-label="Закрыть фото"><svg class="ic"><use href="#i-close"/></svg></button>
@@ -164,6 +177,7 @@
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js?v=20261123k"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js?v=20261124a"></script>
 </body>
 </html>

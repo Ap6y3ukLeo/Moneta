@@ -1339,7 +1339,7 @@ function realtyCardHtml(r, tokens = []) {
   </article>`;
 }
 
-function realtyRowsHtml() {
+function realtyFiltered() {
   let items = realtyList();
   if (S.re.q) {
     const q = S.re.q.toLowerCase();
@@ -1350,15 +1350,99 @@ function realtyRowsHtml() {
   if (S.re.rooms === '4') items = items.filter((r) => Number(r.rooms) >= 4);
   else if (S.re.rooms !== 'all') items = items.filter((r) => String(r.rooms) === S.re.rooms);
   const sort = S.re.sort;
-  items = [...items].sort((a, b) => sort === 'priceDesc' ? b.price - a.price
+  return [...items].sort((a, b) => sort === 'priceDesc' ? b.price - a.price
     : sort === 'area' ? (b.area || 0) - (a.area || 0)
     : sort === 'm2' ? (a.priceM2 || 0) - (b.priceM2 || 0)
     : a.price - b.price);
+}
+
+function realtyRowsHtml() {
+  const items = realtyFiltered();
   if (!items.length) return `<div class="empty-state" style="padding:40px 12px">Ничего не найдено. Измените фильтры.</div>`;
   const shown = items.slice(0, S.re.limit);
   const html = `<div class="re-grid">${shown.map((r) => realtyCardHtml(r)).join('')}</div>`;
   const more = items.length - shown.length;
   return html + (more > 0 ? `<button class="btn btn--ghost offers-more" data-action="re-more">Показать ещё ${Math.min(more, S.re.limit)} из ${more}</button>` : '');
+}
+
+let realtyLeaflet = null;
+let realtyMapLayer = null;
+
+function mapJitter(id) {
+  let hash = 0;
+  for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 100000;
+  return [((hash % 97) - 48) / 4000, ((Math.floor(hash / 97) % 97) - 48) / 4000];
+}
+
+async function openRealtyMap() {
+  const dialog = $('#realty-map-dialog');
+  const box = $('#realty-map');
+  const sub = $('#realty-map-sub');
+  if (!dialog || !box || !sub) return;
+  if (!window.L) {
+    toast('Карта недоступна: не загрузилась библиотека');
+    return;
+  }
+  if (!dialog.open) dialog.showModal();
+  if (!realtyLeaflet) {
+    realtyLeaflet = window.L.map(box, { center: [55.751, 37.618], zoom: 10, preferCanvas: true });
+    window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap',
+    }).addTo(realtyLeaflet);
+    realtyMapLayer = window.L.layerGroup().addTo(realtyLeaflet);
+  }
+  realtyLeaflet.invalidateSize();
+  realtyMapLayer.clearLayers();
+
+  const items = realtyFiltered().slice(0, 150);
+  if (!items.length) {
+    sub.textContent = 'Нет объявлений под текущие фильтры';
+    return;
+  }
+  sub.textContent = `Ищу адреса: 0 из ${items.length}`;
+  const queue = [...items];
+  const bounds = [];
+  let done = 0;
+  let placed = 0;
+  const worker = async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      const city = item.city || '';
+      const address = item.address || '';
+      const exact = hasStreetAddress(address, city);
+      const query = exact
+        ? [address, city, 'Россия'].filter((value, index, list) => value && list.indexOf(value) === index).join(', ')
+        : `${city || address}, Россия`;
+      let point = null;
+      try { point = await geocode(query); } catch { point = null; }
+      done += 1;
+      if (point) {
+        const [dy, dx] = exact ? [0, 0] : mapJitter(item.id);
+        const lat = point.lat + dy;
+        const lon = point.lon + dx;
+        placed += 1;
+        bounds.push([lat, lon]);
+        const marker = window.L.marker([lat, lon], {
+          icon: window.L.divIcon({
+            className: 'flat-pin-wrap',
+            html: `<span class="flat-pin">${money(item.price)}</span>`,
+            iconSize: [0, 0],
+          }),
+          title: `${item.title || 'Квартира'} · ${money(item.price)}`,
+        });
+        marker.on('click', () => {
+          dialog.close();
+          openRealty(item.id);
+        });
+        marker.addTo(realtyMapLayer);
+      }
+      if (done === items.length || done % 10 === 0) sub.textContent = `Найдено ${placed} из ${done}`;
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  sub.textContent = placed ? `${placed} квартир на карте · нажмите на цену` : 'Не удалось определить адреса';
+  if (bounds.length) realtyLeaflet.fitBounds(bounds, { padding: [30, 30], maxZoom: 13 });
 }
 
 function realtyCities() {
@@ -1491,6 +1575,7 @@ function realtyPage() {
       <option value="m2" ${S.re.sort === 'm2' ? 'selected' : ''}>Цена м²</option>
       <option value="area" ${S.re.sort === 'area' ? 'selected' : ''}>Площадь</option>
     </select>
+    <button class="btn btn--ghost btn--sm" type="button" data-action="realty-map">${icon('pin')} На карте</button>
   </div>
   <div id="re-list">${realtyRowsHtml()}</div>
   <p class="muted" style="font-size:10.5px;margin-top:12px">Объявления — выборка с Яндекса и Авито по всей России, Циана и БН.ру по Санкт-Петербургу; средние цены Москвы — оценка «Мир квартир». Цены и наличие уточняйте на сайте источника. Сервис не является оценкой недвижимости.</p>`;
@@ -2844,6 +2929,8 @@ document.addEventListener('click', (e) => {
   else if (action === 'close-profile') $('#profile-dialog').close();
   else if (action === 'close-forecast') $('#forecast-dialog').close();
   else if (action === 'close-realty') $('#realty-dialog').close();
+  else if (action === 'close-realty-map') $('#realty-map-dialog').close();
+  else if (action === 'realty-map') openRealtyMap();
   else if (action === 'close-map') $('#map-dialog').close();
   else if (action === 'close-photo') $('#photo-dialog').close();
   else if (action === 'close-deposit') $('#deposit-dialog').close();
