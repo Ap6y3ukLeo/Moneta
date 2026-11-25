@@ -1830,6 +1830,7 @@ EDITS_FILE = os.path.join(BUNDLED_CACHE_DIR, "card_edits.json")
 ORDER_FILE = os.path.join(BUNDLED_CACHE_DIR, "card_order.json")
 TEXTS_FILE = os.path.join(BUNDLED_CACHE_DIR, "texts.json")
 CLICKS_FILE = os.path.join(BUNDLED_CACHE_DIR, "clicks.json")
+VISITS_FILE = os.path.join(BUNDLED_CACHE_DIR, "visits.json")
 TEXT_SECTIONS = ("cards", "deposits", "realty")
 TEXT_FIELDS = ("title", "sub", "note")
 CARD_TYPES = ("debit", "credit", "business")
@@ -2187,6 +2188,54 @@ def api_realty_import(payload):
                 saved += 1
         _write_json(os.path.join(BUNDLED_CACHE_DIR, "realty_images.json"), REALTY_IMAGES)
     return {"ok": True, "source": kind, "items": len(items), "galleries": saved}
+
+
+def api_visit(payload):
+    """Отмечает визит из приложения или браузера. uid — случайный идентификатор в localStorage."""
+    payload = payload or {}
+    source = "app" if str(payload.get("source")) == "app" else "browser"
+    uid = str(payload.get("uid") or "")[:40]
+    data = _read_json(VISITS_FILE, {})
+    if not isinstance(data, dict):
+        data = {}
+    days = data.get("days") if isinstance(data.get("days"), dict) else {}
+    day = now_msk()[:10]
+    entry = days.get(day) if isinstance(days.get(day), dict) else {}
+    bucket = entry.get(source) if isinstance(entry.get(source), dict) else {}
+    bucket["visits"] = int(bucket.get("visits") or 0) + 1
+    ids = bucket.get("ids") if isinstance(bucket.get("ids"), list) else []
+    if uid and uid not in ids and len(ids) < 5000:
+        ids.append(uid)
+    bucket["ids"] = ids
+    entry[source] = bucket
+    days[day] = entry
+    # держим только последние 60 дней
+    for old in sorted(days)[:-60]:
+        days.pop(old, None)
+    data["days"] = days
+    _write_json(VISITS_FILE, data)
+    return {"ok": True, "source": source}
+
+
+def api_visits():
+    data = _read_json(VISITS_FILE, {})
+    days = data.get("days") if isinstance(data, dict) else {}
+    if not isinstance(days, dict):
+        days = {}
+    items = []
+    for day in sorted(days)[-30:]:
+        entry = days.get(day) or {}
+        row = {"date": day}
+        for source in ("app", "browser"):
+            bucket = entry.get(source) or {}
+            row[source] = {
+                "visits": int(bucket.get("visits") or 0),
+                "users": len(bucket.get("ids") or []),
+            }
+        items.append(row)
+    app_visits = sum(row["app"]["visits"] for row in items)
+    browser_visits = sum(row["browser"]["visits"] for row in items)
+    return {"items": items, "total": {"app": app_visits, "browser": browser_visits}}
 
 
 def api_go(params):
@@ -4081,6 +4130,9 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/clicks":
                 self.send_json(api_clicks())
                 return
+            if path == "/api/visits":
+                self.send_json(api_visits())
+                return
             if path == "/api/go":
                 query = parse_qs(self.path.partition("?")[2])
                 try:
@@ -4166,6 +4218,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(api_click(payload))
             elif path == "/api/realty_import":
                 self.send_json(api_realty_import(payload))
+            elif path == "/api/visit":
+                self.send_json(api_visit(payload))
             elif path == "/api/ai":
                 self.send_json(api_ai(payload))
             elif path == "/api/forecast":

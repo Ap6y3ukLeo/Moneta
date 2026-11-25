@@ -26,7 +26,7 @@ class AdminFeaturesTest(unittest.TestCase):
         with open(self.cards_file, "w", encoding="utf-8") as file:
             json.dump(BASE, file, ensure_ascii=False)
         self.paths = {}
-        names = ("CUSTOM_FILE", "EDITS_FILE", "LINKS_FILE", "ORDER_FILE", "TEXTS_FILE", "CLICKS_FILE", "PUSH_SUBS")
+        names = ("CUSTOM_FILE", "EDITS_FILE", "LINKS_FILE", "ORDER_FILE", "TEXTS_FILE", "CLICKS_FILE", "VISITS_FILE", "PUSH_SUBS")
         for name in names:
             path = os.path.join(self.tmp.name, name.lower() + ".json")
             self.paths[name] = path
@@ -104,6 +104,18 @@ class AdminFeaturesTest(unittest.TestCase):
         stats = server.api_clicks()
         self.assertEqual(stats["total"], 4)
         self.assertEqual(stats["items"][0]["key"], "cards:debit-base")
+
+    def test_visits_counted_by_source(self):
+        server.api_visit({"source": "app", "uid": "u1"})
+        server.api_visit({"source": "app", "uid": "u1"})
+        server.api_visit({"source": "browser", "uid": "u2"})
+        data = server.api_visits()
+        row = data["items"][-1]
+        self.assertEqual(row["app"]["visits"], 2)
+        self.assertEqual(row["app"]["users"], 1)
+        self.assertEqual(row["browser"]["visits"], 1)
+        self.assertEqual(data["total"]["app"], 2)
+        self.assertEqual(data["total"]["browser"], 1)
 
     def test_manual_push(self):
         with open(self.paths["PUSH_SUBS"], "w", encoding="utf-8") as file:

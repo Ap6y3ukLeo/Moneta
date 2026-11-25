@@ -2829,6 +2829,35 @@ function clickTrack(kind, id, title) {
   return `data-click="${esc(`${kind}:${id}`)}" data-click-title="${esc(title || '')}"`;
 }
 
+function clientSource() {
+  try {
+    if ((document.referrer || '').startsWith('android-app://')) return 'app';
+    if (new URLSearchParams(location.search).get('src') === 'app') return 'app';
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) return 'app';
+  } catch {}
+  return 'browser';
+}
+
+function trackVisit() {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `monetka:visit:${day}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    let uid = localStorage.getItem('monetka:uid');
+    if (!uid) {
+      uid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('monetka:uid', uid);
+    }
+    const body = JSON.stringify({ source: clientSource(), uid });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/visit', new Blob([body], { type: 'application/json' }));
+      return;
+    }
+    fetch('/api/visit', { method: 'POST', body, keepalive: true, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+  } catch {}
+}
+
 function trackClick(key, title) {
   const body = JSON.stringify({ key, title });
   try {
@@ -3162,6 +3191,7 @@ window.addEventListener('hashchange', onRoute);
 
 /* ------------------------------------------------------------------ boot */
 (async function boot() {
+  trackVisit();
   render();
   initPush();
   await refresh({ silent: true });

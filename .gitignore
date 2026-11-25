@@ -27,3 +27,4 @@ data/texts.json
 data/admins.json
 data/admin_log.json
 logs/
+data/visits.json

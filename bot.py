@@ -224,6 +224,7 @@ class Bot:
         tools = []
         if "cards" in scopes:
             tools.append({"text": "📊 Клики", "callback_data": "adm:clicks"})
+        tools.append({"text": "👥 Аудитория", "callback_data": "adm:visits"})
         if "texts" in scopes:
             tools.append({"text": "📝 Тексты", "callback_data": "adm:texts"})
         if tools:
@@ -752,6 +753,28 @@ class Bot:
         self.log(chat_id, f"Снят доступ у {draft['id']}")
         self.send(chat_id, f"Доступ у {draft['id']} убран.")
 
+    def admin_visits(self, chat_id):
+        if self.guard(chat_id):
+            return
+        try:
+            data = json.loads(self.fetch("/api/visits"))
+        except Exception as exc:  # noqa: BLE001 - показываем текст ошибки
+            self.send(chat_id, f"Не получилось: {exc}")
+            return
+        days = data.get("items") or []
+        if not days:
+            self.send(chat_id, "Пока нет визитов.")
+            return
+        lines = []
+        for row in days[-7:]:
+            app = row.get("app") or {}
+            web = row.get("browser") or {}
+            lines.append(f"{row.get('date', '')[5:]}: приложение {app.get('visits', 0)} "
+                         f"({app.get('users', 0)} чел.) · браузер {web.get('visits', 0)} ({web.get('users', 0)} чел.)")
+        total = data.get("total") or {}
+        self.send(chat_id, f"Визиты, последние {len(days[-7:])} дн.:\n\n" + "\n".join(lines)
+                  + f"\n\nИтого: приложение {total.get('app', 0)} · браузер {total.get('browser', 0)}")
+
     def admin_journal(self, chat_id):
         if self.guard(chat_id):
             return
@@ -863,6 +886,8 @@ class Bot:
             self.admin_push_cancel(chat_id)
         elif action == "clicks":
             self.admin_clicks(chat_id)
+        elif action == "visits":
+            self.admin_visits(chat_id)
         elif action == "texts":
             self.admin_texts(chat_id)
         elif action == "text" and len(data) == 3:
