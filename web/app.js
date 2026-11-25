@@ -1390,10 +1390,19 @@ function cityCenter(city) {
   return { lat: point[0], lon: point[1] };
 }
 
-function mapJitter(id) {
+const CITY_SPREAD = { 'Москва': 0.17, 'Санкт-Петербург': 0.11 };
+
+function citySpread(city) {
+  return CITY_SPREAD[city] || 0.05;
+}
+
+function mapJitter(id, city) {
   let hash = 0;
-  for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 100000;
-  return [((hash % 97) - 48) / 1500, ((Math.floor(hash / 97) % 97) - 48) / 1500];
+  for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 1000000;
+  const spread = citySpread(city);
+  const dy = (((hash % 1000) / 1000) - 0.5) * 2 * spread;
+  const dx = (((Math.floor(hash / 1000) % 1000) / 1000) - 0.5) * 2 * spread;
+  return [dy, dx];
 }
 
 async function openRealtyMap() {
@@ -1427,7 +1436,7 @@ async function openRealtyMap() {
   const pool = realtyFiltered();
   let items;
   if (S.re.city !== 'all') {
-    items = pool.slice(0, 150);
+    items = pool.slice(0, 250);
   } else {
     // без выбранного города берём по несколько квартир от каждого города,
     // иначе на карту попадают только самые дешёвые объявления по стране
@@ -1440,10 +1449,10 @@ async function openRealtyMap() {
     const totalCount = pool.length || 1;
     items = [];
     for (const list of groups.values()) {
-      const quota = Math.max(4, Math.min(18, Math.round(160 * list.length / totalCount)));
+      const quota = Math.max(5, Math.min(24, Math.round(220 * list.length / totalCount)));
       items.push(...list.slice(0, quota));
     }
-    items = items.slice(0, 180);
+    items = items.slice(0, 240);
   }
   if (!items.length) {
     sub.textContent = 'Нет объявлений под текущие фильтры';
@@ -1453,7 +1462,7 @@ async function openRealtyMap() {
   const markers = new Map();
   for (const item of items) {
     const base = cityCenter(item.city);
-    const [dy, dx] = mapJitter(item.id);
+    const [dy, dx] = mapJitter(item.id, item.city);
     const lat = base.lat + dy;
     const lon = base.lon + dx;
     bounds.push([lat, lon]);
