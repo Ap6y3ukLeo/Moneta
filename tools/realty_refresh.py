@@ -232,6 +232,9 @@ def scrape_yandex(quick: bool = False) -> tuple[list, dict]:
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=45000)
                     time.sleep(2.5)
+                    if f"/{slug}/" not in page.url:
+                        log(f"Яндекс: {city} перенаправлен на {page.url[:60]}, пропускаю город")
+                        break
                     for _ in range(6):
                         page.mouse.wheel(0, 900)
                         time.sleep(0.3)

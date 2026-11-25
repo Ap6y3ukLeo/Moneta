@@ -1405,6 +1405,12 @@ function mapJitter(id, city) {
   return [dy, dx];
 }
 
+function spreadSample(list, limit) {
+  if (list.length <= limit) return [...list];
+  const step = list.length / limit;
+  return Array.from({ length: limit }, (_, index) => list[Math.floor(index * step)]);
+}
+
 async function openRealtyMap() {
   const dialog = $('#realty-map-dialog');
   const box = $('#realty-map');
@@ -1436,7 +1442,7 @@ async function openRealtyMap() {
   const pool = realtyFiltered();
   let items;
   if (S.re.city !== 'all') {
-    items = pool.slice(0, 250);
+    items = spreadSample(pool, 250);
   } else {
     // без выбранного города берём по несколько квартир от каждого города,
     // иначе на карту попадают только самые дешёвые объявления по стране
@@ -1450,7 +1456,7 @@ async function openRealtyMap() {
     items = [];
     for (const list of groups.values()) {
       const quota = Math.max(5, Math.min(24, Math.round(220 * list.length / totalCount)));
-      items.push(...list.slice(0, quota));
+      items.push(...spreadSample(list, quota));
     }
     items = items.slice(0, 240);
   }
