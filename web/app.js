@@ -1362,6 +1362,34 @@ function realtyRowsHtml() {
 let realtyLeaflet = null;
 let realtyMapLayer = null;
 
+const CITY_COORDS = {
+  'Москва': [55.7558, 37.6173],
+  'Санкт-Петербург': [59.9343, 30.3351],
+  'Новосибирск': [55.0084, 82.9357],
+  'Екатеринбург': [56.8389, 60.6057],
+  'Казань': [55.7963, 49.1088],
+  'Краснодар': [45.0355, 38.9753],
+  'Ростов-на-Дону': [47.2357, 39.7015],
+  'Нижний Новгород': [56.3269, 44.0059],
+  'Самара': [53.1959, 50.1002],
+  'Уфа': [54.7388, 55.9721],
+  'Челябинск': [55.1644, 61.4368],
+  'Омск': [54.9885, 73.3242],
+  'Волгоград': [48.7080, 44.5133],
+  'Воронеж': [51.6720, 39.1843],
+  'Пермь': [58.0105, 56.2502],
+  'Красноярск': [56.0153, 92.8932],
+  'Тюмень': [57.1522, 65.5272],
+  'Сочи': [43.5855, 39.7231],
+  'Саратов': [51.5336, 46.0343],
+  'Тольятти': [53.5303, 49.3461],
+};
+
+function cityCenter(city) {
+  const point = CITY_COORDS[city] || CITY_COORDS['Москва'];
+  return { lat: point[0], lon: point[1] };
+}
+
 function mapJitter(id) {
   let hash = 0;
   for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 100000;
@@ -1432,16 +1460,18 @@ async function openRealtyMap() {
       const city = item.city || '';
       const address = item.address || '';
       const exact = hasStreetAddress(address, city);
-      const query = exact
-        ? [address, city, 'Россия'].filter((value, index, list) => value && list.indexOf(value) === index).join(', ')
-        : `${city || address}, Россия`;
+      const query = [address, city, 'Россия'].filter((value, index, list) => value && list.indexOf(value) === index).join(', ');
       let point = null;
-      try { point = await geocode(query); } catch { point = null; }
+      if (exact) {
+        try { point = await geocode(query); } catch { point = null; }
+      }
+      // даже без геокодера ставим метку в центре города — карта не должна быть пустой
+      const base = point || cityCenter(city);
+      const [dy, dx] = point && exact ? [0, 0] : mapJitter(item.id);
+      const lat = base.lat + dy;
+      const lon = base.lon + dx;
       done += 1;
-      if (point) {
-        const [dy, dx] = exact ? [0, 0] : mapJitter(item.id);
-        const lat = point.lat + dy;
-        const lon = point.lon + dx;
+      if (base) {
         placed += 1;
         bounds.push([lat, lon]);
         const marker = window.L.marker([lat, lon], {
@@ -1579,7 +1609,10 @@ function realtyPage() {
 
   <div class="filters">
     <input type="search" id="re-search" placeholder="Город, район, метро или адрес…" value="${esc(S.re.q)}" autocomplete="off">
-    ${cityPickerHtml()}
+    <select id="re-city" aria-label="Город">
+      <option value="all" ${S.re.city === 'all' ? 'selected' : ''}>Все города · ${num(realtyList().length, 0)}</option>
+      ${realtyCities().map((c) => `<option value="${esc(c.city)}" ${S.re.city === c.city ? 'selected' : ''}>${esc(c.city)} · ${num(c.count, 0)}</option>`).join('')}
+    </select>
     <select id="re-source" aria-label="Источник">
       <option value="all" ${S.re.source === 'all' ? 'selected' : ''}>Все источники</option>
       ${sources.filter((s) => s.key !== 'moscow').map((s) => `<option value="${esc(s.name)}" ${S.re.source === s.name ? 'selected' : ''}>${esc(s.name)}${s.scope ? ` · ${esc(s.scope)}` : ''} · ${s.count}</option>`).join('')}
@@ -3004,6 +3037,7 @@ document.addEventListener('change', (e) => {
     }
   }
   if (e.target.id === 're-rooms') { S.re.rooms = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
+  if (e.target.id === 're-city') { S.re.city = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-source') { S.re.source = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 're-sort') { S.re.sort = e.target.value; S.re.limit = 24; $('#re-list').innerHTML = realtyRowsHtml(); }
   if (e.target.id === 'stocks-sort') { S.stocks.sort = e.target.value; $('#stocks-rows').innerHTML = stockRowsHtml(); hydrateStockSparks(); }
