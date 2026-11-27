@@ -308,7 +308,7 @@ class Bot:
         if not item:
             self.send(chat_id, "Продукт не найден.")
             return
-        keys = list(EDIT_FIELDS)
+        keys = [key for key in EDIT_FIELDS if key != "url" or self.can(chat_id, "links")]
         rows = [
             [{"text": EDIT_FIELDS[key][0], "callback_data": f"adm:field:{product_id}:{key}"}
              for key in keys[start:start + 2]]
@@ -319,6 +319,8 @@ class Bot:
 
     def admin_edit_field(self, chat_id, product_id, field):
         if self.guard(chat_id, "cards") or field not in EDIT_FIELDS:
+            return
+        if field == "url" and self.guard(chat_id, "links"):
             return
         if field == "type":
             self.send(chat_id, "Новый тип:", {"inline_keyboard": [
@@ -426,6 +428,9 @@ class Bot:
                 self.send(chat_id, "Не нашёл ни одного «Поле=Значение». Пришли ещё раз.")
                 return
         elif field == "url":
+            if self.guard(chat_id, "links"):
+                self.pending.pop(chat_id, None)
+                return
             if not raw.startswith("https://"):
                 self.send(chat_id, "Ссылка должна начинаться с https://")
                 return
@@ -460,6 +465,8 @@ class Bot:
         self.send(chat_id, "Новая карточка, 1/7.\n\nБанк? Например: Т-Банк\nОтмена: /cancel")
 
     def admin_new_type(self, chat_id, kind):
+        if self.guard(chat_id, "cards"):
+            return
         pending = self.pending.get(chat_id)
         if not pending or pending.get("mode") != "new" or pending.get("step") != "type":
             self.send(chat_id, "Начни заново: /admin → «➕ Новая карточка».")

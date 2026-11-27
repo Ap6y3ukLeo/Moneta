@@ -28,3 +28,4 @@ data/admins.json
 data/admin_log.json
 logs/
 data/visits.json
+data/geo_cache.json

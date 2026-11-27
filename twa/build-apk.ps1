@@ -6,9 +6,12 @@ $jdk = "C:\Android\jdk-17"
 $gradle = "C:\Android\gradle-8.7"
 $keystore = Join-Path $PSScriptRoot "android.keystore"
 $work = "C:\Android\build\monetka"
-$alias = "monetka"
-$storePass = "monetka-store"
-$keyPass = "monetka-store"
+$alias = if ($env:MONETKA_KEY_ALIAS) { $env:MONETKA_KEY_ALIAS } else { "monetka" }
+$storePass = $env:MONETKA_STORE_PASSWORD
+$keyPass = if ($env:MONETKA_KEY_PASSWORD) { $env:MONETKA_KEY_PASSWORD } else { $storePass }
+if (-not $storePass) {
+    throw "Set MONETKA_STORE_PASSWORD (and optionally MONETKA_KEY_PASSWORD) environment variables before building."
+}
 
 $env:JAVA_HOME = $jdk
 $env:ANDROID_HOME = "C:\Android\sdk"

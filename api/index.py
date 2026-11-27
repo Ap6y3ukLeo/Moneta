@@ -38,22 +38,51 @@ def _backend_urls():
     return urls
 
 
+PUBLIC_GET_ROUTES = {
+    "market": "market",
+    "deposits": "deposits",
+    "cards": "cards",
+    "texts": "texts",
+    "go": "go",
+    "realty": "realty",
+    "realty_photos": "realty-photos",
+    "history": "history",
+    "geocode": "geocode",
+    "bot": "bot",
+    "chart": "chart",
+    "card": "card",
+    "push_key": "push/key",
+    "health": "health",
+}
+
+PUBLIC_POST_ROUTES = {
+    "click": "click",
+    "visit": "visit",
+    "push_subscribe": "push/subscribe",
+    "push_unsubscribe": "push/unsubscribe",
+    "ai": "ai",
+    "forecast": "forecast",
+}
+
+
 class handler(BaseHTTPRequestHandler):
     def _proxy(self, method="GET", body=None):
         params = parse_qs(urlparse(self.path).query)
         route = params.get("route", [""])[0]
-        if not route:
+        allowed = PUBLIC_GET_ROUTES if method == "GET" else PUBLIC_POST_ROUTES
+        path = allowed.get(route)
+        if not path:
             return False
         backends = _backend_urls()
         if not backends:
             return False
         query = {key: values[0] for key, values in params.items() if key != "route"}
-        # В vercel.json роут называется realty_photos, а на бэкенде — realty-photos.
-        path = {"realty_photos": "realty-photos"}.get(route, route)
         headers = {
             "Accept": "application/json",
             "X-Monetka-Token": os.environ.get("MONETKA_TOKEN", ""),
         }
+        if body is not None:
+            headers["Content-Type"] = "application/json"
         for backend in backends:
             url = f"{backend}/api/{path}"
             if query:

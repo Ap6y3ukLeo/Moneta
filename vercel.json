@@ -11,9 +11,8 @@
     { "source": "/api/go", "destination": "/api/index?route=go" },
     { "source": "/api/click", "destination": "/api/index?route=click" },
     { "source": "/api/visit", "destination": "/api/index?route=visit" },
-    { "source": "/api/visits", "destination": "/api/index?route=visits" },
     { "source": "/api/realty", "destination": "/api/index?route=realty" },
-    { "source": "/api/realty_import", "destination": "/api/index?route=realty_import" },    { "source": "/api/history", "destination": "/api/index?route=history" },
+    { "source": "/api/history", "destination": "/api/index?route=history" },
     { "source": "/api/realty-photos", "destination": "/api/index?route=realty_photos" },
     { "source": "/api/geocode", "destination": "/api/index?route=geocode" },
     { "source": "/api/bot", "destination": "/api/index?route=bot" },
@@ -29,7 +28,7 @@
   "functions": {
     "api/index.py": {
       "maxDuration": "max",
-      "includeFiles": "**/*"
+      "includeFiles": "{server.py,data/**}"
     }
   }
 }

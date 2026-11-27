@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import urllib.error
@@ -130,7 +131,10 @@ class TokenAuth(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if request.url.path in ("/", "/health"):
             return JSONResponse({"ok": True})
-        if MCP_TOKEN and request.headers.get("authorization") != f"Bearer {MCP_TOKEN}":
+        if not MCP_TOKEN:
+            return JSONResponse({"error": "MCP_TOKEN not configured"}, status_code=503)
+        auth = request.headers.get("authorization") or ""
+        if not hmac.compare_digest(auth, f"Bearer {MCP_TOKEN}"):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
         return await call_next(request)
 

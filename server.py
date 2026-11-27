@@ -42,6 +42,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 MSK = timezone(timedelta(hours=3))
 LOCK = threading.Lock()
+FILE_LOCK = threading.RLock()
 MEM: dict[str, dict] = {}
 PHOTOS_MEM: dict[str, dict] = {}
 
@@ -409,14 +410,7 @@ REFRESHING = set()
 def _store(name: str, ttl: int, value, meta: dict):
     with LOCK:
         MEM[name] = {"exp": time.time() + ttl, "value": value, "meta": meta}
-    try:
-        path = os.path.join(CACHE_DIR, name + ".json")
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"value": value, "meta": meta}, f, ensure_ascii=False)
-        os.replace(tmp, path)
-    except OSError:
-        pass
+    _write_json(os.path.join(CACHE_DIR, name + ".json"), {"value": value, "meta": meta})
 
 
 def _refresh(name: str, ttl: int, builder):
@@ -1885,12 +1879,13 @@ def api_card_create(payload):
         "url": url,
         "payout": payout,
     }
-    items = _load_custom()
-    items.append(item)
-    _write_json(CUSTOM_FILE, items)
-    # _write_json молчит об ошибках диска, а админке важно знать, что карточка сохранена.
-    if not any(entry.get("id") == item["id"] for entry in _load_custom()):
-        raise RuntimeError("Не удалось сохранить карточку на сервере")
+    with FILE_LOCK:
+        items = _load_custom()
+        items.append(item)
+        _write_json(CUSTOM_FILE, items)
+        # _write_json молчит об ошибках диска, а админке важно знать, что карточка сохранена.
+        if not any(entry.get("id") == item["id"] for entry in _load_custom()):
+            raise RuntimeError("Не удалось сохранить карточку на сервере")
     return {"ok": True, "id": item["id"], "count": len(items)}
 
 
@@ -1946,11 +1941,12 @@ def api_card_update(payload):
     if not changes:
         raise ValueError("Нечего менять")
 
-    edits = _load_edits()
-    edits[item_id] = {**(edits.get(item_id) or {}), **changes}
-    _write_json(EDITS_FILE, edits)
-    if _load_edits().get(item_id) != edits[item_id]:
-        raise RuntimeError("Не удалось сохранить изменения на сервере")
+    with FILE_LOCK:
+        edits = _load_edits()
+        edits[item_id] = {**(edits.get(item_id) or {}), **changes}
+        _write_json(EDITS_FILE, edits)
+        if _load_edits().get(item_id) != edits[item_id]:
+            raise RuntimeError("Не удалось сохранить изменения на сервере")
     return {"ok": True, "id": item_id, "fields": sorted(changes)}
 
 
@@ -1959,19 +1955,20 @@ def api_card_delete(payload):
     item_id = str((payload or {}).get("id") or "").strip()
     if not item_id:
         raise ValueError("Не указан продукт")
-    items = _load_custom()
-    remaining = [item for item in items if item.get("id") != item_id]
-    if len(remaining) == len(items):
-        raise ValueError("Удалить можно только карточку, созданную из бота")
-    _write_json(CUSTOM_FILE, remaining)
-    if any(item.get("id") == item_id for item in _load_custom()):
-        raise RuntimeError("Не удалось удалить карточку на сервере")
-    edits = _load_edits()
-    edits.pop(item_id, None)
-    _write_json(EDITS_FILE, edits)
-    links = _load_links()
-    links.pop(item_id, None)
-    _write_json(LINKS_FILE, links)
+    with FILE_LOCK:
+        items = _load_custom()
+        remaining = [item for item in items if item.get("id") != item_id]
+        if len(remaining) == len(items):
+            raise ValueError("Удалить можно только карточку, созданную из бота")
+        _write_json(CUSTOM_FILE, remaining)
+        if any(item.get("id") == item_id for item in _load_custom()):
+            raise RuntimeError("Не удалось удалить карточку на сервере")
+        edits = _load_edits()
+        edits.pop(item_id, None)
+        _write_json(EDITS_FILE, edits)
+        links = _load_links()
+        links.pop(item_id, None)
+        _write_json(LINKS_FILE, links)
     return {"ok": True, "id": item_id, "count": len(remaining)}
 
 
@@ -1988,15 +1985,16 @@ def api_order_set(payload):
         raise ValueError("Не указан продукт")
     if not any(item.get("id") == item_id for item in api_cards()["items"]):
         raise ValueError("Продукт не найден")
-    pinned = _load_pinned()
-    if payload.get("pinned"):
-        if item_id not in pinned:
-            pinned.append(item_id)
-    else:
-        pinned = [entry for entry in pinned if entry != item_id]
-    _write_json(ORDER_FILE, {"pinned": pinned})
-    if _load_pinned() != pinned:
-        raise RuntimeError("Не удалось сохранить порядок на сервере")
+    with FILE_LOCK:
+        pinned = _load_pinned()
+        if payload.get("pinned"):
+            if item_id not in pinned:
+                pinned.append(item_id)
+        else:
+            pinned = [entry for entry in pinned if entry != item_id]
+        _write_json(ORDER_FILE, {"pinned": pinned})
+        if _load_pinned() != pinned:
+            raise RuntimeError("Не удалось сохранить порядок на сервере")
     return {"ok": True, "id": item_id, "pinned": item_id in pinned}
 
 
@@ -2015,18 +2013,19 @@ def api_text_set(payload):
     if field not in TEXT_FIELDS:
         raise ValueError("Неизвестное поле")
     value = str(payload.get("value") or "").strip()
-    data = _read_json(TEXTS_FILE, {})
-    if not isinstance(data, dict):
-        data = {}
-    entry = data.get(section) or {}
-    if value == "-" or not value:
-        entry.pop(field, None)
-    else:
-        entry[field] = value
-    data[section] = entry
-    _write_json(TEXTS_FILE, data)
-    if api_texts()["items"].get(section, {}) != entry:
-        raise RuntimeError("Не удалось сохранить текст на сервере")
+    with FILE_LOCK:
+        data = _read_json(TEXTS_FILE, {})
+        if not isinstance(data, dict):
+            data = {}
+        entry = data.get(section) or {}
+        if value == "-" or not value:
+            entry.pop(field, None)
+        else:
+            entry[field] = value
+        data[section] = entry
+        _write_json(TEXTS_FILE, data)
+        if api_texts()["items"].get(section, {}) != entry:
+            raise RuntimeError("Не удалось сохранить текст на сервере")
     return {"ok": True, "section": section, "field": field, "value": entry.get(field)}
 
 
@@ -2067,14 +2066,15 @@ def api_click(payload):
     section = key.split(":", 1)[0]
     if section not in CLICK_SECTIONS:
         raise ValueError("Неизвестный раздел")
-    clicks = _load_clicks()
-    entry = clicks.get(key) or {"clicks": 0, "title": title or key, "kind": section}
-    entry["clicks"] = int(entry.get("clicks") or 0) + 1
-    if title:
-        entry["title"] = title
-    entry["kind"] = section
-    clicks[key] = entry
-    _write_json(CLICKS_FILE, clicks)
+    with FILE_LOCK:
+        clicks = _load_clicks()
+        entry = clicks.get(key) or {"clicks": 0, "title": title or key, "kind": section}
+        entry["clicks"] = int(entry.get("clicks") or 0) + 1
+        if title:
+            entry["title"] = title
+        entry["kind"] = section
+        clicks[key] = entry
+        _write_json(CLICKS_FILE, clicks)
     return {"ok": True, "key": key, "clicks": entry["clicks"]}
 
 
@@ -2110,7 +2110,9 @@ def api_realty_import(payload):
     rows = payload.get("items")
     images = payload.get("images")
     if isinstance(images, dict) and images and not rows:
-        cached = _read_json(os.path.join(CACHE_DIR, target + ".json"), {}).get("value")
+        cache_path = os.path.join(CACHE_DIR, target + ".json")
+        doc = _read_json(cache_path, {})
+        cached = doc.get("value")
         if not isinstance(cached, list) or not cached:
             raise ValueError("Некуда обновлять фото: кэш источника пуст")
         updated = 0
@@ -2119,8 +2121,9 @@ def api_realty_import(payload):
             if clean:
                 item["img"] = clean
                 updated += 1
-        _write_json(os.path.join(CACHE_DIR, target + ".json"),
-                    {"value": cached, "meta": {"ok": True, "updated": now_msk(), "stale": False}})
+        old_meta = doc.get("meta") if isinstance(doc.get("meta"), dict) else {}
+        new_meta = {"ok": True, "updated": now_msk(), "stale": False, "manual": bool(old_meta.get("manual", True))}
+        _write_json(cache_path, {"value": cached, "meta": new_meta})
         with LOCK:
             MEM.pop(target, None)
         return {"ok": True, "source": kind, "updated": updated}
@@ -2195,25 +2198,26 @@ def api_visit(payload):
     payload = payload or {}
     source = "app" if str(payload.get("source")) == "app" else "browser"
     uid = str(payload.get("uid") or "")[:40]
-    data = _read_json(VISITS_FILE, {})
-    if not isinstance(data, dict):
-        data = {}
-    days = data.get("days") if isinstance(data.get("days"), dict) else {}
-    day = now_msk()[:10]
-    entry = days.get(day) if isinstance(days.get(day), dict) else {}
-    bucket = entry.get(source) if isinstance(entry.get(source), dict) else {}
-    bucket["visits"] = int(bucket.get("visits") or 0) + 1
-    ids = bucket.get("ids") if isinstance(bucket.get("ids"), list) else []
-    if uid and uid not in ids and len(ids) < 5000:
-        ids.append(uid)
-    bucket["ids"] = ids
-    entry[source] = bucket
-    days[day] = entry
-    # держим только последние 60 дней
-    for old in sorted(days)[:-60]:
-        days.pop(old, None)
-    data["days"] = days
-    _write_json(VISITS_FILE, data)
+    with FILE_LOCK:
+        data = _read_json(VISITS_FILE, {})
+        if not isinstance(data, dict):
+            data = {}
+        days = data.get("days") if isinstance(data.get("days"), dict) else {}
+        day = now_msk()[:10]
+        entry = days.get(day) if isinstance(days.get(day), dict) else {}
+        bucket = entry.get(source) if isinstance(entry.get(source), dict) else {}
+        bucket["visits"] = int(bucket.get("visits") or 0) + 1
+        ids = bucket.get("ids") if isinstance(bucket.get("ids"), list) else []
+        if uid and uid not in ids and len(ids) < 5000:
+            ids.append(uid)
+        bucket["ids"] = ids
+        entry[source] = bucket
+        days[day] = entry
+        # держим только последние 60 дней
+        for old in sorted(days)[:-60]:
+            days.pop(old, None)
+        data["days"] = days
+        _write_json(VISITS_FILE, data)
     return {"ok": True, "source": source}
 
 
@@ -2309,12 +2313,13 @@ def api_link_set(payload):
         raise ValueError("Не указан продукт")
     if url and not url.startswith("https://"):
         raise ValueError("Ссылка должна начинаться с https://")
-    links = _load_links()
-    if url:
-        links[item_id] = url
-    else:
-        links.pop(item_id, None)
-    _write_json(LINKS_FILE, links)
+    with FILE_LOCK:
+        links = _load_links()
+        if url:
+            links[item_id] = url
+        else:
+            links.pop(item_id, None)
+        _write_json(LINKS_FILE, links)
     return {"ok": True, "id": item_id, "url": url or None, "count": len(links)}
 
 
@@ -2599,9 +2604,7 @@ CITY_SLUGS = {
     "odintsovo": "Одинцово",
     "domodedovo": "Домодедово",
     "petrozavodsk": "Петрозаводск",
-    "domodedovo": "Домодедово",
     "voskresenskoe": "Воскресенское",
-    "odintsovo": "Одинцово",
 }
 
 
@@ -4105,7 +4108,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_redirect(target or "/#/cards")
             return
         token = os.environ.get("MONETKA_TOKEN")
-        if token and path.startswith("/api/") and not hmac.compare_digest(self.headers.get("X-Monetka-Token", ""), token):
+        if token and path.startswith("/api/") and path not in ("/api/health", "/api/go") and not hmac.compare_digest(self.headers.get("X-Monetka-Token", ""), token):
             self.send_json({"error": "unauthorized"}, status=401)
             return
         try:
@@ -4191,7 +4194,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
         try:
             length = int(self.headers.get("Content-Length") or 0)
-            if length > 32_000:
+            max_body = 5_000_000 if path == "/api/realty_import" else 32_000
+            if length > max_body:
                 raise ValueError("Слишком большой запрос")
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
             if path in ("/api/push_subscribe", "/api/push/subscribe"):
@@ -4280,13 +4284,24 @@ def _read_json(path, default):
 
 
 def _write_json(path, value):
+    tmp = None
     try:
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as file:
-            json.dump(value, file, ensure_ascii=False)
-        os.replace(tmp, path)
+        directory = os.path.dirname(os.path.abspath(path)) or "."
+        os.makedirs(directory, exist_ok=True)
+        with FILE_LOCK:
+            fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=directory)
+            with os.fdopen(fd, "w", encoding="utf-8") as file:
+                json.dump(value, file, ensure_ascii=False)
+            os.replace(tmp, path)
+            tmp = None
     except OSError:
         pass
+    finally:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def api_push_key():
@@ -4298,17 +4313,19 @@ def api_push_subscribe(payload):
     endpoint = str(subscription.get("endpoint") or "").strip()
     if not endpoint.startswith("https://"):
         raise ValueError("Некорректная подписка")
-    subs = _read_json(PUSH_SUBS, {})
-    subs[endpoint] = {"subscription": subscription, "created": now_msk()}
-    _write_json(PUSH_SUBS, subs)
+    with FILE_LOCK:
+        subs = _read_json(PUSH_SUBS, {})
+        subs[endpoint] = {"subscription": subscription, "created": now_msk()}
+        _write_json(PUSH_SUBS, subs)
     return {"ok": True, "subscriptions": len(subs)}
 
 
 def api_push_unsubscribe(payload):
     endpoint = str((payload or {}).get("endpoint") or "").strip()
-    subs = _read_json(PUSH_SUBS, {})
-    subs.pop(endpoint, None)
-    _write_json(PUSH_SUBS, subs)
+    with FILE_LOCK:
+        subs = _read_json(PUSH_SUBS, {})
+        subs.pop(endpoint, None)
+        _write_json(PUSH_SUBS, subs)
     return {"ok": True, "subscriptions": len(subs)}
 
 
@@ -4448,9 +4465,12 @@ def _send_push(subs, payload):
             if status in (404, 410):
                 dead.append(endpoint)
     if dead:
-        for endpoint in dead:
-            subs.pop(endpoint, None)
-        _write_json(PUSH_SUBS, subs)
+        with FILE_LOCK:
+            current = _read_json(PUSH_SUBS, {})
+            for endpoint in dead:
+                subs.pop(endpoint, None)
+                current.pop(endpoint, None)
+            _write_json(PUSH_SUBS, current)
 
 
 def _push_tick():
